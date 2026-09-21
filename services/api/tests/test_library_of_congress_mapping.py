@@ -38,6 +38,7 @@ def test_loc_digitized_pdf_does_not_become_download_authority() -> None:
     candidate = record.candidate
     assert candidate.formats == ["PDF"]
     assert candidate.rights[0].state is RightsState.UNKNOWN
+    assert candidate.assets[0].rights[0].state is RightsState.UNKNOWN
     assert candidate.identifiers["lccn"] == ["2020123456"]
 
 
@@ -64,6 +65,7 @@ def test_loc_access_restriction_outranks_resource_presence() -> None:
     assert record is not None
     assert record.candidate.assets
     assert record.candidate.rights[0].state is RightsState.RESTRICTED
+    assert record.candidate.assets[0].rights[0].state is RightsState.RESTRICTED
 
 
 def test_loc_rejects_non_loc_item_urls_for_hydration() -> None:

@@ -127,7 +127,8 @@ class OpenLibraryAdapter:
                     source="open_library",
                     basis=(
                         "Open Library exposes a public-readability/public-scan signal, but that "
-                        "signal alone is not treated as copyright or exact-asset download authority."
+                        "signal alone is not treated as copyright or exact-asset download "
+                        "authority."
                     ),
                     evidence_url=evidence_url,
                     confidence=0.95,
@@ -137,7 +138,10 @@ class OpenLibraryAdapter:
             RightsEvidence(
                 state=RightsState.UNKNOWN,
                 source="open_library",
-                basis="Open Library search metadata does not establish exact-asset download rights.",
+                basis=(
+                    "Open Library search metadata does not establish exact-asset download "
+                    "rights."
+                ),
                 evidence_url=evidence_url,
                 confidence=0.9,
             )

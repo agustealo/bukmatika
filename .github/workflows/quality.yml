@@ -1,0 +1,44 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install API
+        run: python -m pip install -e "services/api[dev]"
+      - name: Ruff
+        run: ruff check services/api
+      - name: MyPy
+        run: mypy services/api/src
+      - name: Tests
+        run: pytest -q services/api/tests
+
+  web:
+    name: Web quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install web
+        run: npm install
+      - name: Typecheck
+        run: npm run web:typecheck
+      - name: Build
+        run: npm run web:build

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     source_concurrency: int = Field(default=4, ge=1, le=16)
     user_agent: str = "Bukmatika/0.1 (+https://github.com/agustealo/bukmatika)"
     contact_email: str | None = None
+    web_origin: str = "http://localhost:3000"
 
 
 @lru_cache

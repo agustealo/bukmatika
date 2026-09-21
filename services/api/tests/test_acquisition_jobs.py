@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
+import pytest
 from pydantic import HttpUrl
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,7 @@ from bukmatika.acquisition.domain import AcquisitionStatus
 from bukmatika.acquisition.downloader import SafeDownloader
 from bukmatika.acquisition.jobs import AcquisitionJobWorker, AcquisitionQueueService
 from bukmatika.acquisition.network import PinnedTarget
-from bukmatika.acquisition.service import AcquisitionService
+from bukmatika.acquisition.service import AcquisitionLeaseLost, AcquisitionService
 from bukmatika.acquisition.storage import LocalObjectStore
 from bukmatika.catalog import CatalogResolver
 from bukmatika.config import Settings
@@ -103,7 +104,7 @@ async def _worker_stack(
     handler: httpx.AsyncBaseTransport,
     *,
     max_attempts: int = 2,
-) -> tuple[httpx.AsyncClient, AcquisitionQueueService, AcquisitionJobWorker]:
+) -> tuple[httpx.AsyncClient, AcquisitionQueueService, AcquisitionJobWorker, AcquisitionService]:
     async def resolver(url: str) -> PinnedTarget:
         return _target(url)
 
@@ -129,7 +130,7 @@ async def _worker_stack(
         settings,
         session_scope_factory=_scope(session),
     )
-    return client, queue, worker
+    return client, queue, worker, service
 
 
 async def test_queue_worker_stores_real_acquisition_once(
@@ -149,7 +150,7 @@ async def test_queue_worker_stores_real_acquisition_once(
             request=request,
         )
 
-    client, queue, worker = await _worker_stack(
+    client, queue, worker, _ = await _worker_stack(
         session,
         tmp_path,
         httpx.MockTransport(handler),
@@ -180,7 +181,7 @@ async def test_queued_acquisition_cancels_before_worker_claim(
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError(f"cancelled acquisition must not call network: {request.url}")
 
-    client, queue, worker = await _worker_stack(
+    client, queue, worker, _ = await _worker_stack(
         session,
         tmp_path,
         httpx.MockTransport(handler),
@@ -219,7 +220,7 @@ async def test_transient_download_failure_retries_then_stores(
             request=request,
         )
 
-    client, queue, worker = await _worker_stack(
+    client, queue, worker, _ = await _worker_stack(
         session,
         tmp_path,
         httpx.MockTransport(handler),
@@ -259,7 +260,7 @@ async def test_expired_worker_lease_recovers_orphaned_acquisition(
             request=request,
         )
 
-    client, queue, worker = await _worker_stack(
+    client, queue, worker, _ = await _worker_stack(
         session,
         tmp_path,
         httpx.MockTransport(handler),
@@ -289,3 +290,68 @@ async def test_expired_worker_lease_recovers_orphaned_acquisition(
     assert final_job is not None
     assert final_job.status == JobStatus.COMPLETED.value
     assert final_job.attempt_count == 2
+
+
+async def test_stale_claim_cannot_start_acquisition_after_reclaim(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    asset = await _seed_open_asset(session, "105")
+    request_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "application/pdf"},
+            content=b"%PDF-1.7\nstale worker must never fetch",
+            request=request,
+        )
+
+    client, queue, _, service = await _worker_stack(
+        session,
+        tmp_path,
+        httpx.MockTransport(handler),
+        max_attempts=3,
+    )
+    try:
+        queued = await queue.enqueue(asset.id)
+        assert queued.job_id is not None
+        jobs = JobRepository(session)
+        stale = await jobs.claim_next(job_type="acquisition", lease_seconds=60)
+        assert stale is not None
+        job = await jobs.get(stale.job_id)
+        assert job is not None
+        job.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        await session.flush()
+        replacement = await jobs.claim_next(job_type="acquisition", lease_seconds=60)
+        assert replacement is not None
+        assert replacement.claim_token != stale.claim_token
+
+        async def stale_probe() -> bool:
+            return await jobs.lease_is_owned(
+                job_id=stale.job_id,
+                claim_token=stale.claim_token,
+            )
+
+        async def stale_guard(database_session: AsyncSession) -> None:
+            await JobRepository(database_session).heartbeat(
+                job_id=stale.job_id,
+                claim_token=stale.claim_token,
+                lease_seconds=60,
+            )
+
+        with pytest.raises(AcquisitionLeaseLost):
+            await service.acquire(
+                asset.id,
+                lease_probe=stale_probe,
+                lease_guard=stale_guard,
+            )
+        acquisition = await AcquisitionRepository(session).get_acquisition(queued.acquisition_id)
+    finally:
+        await client.aclose()
+
+    assert acquisition is not None
+    assert acquisition.status == AcquisitionStatus.QUEUED.value
+    assert request_count == 0

@@ -14,6 +14,7 @@ from bukmatika.domain import RightsEvidence, RightsState
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.acquisition import AcquisitionRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
+from bukmatika.persistence.models import RightsEvidenceRecord
 from bukmatika.rights import RightsEngine
 
 
@@ -96,8 +97,7 @@ class AcquisitionService:
             raise AcquisitionExecutionError("REMOTE_DOWNLOAD_FAILED", str(exc)) from exc
 
         async with session_scope() as database_session:
-            repository = AcquisitionRepository(database_session)
-            await repository.mark_verifying(
+            await AcquisitionRepository(database_session).mark_verifying(
                 authorized.acquisition_id,
                 bytes_received=result.byte_size,
                 sha256=result.sha256,
@@ -139,11 +139,21 @@ class AcquisitionService:
                 )
             raise AcquisitionExecutionError("FORMAT_VERIFICATION_FAILED", str(exc)) from exc
 
-        stored_file = await self._storage.commit(
-            result.temp_path,
-            sha256=result.sha256,
-            format_name=authorized.expected_format,
-        )
+        try:
+            stored_file = await self._storage.commit(
+                result.temp_path,
+                sha256=result.sha256,
+                format_name=authorized.expected_format,
+            )
+        except OSError as exc:
+            await self._storage.discard(result.temp_path)
+            await self._record_failure(
+                authorized,
+                error_code="STORAGE_FAILED",
+                detail=str(exc),
+            )
+            raise AcquisitionExecutionError("STORAGE_FAILED", str(exc)) from exc
+
         async with session_scope() as database_session:
             repository = AcquisitionRepository(database_session)
             stored_object = await repository.upsert_stored_object(
@@ -182,6 +192,7 @@ class AcquisitionService:
 
     async def _authorize(self, asset_id: UUID) -> _AuthorizedAttempt | AcquisitionResponse:
         denied: AcquisitionDenied | None = None
+        authorized: _AuthorizedAttempt | None = None
         async with session_scope() as database_session:
             repository = AcquisitionRepository(database_session)
             asset = await repository.get_asset(asset_id)
@@ -260,6 +271,8 @@ class AcquisitionService:
 
         if denied is not None:
             raise denied
+        if authorized is None:
+            raise RuntimeError("Acquisition authorization produced no outcome")
         return authorized
 
     async def _record_failure(
@@ -287,11 +300,7 @@ class AcquisitionService:
             )
 
     @staticmethod
-    def _to_domain_evidence(record: object) -> RightsEvidence:
-        from bukmatika.persistence.models import RightsEvidenceRecord
-
-        if not isinstance(record, RightsEvidenceRecord):
-            raise TypeError("Unexpected rights evidence record")
+    def _to_domain_evidence(record: RightsEvidenceRecord) -> RightsEvidence:
         return RightsEvidence.model_validate(
             {
                 "state": record.state,

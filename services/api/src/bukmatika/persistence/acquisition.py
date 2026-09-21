@@ -29,6 +29,12 @@ class AcquisitionRepository:
     async def get_asset(self, asset_id: UUID) -> Asset | None:
         return await self._session.get(Asset, asset_id)
 
+    async def get_acquisition(self, acquisition_id: UUID) -> Acquisition | None:
+        return await self._session.get(Acquisition, acquisition_id)
+
+    async def get_stored_object(self, stored_object_id: UUID) -> StoredObject | None:
+        return await self._session.get(StoredObject, stored_object_id)
+
     async def rights_evidence_for_asset(self, asset_id: UUID) -> list[RightsEvidenceRecord]:
         result = await self._session.scalars(
             select(RightsEvidenceRecord)

@@ -78,6 +78,30 @@ async def test_expired_running_job_is_reclaimed_with_new_token(session: AsyncSes
         await repository.complete(job_id=job.id, claim_token=first.claim_token)
 
 
+async def test_expired_final_attempt_becomes_terminal_failure(session: AsyncSession) -> None:
+    repository = JobRepository(session)
+    job = await repository.enqueue(
+        job_type="acquisition",
+        payload={"asset_id": str(uuid4())},
+        dedupe_key="test:job:expired-final",
+        max_attempts=1,
+    )
+    lease = await repository.claim_next(job_type="acquisition", lease_seconds=60)
+    assert lease is not None
+    stored = await repository.get(job.id)
+    assert stored is not None
+    stored.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    await session.flush()
+
+    assert await repository.claim_next(job_type="acquisition", lease_seconds=60) is None
+    terminal = await repository.get(job.id)
+    assert terminal is not None
+    assert terminal.status == JobStatus.FAILED.value
+    assert terminal.last_error_code == "WORKER_LEASE_EXPIRED"
+    assert terminal.claim_token is None
+    assert terminal.completed_at is not None
+
+
 async def test_retry_exhaustion_becomes_terminal_failure(session: AsyncSession) -> None:
     repository = JobRepository(session)
     job = await repository.enqueue(

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Protocol
 
 from bukmatika.domain import DiscoveryCandidate, SearchIntent

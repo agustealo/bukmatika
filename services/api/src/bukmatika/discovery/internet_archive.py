@@ -159,7 +159,7 @@ class InternetArchiveAdapter:
         return {"Accept": "application/json", "User-Agent": user_agent}
 
     @classmethod
-    def _params(cls, intent: SearchIntent) -> list[tuple[str, str | int]]:
+    def _params(cls, intent: SearchIntent) -> httpx.QueryParams:
         clauses = ["mediatype:texts"]
         if intent.query:
             clauses.append(cls._quoted(intent.query))
@@ -188,14 +188,14 @@ class InternetArchiveAdapter:
             "licenseurl",
             "access-restricted-item",
         )
-        params: list[tuple[str, str | int]] = [
+        params: list[tuple[str, str | int | float | bool | None]] = [
             ("q", " AND ".join(clauses)),
             ("output", "json"),
             ("rows", intent.limit),
             ("page", 1),
         ]
         params.extend(("fl[]", field) for field in fields)
-        return params
+        return httpx.QueryParams(params)
 
     @staticmethod
     def _quoted(value: str) -> str:

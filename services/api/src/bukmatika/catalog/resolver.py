@@ -4,7 +4,7 @@ from uuid import UUID
 
 from bukmatika.discovery.base import DiscoveredRecord
 from bukmatika.persistence.catalog import CatalogRepository
-from bukmatika.persistence.models import Edition, Work
+from bukmatika.persistence.models import Asset, Edition, Work
 
 
 class CatalogResolver:
@@ -93,26 +93,18 @@ class CatalogResolver:
                         normalized_value=self._normalize_identifier(value),
                     )
 
+        persisted_assets: list[Asset] = []
         if edition is not None:
             for asset in candidate.assets:
-                await self._repository.upsert_remote_asset(
-                    edition_id=edition.id,
-                    remote_url=str(asset.url),
-                    format_name=asset.format,
-                    media_type=asset.media_type,
-                    byte_size=asset.size_bytes,
+                persisted_assets.append(
+                    await self._repository.upsert_remote_asset(
+                        edition_id=edition.id,
+                        remote_url=str(asset.url),
+                        format_name=asset.format,
+                        media_type=asset.media_type,
+                        byte_size=asset.size_bytes,
+                    )
                 )
-
-        for evidence in candidate.rights:
-            await self._repository.record_rights_evidence(
-                source_observation_id=observation.id,
-                state=evidence.state.value,
-                source=evidence.source,
-                basis=evidence.basis,
-                evidence_url=str(evidence.evidence_url) if evidence.evidence_url else None,
-                license_uri=str(evidence.license_uri) if evidence.license_uri else None,
-                confidence=evidence.confidence,
-            )
 
         target_type = "edition" if edition is not None else "work"
         target_id = edition.id if edition is not None else work.id
@@ -121,6 +113,29 @@ class CatalogResolver:
             entity_type=target_type,
             entity_id=target_id,
         )
+
+        for evidence in candidate.rights:
+            stored_evidence = await self._repository.record_rights_evidence(
+                source_observation_id=observation.id,
+                state=evidence.state.value,
+                source=evidence.source,
+                basis=evidence.basis,
+                evidence_url=str(evidence.evidence_url) if evidence.evidence_url else None,
+                license_uri=str(evidence.license_uri) if evidence.license_uri else None,
+                confidence=evidence.confidence,
+            )
+            await self._repository.link_rights_evidence(
+                rights_evidence_id=stored_evidence.id,
+                subject_type=target_type,
+                subject_id=target_id,
+            )
+            for persisted_asset in persisted_assets:
+                await self._repository.link_rights_evidence(
+                    rights_evidence_id=stored_evidence.id,
+                    subject_type="asset",
+                    subject_id=persisted_asset.id,
+                )
+
         await self._record_assertions(
             record=record,
             observation_id=observation.id,

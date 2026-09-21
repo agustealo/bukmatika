@@ -21,7 +21,9 @@ async def test_credential_bearing_url_is_rejected() -> None:
         await resolve_public_https("https://user:secret@example.org/book.pdf")
 
 
-async def test_mixed_public_private_dns_answer_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_mixed_public_private_dns_answer_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def fake_getaddrinfo(
         host: str,
         port: int,

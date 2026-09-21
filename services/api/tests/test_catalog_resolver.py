@@ -1,36 +1,14 @@
-import os
 from typing import Literal
 
-import pytest
 from pydantic import HttpUrl
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.catalog import CatalogResolver
 from bukmatika.discovery.base import DiscoveredRecord
 from bukmatika.domain import DiscoveredAsset, DiscoveryCandidate, RightsEvidence, RightsState
 from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.models import Asset, Edition, RightsEvidenceRecord, Work
-
-DATABASE_URL = os.getenv("BUKMATIKA_DATABASE_URL")
-pytestmark = pytest.mark.skipif(
-    DATABASE_URL is None,
-    reason="PostgreSQL integration URL not configured",
-)
-
-
-@pytest.fixture
-async def session() -> AsyncSession:
-    assert DATABASE_URL is not None
-    engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with factory() as value:
-        try:
-            yield value
-        finally:
-            await value.rollback()
-            await value.close()
-    await engine.dispose()
 
 
 def _record(

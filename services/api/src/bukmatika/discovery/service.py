@@ -1,59 +1,158 @@
 import asyncio
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Literal
+from uuid import UUID, uuid4
 
-from bukmatika.discovery.base import DiscoveredRecord, DiscoveryAdapter, DiscoveryIngestor
-from bukmatika.domain import DiscoveryCandidate, DiscoveryResponse, RightsState, SearchIntent
+from bukmatika.discovery.base import DiscoveredRecord
+from bukmatika.discovery.registry import ProviderRegistration, ProviderRegistry
+from bukmatika.domain import (
+    DiscoveryCandidate,
+    DiscoveryResponse,
+    DiscoverySourceStatus,
+    RightsState,
+    SearchIntent,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchSession:
+    id: UUID
+    timeout_seconds: float
+    max_records: int
+    started_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryBatch:
+    records: list[DiscoveredRecord]
+    response: DiscoveryResponse
 
 
 @dataclass(slots=True)
 class _AdapterResult:
     name: str
     records: list[DiscoveredRecord]
+    status: Literal["ok", "error", "timeout"]
+    elapsed_ms: int
     error: str | None = None
 
 
 class DiscoveryService:
-    def __init__(self, adapters: list[DiscoveryAdapter]) -> None:
-        self._adapters = adapters
+    def __init__(
+        self,
+        registry: ProviderRegistry,
+        *,
+        session_timeout_seconds: float,
+        max_records: int,
+    ) -> None:
+        if session_timeout_seconds <= 0:
+            raise ValueError("session_timeout_seconds must be positive")
+        if max_records < 1:
+            raise ValueError("max_records must be positive")
+        self._registry = registry
+        self._session_timeout_seconds = session_timeout_seconds
+        self._max_records = max_records
 
-    async def search(
+    def create_session(self) -> SearchSession:
+        return SearchSession(
+            id=uuid4(),
+            timeout_seconds=self._session_timeout_seconds,
+            max_records=self._max_records,
+            started_at=time.monotonic(),
+        )
+
+    async def discover(
         self,
         intent: SearchIntent,
-        ingestor: DiscoveryIngestor,
-    ) -> DiscoveryResponse:
+        session: SearchSession,
+    ) -> DiscoveryBatch:
+        registrations = self._registry.active()
         results = await asyncio.gather(
-            *(self._safe_search(adapter, intent) for adapter in self._adapters)
+            *(self._safe_search(registration, intent, session) for registration in registrations)
         )
-        errors: dict[str, str] = {}
-        for result in results:
-            if result.error is not None:
-                errors[result.name] = result.error
 
-        records = self._deduplicate(record for result in results for record in result.records)
-        for record in records:
-            await ingestor.ingest(record)
+        errors = {
+            result.name: result.error
+            for result in results
+            if result.error is not None
+        }
+        records = self._deduplicate(
+            record for result in results for record in result.records
+        )
+        records.sort(key=lambda item: self._rank(item.candidate), reverse=True)
+        bounded_records = records[: session.max_records]
+        elapsed_ms = max(0, int((time.monotonic() - session.started_at) * 1000))
+        source_status = {
+            result.name: DiscoverySourceStatus(
+                status=result.status,
+                elapsed_ms=result.elapsed_ms,
+                result_count=len(result.records),
+            )
+            for result in results
+        }
 
-        candidates = [record.candidate for record in records]
-        candidates.sort(key=self._rank, reverse=True)
-        return DiscoveryResponse(
-            intent=intent,
-            candidates=candidates[: intent.limit],
-            sources_queried=[adapter.name for adapter in self._adapters],
-            source_errors=errors,
+        return DiscoveryBatch(
+            records=bounded_records,
+            response=DiscoveryResponse(
+                session_id=session.id,
+                elapsed_ms=elapsed_ms,
+                intent=intent,
+                candidates=[
+                    record.candidate for record in bounded_records[: intent.limit]
+                ],
+                sources_queried=[registration.name for registration in registrations],
+                source_errors=errors,
+                source_status=source_status,
+            ),
         )
 
     @staticmethod
     async def _safe_search(
-        adapter: DiscoveryAdapter,
+        registration: ProviderRegistration,
         intent: SearchIntent,
+        session: SearchSession,
     ) -> _AdapterResult:
+        started_at = time.monotonic()
+        elapsed = started_at - session.started_at
+        remaining = session.timeout_seconds - elapsed
+        if remaining <= 0:
+            return _AdapterResult(
+                name=registration.name,
+                records=[],
+                status="timeout",
+                elapsed_ms=0,
+                error="search session deadline reached before provider execution",
+            )
+
+        timeout_seconds = min(registration.timeout_seconds, remaining)
+        scoped_intent = intent.model_copy(
+            update={"limit": min(intent.limit, registration.max_results)}
+        )
         try:
-            return _AdapterResult(name=adapter.name, records=await adapter.search(intent))
+            async with asyncio.timeout(timeout_seconds):
+                records = await registration.adapter.search(scoped_intent)
+            return _AdapterResult(
+                name=registration.name,
+                records=records[: registration.max_results],
+                status="ok",
+                elapsed_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+            )
+        except TimeoutError:
+            return _AdapterResult(
+                name=registration.name,
+                records=[],
+                status="timeout",
+                elapsed_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+                error=f"provider timed out after {timeout_seconds:.2f}s",
+            )
         except Exception as exc:  # source degradation must not collapse federated search
             return _AdapterResult(
-                name=adapter.name,
+                name=registration.name,
                 records=[],
+                status="error",
+                elapsed_ms=max(0, int((time.monotonic() - started_at) * 1000)),
                 error=f"{type(exc).__name__}: {exc}",
             )
 

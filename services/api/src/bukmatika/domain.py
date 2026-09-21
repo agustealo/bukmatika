@@ -1,5 +1,6 @@
 from enum import StrEnum
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
@@ -78,8 +79,29 @@ class DiscoveryCandidate(BaseModel):
     source_score: Annotated[float, Field(ge=0, le=1)] = 0.5
 
 
+class DiscoverySourceStatus(BaseModel):
+    status: Literal["ok", "error", "timeout"]
+    elapsed_ms: int = Field(ge=0)
+    result_count: int = Field(ge=0)
+
+
 class DiscoveryResponse(BaseModel):
+    session_id: UUID
+    elapsed_ms: int = Field(ge=0)
     intent: SearchIntent
     candidates: list[DiscoveryCandidate]
     sources_queried: list[str]
     source_errors: dict[str, str] = Field(default_factory=dict)
+    source_status: dict[str, DiscoverySourceStatus] = Field(default_factory=dict)
+
+
+class CatalogSearchItem(BaseModel):
+    work_id: UUID
+    title: str
+    authors: list[str] = Field(default_factory=list)
+    score: float = Field(ge=0)
+
+
+class CatalogSearchResponse(BaseModel):
+    query: str
+    items: list[CatalogSearchItem]

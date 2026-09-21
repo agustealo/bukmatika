@@ -217,7 +217,10 @@ async def acquire_asset(
     try:
         return await service.enqueue(asset_id)
     except AssetNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Asset not found",
+        ) from exc
     except AcquisitionStateConflict as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

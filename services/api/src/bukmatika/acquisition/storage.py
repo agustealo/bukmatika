@@ -2,6 +2,7 @@ import asyncio
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 from uuid import UUID
 
 
@@ -14,7 +15,7 @@ class StoredFile:
 class LocalObjectStore:
     """Content-addressed local storage with atomic finalization."""
 
-    _formats = {"DOC", "DOCX", "EPUB", "HTML", "PDF", "TXT"}
+    _formats: ClassVar[frozenset[str]] = frozenset({"DOC", "DOCX", "EPUB", "HTML", "PDF", "TXT"})
 
     def __init__(self, root: Path) -> None:
         self._root = root
@@ -23,8 +24,7 @@ class LocalObjectStore:
         incoming = self._root / "incoming"
         await asyncio.to_thread(incoming.mkdir, parents=True, exist_ok=True)
         path = incoming / f"{acquisition_id}.part"
-        if path.exists():
-            await asyncio.to_thread(path.unlink)
+        await self.discard(path)
         return path
 
     async def commit(self, temp_path: Path, *, sha256: str, format_name: str) -> StoredFile:
@@ -33,7 +33,7 @@ class LocalObjectStore:
         relative = Path("objects") / sha256[:2] / sha256[2:4] / sha256
         destination = self._root / relative
         await asyncio.to_thread(destination.parent.mkdir, parents=True, exist_ok=True)
-        if destination.exists():
+        if await asyncio.to_thread(destination.exists):
             await self.discard(temp_path)
         else:
             await asyncio.to_thread(os.replace, temp_path, destination)
@@ -44,11 +44,12 @@ class LocalObjectStore:
         await asyncio.to_thread(quarantine_dir.mkdir, parents=True, exist_ok=True)
         relative = Path("quarantine") / f"{acquisition_id}.bin"
         destination = self._root / relative
-        if destination.exists():
-            await asyncio.to_thread(destination.unlink)
+        await self.discard(destination)
         await asyncio.to_thread(os.replace, temp_path, destination)
         return relative.as_posix()
 
     async def discard(self, path: Path) -> None:
-        if path.exists():
+        try:
             await asyncio.to_thread(path.unlink)
+        except FileNotFoundError:
+            return

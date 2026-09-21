@@ -18,9 +18,8 @@ from sqlalchemy import (
     select,
     update,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 

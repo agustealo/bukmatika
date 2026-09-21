@@ -14,14 +14,7 @@ class StoredFile:
 class LocalObjectStore:
     """Content-addressed local storage with atomic finalization."""
 
-    _extensions = {
-        "DOC": "doc",
-        "DOCX": "docx",
-        "EPUB": "epub",
-        "HTML": "html",
-        "PDF": "pdf",
-        "TXT": "txt",
-    }
+    _formats = {"DOC", "DOCX", "EPUB", "HTML", "PDF", "TXT"}
 
     def __init__(self, root: Path) -> None:
         self._root = root
@@ -35,10 +28,9 @@ class LocalObjectStore:
         return path
 
     async def commit(self, temp_path: Path, *, sha256: str, format_name: str) -> StoredFile:
-        extension = self._extensions.get(format_name.upper())
-        if extension is None:
+        if format_name.upper() not in self._formats:
             raise ValueError(f"Unsupported stored format: {format_name}")
-        relative = Path("objects") / sha256[:2] / sha256[2:4] / f"{sha256}.{extension}"
+        relative = Path("objects") / sha256[:2] / sha256[2:4] / sha256
         destination = self._root / relative
         await asyncio.to_thread(destination.parent.mkdir, parents=True, exist_ok=True)
         if destination.exists():

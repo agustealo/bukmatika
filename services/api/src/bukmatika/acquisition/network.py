@@ -42,10 +42,18 @@ def _resolve_public_https_sync(url: str) -> PinnedTarget:
         raise UnsafeRemoteURL("Acquisition URL has an empty hostname")
     if "%" in host:
         raise UnsafeRemoteURL("IPv6 zone identifiers are not permitted")
+
     try:
-        ascii_host = host.encode("idna").decode("ascii")
-    except UnicodeError as exc:
-        raise UnsafeRemoteURL("Acquisition hostname is not valid IDNA") from exc
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        ascii_host = str(literal)
+    else:
+        try:
+            ascii_host = host.encode("idna").decode("ascii")
+        except UnicodeError as exc:
+            raise UnsafeRemoteURL("Acquisition hostname is not valid IDNA") from exc
 
     addresses = _resolve_addresses(ascii_host, port)
     unsafe = [address for address in addresses if not address.is_global]
@@ -63,9 +71,10 @@ def _resolve_public_https_sync(url: str) -> PinnedTarget:
         query=parts.query,
         fragment="",
     )
+    host_is_ipv6 = literal is not None and literal.version == 6
     original_parts = SplitResult(
         scheme="https",
-        netloc=_netloc(ascii_host, ":" in ascii_host),
+        netloc=_netloc(ascii_host, host_is_ipv6),
         path=parts.path or "/",
         query=parts.query,
         fragment="",
@@ -73,7 +82,7 @@ def _resolve_public_https_sync(url: str) -> PinnedTarget:
     return PinnedTarget(
         original_url=urlunsplit(original_parts),
         request_url=urlunsplit(request_parts),
-        host_header=_netloc(ascii_host, ":" in ascii_host),
+        host_header=_netloc(ascii_host, host_is_ipv6),
         sni_hostname=ascii_host,
         resolved_ip=str(resolved),
     )

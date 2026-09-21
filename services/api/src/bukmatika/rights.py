@@ -2,7 +2,6 @@ from dataclasses import dataclass
 
 from bukmatika.domain import RightsEvidence, RightsState
 
-
 _AUTO_ACQUIRE = {
     RightsState.PUBLIC_DOMAIN,
     RightsState.OPEN_LICENSE,

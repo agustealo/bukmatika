@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     acquisition_max_bytes: int = Field(default=536_870_912, ge=1, le=2_147_483_648)
     acquisition_redirect_limit: int = Field(default=5, ge=0, le=10)
     acquisition_chunk_size: int = Field(default=262_144, ge=16_384, le=4_194_304)
+    acquisition_max_attempts: int = Field(default=3, ge=1, le=10)
+    acquisition_retry_base_seconds: float = Field(default=2.0, gt=0, le=60)
+    acquisition_retry_max_seconds: float = Field(default=60.0, gt=0, le=600)
+    acquisition_worker_enabled: bool = True
+    acquisition_worker_poll_seconds: float = Field(default=0.5, gt=0, le=30)
+    acquisition_job_lease_seconds: float = Field(default=180.0, ge=30, le=3600)
+    acquisition_job_heartbeat_seconds: float = Field(default=30.0, ge=5, le=300)
     archive_max_members: int = Field(default=20_000, ge=1, le=100_000)
     archive_max_uncompressed_bytes: int = Field(
         default=2_147_483_648,

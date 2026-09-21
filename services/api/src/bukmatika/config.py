@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,6 +22,18 @@ class Settings(BaseSettings):
     discovery_provider_result_limit: int = Field(default=32, ge=1, le=100)
     discovery_max_records: int = Field(default=96, ge=1, le=300)
     catalog_search_default_limit: int = Field(default=20, ge=1, le=100)
+    acquisition_timeout_seconds: float = Field(default=60.0, gt=0, le=300)
+    acquisition_max_bytes: int = Field(default=536_870_912, ge=1, le=2_147_483_648)
+    acquisition_redirect_limit: int = Field(default=5, ge=0, le=10)
+    acquisition_chunk_size: int = Field(default=262_144, ge=16_384, le=4_194_304)
+    archive_max_members: int = Field(default=20_000, ge=1, le=100_000)
+    archive_max_uncompressed_bytes: int = Field(
+        default=2_147_483_648,
+        ge=1,
+        le=8_589_934_592,
+    )
+    archive_max_compression_ratio: float = Field(default=200.0, gt=1, le=10_000)
+    storage_root: Path = Path(".bukmatika/storage")
     user_agent: str = "Bukmatika/0.1 (+https://github.com/agustealo/bukmatika)"
     contact_email: str | None = None
     web_origin: str = "http://localhost:3000"

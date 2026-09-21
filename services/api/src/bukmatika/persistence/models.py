@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -77,7 +78,6 @@ class Edition(Base, TimestampMixin):
 class Asset(Base, TimestampMixin):
     __tablename__ = "assets"
     __table_args__ = (
-        UniqueConstraint("sha256", name="uq_assets_sha256"),
         UniqueConstraint("edition_id", "remote_url", name="uq_assets_edition_remote_url"),
         CheckConstraint("byte_size IS NULL OR byte_size >= 0", name="ck_assets_nonnegative_size"),
     )
@@ -89,7 +89,9 @@ class Asset(Base, TimestampMixin):
     format: Mapped[str] = mapped_column(String(32), nullable=False)
     media_type: Mapped[str | None] = mapped_column(String(255))
     remote_url: Mapped[str | None] = mapped_column(Text)
-    sha256: Mapped[str | None] = mapped_column(String(64))
+    stored_object_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("stored_objects.id", ondelete="SET NULL")
+    )
     byte_size: Mapped[int | None] = mapped_column(BigInteger)
 
 
@@ -265,6 +267,19 @@ class RightsEvidenceRecord(Base):
     )
 
 
+class RightsEvidenceSubject(Base):
+    __tablename__ = "rights_evidence_subjects"
+    __table_args__ = (Index("ix_rights_evidence_subject", "subject_type", "subject_id"),)
+
+    rights_evidence_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("rights_evidence.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    subject_type: Mapped[str] = mapped_column(String(32), primary_key=True)
+    subject_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+
+
 class RightsDecision(Base):
     __tablename__ = "rights_decisions"
     __table_args__ = (Index("ix_rights_decisions_subject", "subject_type", "subject_id"),)
@@ -295,6 +310,69 @@ class RightsDecisionEvidence(Base):
         ForeignKey("rights_evidence.id", ondelete="RESTRICT"),
         primary_key=True,
     )
+
+
+class StoredObject(Base):
+    __tablename__ = "stored_objects"
+    __table_args__ = (
+        UniqueConstraint("sha256", name="uq_stored_objects_sha256"),
+        UniqueConstraint("storage_key", name="uq_stored_objects_storage_key"),
+        CheckConstraint("byte_size >= 0", name="ck_stored_objects_nonnegative_size"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False)
+    byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    media_type: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Acquisition(Base, TimestampMixin):
+    __tablename__ = "acquisitions"
+    __table_args__ = (
+        UniqueConstraint("asset_id", name="uq_acquisition_asset"),
+        CheckConstraint(
+            (
+                "status IN ('queued','resolving','downloading','verifying',"
+                "'stored','failed','quarantined')"
+            ),
+            name="ck_acquisition_status",
+        ),
+        CheckConstraint("attempt_count >= 0", name="ck_acquisition_attempt_count"),
+        CheckConstraint(
+            "bytes_received IS NULL OR bytes_received >= 0",
+            name="ck_acquisition_bytes_received",
+        ),
+        CheckConstraint("redirect_count >= 0", name="ck_acquisition_redirect_count"),
+        Index("ix_acquisitions_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    asset_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("assets.id", ondelete="RESTRICT"), nullable=False
+    )
+    rights_decision_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("rights_decisions.id", ondelete="SET NULL")
+    )
+    stored_object_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("stored_objects.id", ondelete="SET NULL")
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    remote_url: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_format: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    bytes_received: Mapped[int | None] = mapped_column(BigInteger)
+    redirect_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    media_type: Mapped[str | None] = mapped_column(String(255))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_detail: Mapped[str | None] = mapped_column(Text)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class LibraryEntry(Base, TimestampMixin):

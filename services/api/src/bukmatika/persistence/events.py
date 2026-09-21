@@ -13,6 +13,11 @@ class SemanticEventType(StrEnum):
     DISCOVERY_SEARCH_FAILED = "discovery.search_failed"
     CATALOG_SEARCH_SUBMITTED = "catalog.search_submitted"
     CATALOG_SEARCH_COMPLETED = "catalog.search_completed"
+    ACQUISITION_REQUESTED = "acquisition.requested"
+    ACQUISITION_DENIED = "acquisition.denied"
+    ACQUISITION_FAILED = "acquisition.failed"
+    ACQUISITION_QUARANTINED = "acquisition.quarantined"
+    ACQUISITION_STORED = "acquisition.stored"
 
 
 class InteractionEventRepository:

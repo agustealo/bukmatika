@@ -2,7 +2,8 @@ from bukmatika.discovery.internet_archive import InternetArchiveAdapter
 from bukmatika.domain import RightsState
 
 
-def test_internet_archive_exact_metadata_exposes_supported_assets_without_authorizing_them() -> None:
+def test_internet_archive_exact_metadata_exposes_supported_assets_without_authorizing_them(
+) -> None:
     record = InternetArchiveAdapter._record(
         {"identifier": "example-book", "title": "Example Book"},
         {

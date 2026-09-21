@@ -1,7 +1,7 @@
 import asyncio
 import re
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import quote
 
 import httpx
@@ -23,7 +23,7 @@ class InternetArchiveAdapter:
     search_endpoint = "https://archive.org/advancedsearch.php"
     metadata_endpoint = "https://archive.org/metadata"
     parser_version = "internet-archive-v1"
-    _supported_extensions = {
+    _supported_extensions: ClassVar[dict[str, str]] = {
         ".doc": "DOC",
         ".docx": "DOCX",
         ".epub": "EPUB",
@@ -32,7 +32,7 @@ class InternetArchiveAdapter:
         ".pdf": "PDF",
         ".txt": "TXT",
     }
-    _media_types = {
+    _media_types: ClassVar[dict[str, str]] = {
         ".doc": "application/msword",
         ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ".epub": "application/epub+zip",

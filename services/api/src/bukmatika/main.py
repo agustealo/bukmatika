@@ -24,7 +24,9 @@ from bukmatika.acquisition.jobs import (
 from bukmatika.acquisition.storage import LocalObjectStore
 from bukmatika.catalog import CatalogResolver
 from bukmatika.config import get_settings
+from bukmatika.discovery.gutenberg import ProjectGutenbergAdapter
 from bukmatika.discovery.internet_archive import InternetArchiveAdapter
+from bukmatika.discovery.library_of_congress import LibraryOfCongressAdapter
 from bukmatika.discovery.openlibrary import OpenLibraryAdapter
 from bukmatika.discovery.registry import ProviderRegistration, ProviderRegistry
 from bukmatika.discovery.service import DiscoveryService
@@ -57,6 +59,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             ),
             ProviderRegistration(
                 adapter=InternetArchiveAdapter(discovery_client, settings),
+                max_results=settings.discovery_provider_result_limit,
+                timeout_seconds=settings.http_timeout_seconds,
+            ),
+            ProviderRegistration(
+                adapter=ProjectGutenbergAdapter(discovery_client, settings),
+                max_results=settings.discovery_provider_result_limit,
+                timeout_seconds=settings.http_timeout_seconds,
+            ),
+            ProviderRegistration(
+                adapter=LibraryOfCongressAdapter(discovery_client, settings),
                 max_results=settings.discovery_provider_result_limit,
                 timeout_seconds=settings.http_timeout_seconds,
             ),

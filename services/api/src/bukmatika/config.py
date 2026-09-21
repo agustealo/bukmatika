@@ -1,0 +1,25 @@
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="BUKMATIKA_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    app_name: str = "Bukmatika API"
+    environment: str = "development"
+    http_timeout_seconds: float = Field(default=12.0, gt=0, le=60)
+    source_concurrency: int = Field(default=4, ge=1, le=16)
+    user_agent: str = "Bukmatika/0.1 (+https://github.com/agustealo/bukmatika)"
+    contact_email: str | None = None
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

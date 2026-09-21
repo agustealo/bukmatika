@@ -31,6 +31,9 @@ def test_gutenberg_opds_acquisition_links_map_to_authorized_assets() -> None:
     assert candidate.subjects == ["History"]
     assert candidate.formats == ["EPUB", "TXT"]
     assert candidate.rights[0].state is RightsState.AUTHORIZED_DOWNLOAD
+    assert all(
+        asset.rights[0].state is RightsState.AUTHORIZED_DOWNLOAD for asset in candidate.assets
+    )
 
 
 def test_gutenberg_entry_without_supported_acquisition_stays_unknown() -> None:

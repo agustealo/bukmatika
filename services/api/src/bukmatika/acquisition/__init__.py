@@ -1,7 +1,12 @@
 """Fail-closed lawful acquisition authority."""
 
-from bukmatika.acquisition.domain import AcquisitionResponse, AcquisitionStatus
+from bukmatika.acquisition.domain import (
+    AcquisitionJobResponse,
+    AcquisitionResponse,
+    AcquisitionStatus,
+)
 from bukmatika.acquisition.service import (
+    AcquisitionCancelled,
     AcquisitionDenied,
     AcquisitionExecutionError,
     AcquisitionService,
@@ -9,8 +14,10 @@ from bukmatika.acquisition.service import (
 )
 
 __all__ = [
+    "AcquisitionCancelled",
     "AcquisitionDenied",
     "AcquisitionExecutionError",
+    "AcquisitionJobResponse",
     "AcquisitionResponse",
     "AcquisitionService",
     "AcquisitionStatus",

@@ -12,6 +12,22 @@ jobs:
   api:
     name: API quality
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: bukmatika
+          POSTGRES_PASSWORD: bukmatika
+          POSTGRES_DB: bukmatika
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bukmatika -d bukmatika"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BUKMATIKA_DATABASE_URL: postgresql+psycopg://bukmatika:bukmatika@localhost:5432/bukmatika
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,6 +40,8 @@ jobs:
         run: ruff check services/api
       - name: MyPy
         run: mypy services/api/src
+      - name: Migrate database
+        run: alembic -c services/api/alembic.ini upgrade head
       - name: Tests
         run: pytest -q services/api/tests
 

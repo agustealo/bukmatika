@@ -2,7 +2,7 @@ import asyncio
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Protocol, runtime_checkable
 from uuid import UUID
 
 
@@ -10,6 +10,19 @@ from uuid import UUID
 class StoredFile:
     storage_key: str
     path: Path
+
+
+@runtime_checkable
+class AcquisitionObjectStore(Protocol):
+    """Storage contract required by the acquisition pipeline."""
+
+    async def create_temp_path(self, acquisition_id: UUID) -> Path: ...
+
+    async def commit(self, temp_path: Path, *, sha256: str, format_name: str) -> StoredFile: ...
+
+    async def quarantine(self, temp_path: Path, acquisition_id: UUID) -> str: ...
+
+    async def discard(self, path: Path) -> None: ...
 
 
 class LocalObjectStore:

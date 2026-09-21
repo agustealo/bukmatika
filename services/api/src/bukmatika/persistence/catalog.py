@@ -14,6 +14,7 @@ from bukmatika.persistence.models import (
     Identifier,
     MetadataAssertion,
     RightsEvidenceRecord,
+    RightsEvidenceSubject,
     SourceObservation,
     SourceRecord,
     SourceRecordLink,
@@ -350,7 +351,7 @@ class CatalogRepository:
         evidence_url: str | None,
         license_uri: str | None,
         confidence: float,
-    ) -> None:
+    ) -> RightsEvidenceRecord:
         digest_payload = {
             "source_observation_id": str(source_observation_id),
             "state": state,
@@ -377,5 +378,25 @@ class CatalogRepository:
                 constraint="uq_rights_evidence_digest",
                 set_={"confidence": confidence},
             )
+            .returning(RightsEvidenceRecord)
+        )
+        result = await self._session.execute(statement.execution_options(populate_existing=True))
+        return result.scalar_one()
+
+    async def link_rights_evidence(
+        self,
+        *,
+        rights_evidence_id: UUID,
+        subject_type: str,
+        subject_id: UUID,
+    ) -> None:
+        statement = (
+            insert(RightsEvidenceSubject)
+            .values(
+                rights_evidence_id=rights_evidence_id,
+                subject_type=subject_type,
+                subject_id=subject_id,
+            )
+            .on_conflict_do_nothing()
         )
         await self._session.execute(statement)

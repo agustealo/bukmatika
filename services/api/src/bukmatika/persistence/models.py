@@ -335,7 +335,10 @@ class Acquisition(Base, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("asset_id", name="uq_acquisition_asset"),
         CheckConstraint(
-            "status IN ('queued','resolving','downloading','verifying','stored','failed','quarantined')",
+            (
+                "status IN ('queued','resolving','downloading','verifying',"
+                "'stored','failed','quarantined')"
+            ),
             name="ck_acquisition_status",
         ),
         CheckConstraint("attempt_count >= 0", name="ck_acquisition_attempt_count"),

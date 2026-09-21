@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 import httpx
 from fastapi import Depends, FastAPI, Request
@@ -49,6 +50,6 @@ def discovery_service(request: Request) -> DiscoveryService:
 @app.post("/v1/discover", response_model=DiscoveryResponse)
 async def discover(
     intent: SearchIntent,
-    service: DiscoveryService = Depends(discovery_service),
+    service: Annotated[DiscoveryService, Depends(discovery_service)],
 ) -> DiscoveryResponse:
     return await service.search(intent)

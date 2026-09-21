@@ -1,8 +1,11 @@
 import asyncio
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from uuid import UUID
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.acquisition.domain import AcquisitionResponse, AcquisitionStatus
 from bukmatika.acquisition.downloader import DownloadTooLarge, RemoteDownloadError, SafeDownloader
@@ -16,6 +19,8 @@ from bukmatika.persistence.acquisition import AcquisitionRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.models import RightsEvidenceRecord
 from bukmatika.rights import RightsEngine
+
+SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
 
 class AssetNotFound(LookupError):
@@ -57,11 +62,14 @@ class AcquisitionService:
         downloader: SafeDownloader,
         storage: LocalObjectStore,
         settings: Settings,
+        *,
+        session_scope_factory: SessionScopeFactory = session_scope,
     ) -> None:
         self._downloader = downloader
         self._storage = storage
         self._settings = settings
         self._rights = RightsEngine()
+        self._session_scope = session_scope_factory
 
     async def acquire(self, asset_id: UUID) -> AcquisitionResponse:
         authorized = await self._authorize(asset_id)
@@ -96,7 +104,7 @@ class AcquisitionService:
             )
             raise AcquisitionExecutionError("REMOTE_DOWNLOAD_FAILED", str(exc)) from exc
 
-        async with session_scope() as database_session:
+        async with self._session_scope() as database_session:
             await AcquisitionRepository(database_session).mark_verifying(
                 authorized.acquisition_id,
                 bytes_received=result.byte_size,
@@ -121,7 +129,7 @@ class AcquisitionService:
                 authorized.acquisition_id,
             )
             detail = f"{exc}; quarantine={quarantine_key}"
-            async with session_scope() as database_session:
+            async with self._session_scope() as database_session:
                 repository = AcquisitionRepository(database_session)
                 await repository.mark_quarantined(
                     authorized.acquisition_id,
@@ -154,7 +162,7 @@ class AcquisitionService:
             )
             raise AcquisitionExecutionError("STORAGE_FAILED", str(exc)) from exc
 
-        async with session_scope() as database_session:
+        async with self._session_scope() as database_session:
             repository = AcquisitionRepository(database_session)
             stored_object = await repository.upsert_stored_object(
                 sha256=result.sha256,
@@ -193,7 +201,7 @@ class AcquisitionService:
     async def _authorize(self, asset_id: UUID) -> _AuthorizedAttempt | AcquisitionResponse:
         denied: AcquisitionDenied | None = None
         authorized: _AuthorizedAttempt | None = None
-        async with session_scope() as database_session:
+        async with self._session_scope() as database_session:
             repository = AcquisitionRepository(database_session)
             asset = await repository.get_asset(asset_id)
             if asset is None:
@@ -282,7 +290,7 @@ class AcquisitionService:
         error_code: str,
         detail: str,
     ) -> None:
-        async with session_scope() as database_session:
+        async with self._session_scope() as database_session:
             repository = AcquisitionRepository(database_session)
             await repository.mark_failed(
                 authorized.acquisition_id,

@@ -6,18 +6,20 @@ import httpx
 from pydantic import HttpUrl
 
 from bukmatika.config import Settings
+from bukmatika.discovery.base import DiscoveredRecord
 from bukmatika.domain import DiscoveryCandidate, RightsEvidence, RightsState, SearchIntent
 
 
 class OpenLibraryAdapter:
     name = "open_library"
     endpoint = "https://openlibrary.org/search.json"
+    parser_version = "open-library-v1"
 
     def __init__(self, client: httpx.AsyncClient, settings: Settings) -> None:
         self._client = client
         self._settings = settings
 
-    async def search(self, intent: SearchIntent) -> list[DiscoveryCandidate]:
+    async def search(self, intent: SearchIntent) -> list[DiscoveredRecord]:
         response = await self._client.get(
             self.endpoint,
             params=self._params(intent),
@@ -29,7 +31,20 @@ class OpenLibraryAdapter:
         docs = payload.get("docs", [])
         if not isinstance(docs, list):
             return []
-        return [candidate for row in docs if (candidate := self._candidate(row)) is not None]
+
+        records: list[DiscoveredRecord] = []
+        for row in docs:
+            candidate = self._candidate(row)
+            if candidate is None or not isinstance(row, Mapping):
+                continue
+            records.append(
+                DiscoveredRecord(
+                    candidate=candidate,
+                    source_payload={str(key): value for key, value in row.items()},
+                    parser_version=self.parser_version,
+                )
+            )
+        return records
 
     def _headers(self) -> dict[str, str]:
         user_agent = self._settings.user_agent
@@ -78,10 +93,12 @@ class OpenLibraryAdapter:
         return DiscoveryCandidate(
             source=cls.name,
             source_record_id=key,
+            record_kind="work",
             work_key=f"openlibrary:{key.removeprefix('/')}",
             edition_keys=[
                 f"openlibrary:{value}" for value in cls._strings(row.get("edition_key"))
             ],
+            identifiers={"openlibrary_work": [key.removeprefix("/works/")]},
             title=title,
             authors=cls._strings(row.get("author_name")),
             first_publish_year=cls._integer(row.get("first_publish_year")),
@@ -151,6 +168,8 @@ class OpenLibraryAdapter:
 
     @staticmethod
     def _strings(value: object) -> list[str]:
+        if isinstance(value, str):
+            return [value.strip()] if value.strip() else []
         if not isinstance(value, list):
             return []
         return [item.strip() for item in value if isinstance(item, str) and item.strip()]

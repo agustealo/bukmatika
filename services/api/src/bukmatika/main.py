@@ -6,10 +6,14 @@ import httpx
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from bukmatika.catalog import CatalogResolver
 from bukmatika.config import get_settings
+from bukmatika.discovery.internet_archive import InternetArchiveAdapter
 from bukmatika.discovery.openlibrary import OpenLibraryAdapter
 from bukmatika.discovery.service import DiscoveryService
 from bukmatika.domain import DiscoveryResponse, SearchIntent
+from bukmatika.persistence import session_scope
+from bukmatika.persistence.catalog import CatalogRepository
 
 settings = get_settings()
 
@@ -18,7 +22,12 @@ settings = get_settings()
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     client = httpx.AsyncClient(follow_redirects=False)
     app.state.http_client = client
-    app.state.discovery = DiscoveryService([OpenLibraryAdapter(client, settings)])
+    app.state.discovery = DiscoveryService(
+        [
+            OpenLibraryAdapter(client, settings),
+            InternetArchiveAdapter(client, settings),
+        ]
+    )
     yield
     await client.aclose()
 
@@ -50,4 +59,6 @@ async def discover(
     intent: SearchIntent,
     service: Annotated[DiscoveryService, Depends(discovery_service)],
 ) -> DiscoveryResponse:
-    return await service.search(intent)
+    async with session_scope() as session:
+        resolver = CatalogResolver(CatalogRepository(session))
+        return await service.search(intent, resolver)

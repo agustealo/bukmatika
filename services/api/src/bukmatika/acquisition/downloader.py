@@ -18,6 +18,10 @@ class DownloadTooLarge(RemoteDownloadError):
     pass
 
 
+class DownloadCancelled(RemoteDownloadError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class DownloadResult:
     temp_path: Path
@@ -29,6 +33,7 @@ class DownloadResult:
 
 
 TargetResolver = Callable[[str], Awaitable[PinnedTarget]]
+CancellationProbe = Callable[[], Awaitable[bool]]
 
 
 class SafeDownloader:
@@ -50,11 +55,19 @@ class SafeDownloader:
         self._timeout_seconds = timeout_seconds
         self._user_agent = user_agent
         self._resolver = resolver
+        self._cancel_check_bytes = max(chunk_size, 1_048_576)
 
-    async def download(self, url: str, temp_path: Path) -> DownloadResult:
+    async def download(
+        self,
+        url: str,
+        temp_path: Path,
+        *,
+        cancellation_probe: CancellationProbe | None = None,
+    ) -> DownloadResult:
         current_url = url
         redirects = 0
         while True:
+            await _raise_if_cancelled(cancellation_probe)
             target = await self._resolver(current_url)
             headers = {
                 "Accept": "*/*",
@@ -95,6 +108,7 @@ class SafeDownloader:
                     media_type=media_type,
                     final_url=target.original_url,
                     redirects=redirects,
+                    cancellation_probe=cancellation_probe,
                 )
 
     async def _stream_body(
@@ -105,9 +119,11 @@ class SafeDownloader:
         media_type: str | None,
         final_url: str,
         redirects: int,
+        cancellation_probe: CancellationProbe | None,
     ) -> DownloadResult:
         digest = hashlib.sha256()
         total = 0
+        next_cancel_check = self._cancel_check_bytes
         handle = temp_path.open("wb")
         try:
             async for chunk in response.aiter_bytes(chunk_size=self._chunk_size):
@@ -116,8 +132,12 @@ class SafeDownloader:
                 total += len(chunk)
                 if total > self._max_bytes:
                     raise DownloadTooLarge("Acquisition stream exceeded configured byte limit")
+                if total >= next_cancel_check:
+                    await _raise_if_cancelled(cancellation_probe)
+                    next_cancel_check = total + self._cancel_check_bytes
                 digest.update(chunk)
                 await asyncio.to_thread(handle.write, chunk)
+            await _raise_if_cancelled(cancellation_probe)
             await asyncio.to_thread(handle.flush)
         finally:
             await asyncio.to_thread(handle.close)
@@ -132,6 +152,11 @@ class SafeDownloader:
             final_url=final_url,
             redirect_count=redirects,
         )
+
+
+async def _raise_if_cancelled(probe: CancellationProbe | None) -> None:
+    if probe is not None and await probe():
+        raise DownloadCancelled("Acquisition was cancelled")
 
 
 def _content_length(value: str | None) -> int | None:

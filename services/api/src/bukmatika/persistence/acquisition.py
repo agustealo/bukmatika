@@ -23,6 +23,8 @@ class AcquisitionStateConflict(RuntimeError):
 class AcquisitionRepository:
     """Durable authority for exact-asset acquisition state and stored content."""
 
+    _active_states = ("resolving", "downloading", "verifying")
+
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
@@ -31,6 +33,11 @@ class AcquisitionRepository:
 
     async def get_acquisition(self, acquisition_id: UUID) -> Acquisition | None:
         return await self._session.get(Acquisition, acquisition_id)
+
+    async def get_acquisition_for_asset(self, asset_id: UUID) -> Acquisition | None:
+        return await self._session.scalar(
+            select(Acquisition).where(Acquisition.asset_id == asset_id)
+        )
 
     async def get_stored_object(self, stored_object_id: UUID) -> StoredObject | None:
         return await self._session.get(StoredObject, stored_object_id)
@@ -81,7 +88,7 @@ class AcquisitionRepository:
             update(Acquisition)
             .where(
                 Acquisition.id == acquisition_id,
-                Acquisition.status.in_(("queued", "failed")),
+                Acquisition.status.in_(("queued", "failed", "cancelled")),
             )
             .values(
                 status="resolving",
@@ -108,6 +115,53 @@ class AcquisitionRepository:
             raise AcquisitionStateConflict(
                 f"Acquisition {acquisition_id} cannot start from state {status}"
             )
+        return acquisition
+
+    async def request_cancel(self, acquisition_id: UUID) -> Acquisition:
+        acquisition = await self._session.scalar(
+            select(Acquisition).where(Acquisition.id == acquisition_id).with_for_update()
+        )
+        if acquisition is None:
+            raise AcquisitionStateConflict(f"Acquisition {acquisition_id} does not exist")
+        if acquisition.status in {"stored", "quarantined"}:
+            return acquisition
+
+        acquisition.cancel_requested = True
+        acquisition.updated_at = func.now()
+        if acquisition.status in {"queued", "failed", "cancelled"}:
+            acquisition.status = "cancelled"
+            acquisition.error_code = "CANCELLED"
+            acquisition.error_detail = "Acquisition was cancelled by the user."
+            acquisition.completed_at = func.now()
+        await self._session.flush()
+        return acquisition
+
+    async def is_cancel_requested(self, acquisition_id: UUID) -> bool:
+        value = await self._session.scalar(
+            select(Acquisition.cancel_requested).where(Acquisition.id == acquisition_id)
+        )
+        return bool(value)
+
+    async def recover_expired_attempt(self, asset_id: UUID) -> Acquisition | None:
+        acquisition = await self._session.scalar(
+            select(Acquisition)
+            .where(Acquisition.asset_id == asset_id)
+            .with_for_update()
+        )
+        if acquisition is None or acquisition.status not in self._active_states:
+            return acquisition
+
+        acquisition.completed_at = func.now()
+        acquisition.updated_at = func.now()
+        if acquisition.cancel_requested:
+            acquisition.status = "cancelled"
+            acquisition.error_code = "CANCELLED"
+            acquisition.error_detail = "Cancelled while the previous worker lease expired."
+        else:
+            acquisition.status = "failed"
+            acquisition.error_code = "WORKER_LEASE_EXPIRED"
+            acquisition.error_detail = "Previous acquisition worker lease expired."
+        await self._session.flush()
         return acquisition
 
     async def record_rights_decision(
@@ -202,6 +256,17 @@ class AcquisitionRepository:
         if acquisition is None:
             raise AcquisitionStateConflict(f"Acquisition {acquisition_id} does not exist")
         return acquisition
+
+    async def mark_cancelled(self, acquisition_id: UUID) -> Acquisition:
+        return await self._transition(
+            acquisition_id,
+            from_states=("queued", "resolving", "downloading", "verifying", "failed"),
+            status="cancelled",
+            cancel_requested=True,
+            error_code="CANCELLED",
+            error_detail="Acquisition was cancelled by the user.",
+            completed_at=func.now(),
+        )
 
     async def mark_quarantined(
         self,

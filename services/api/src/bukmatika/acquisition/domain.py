@@ -12,6 +12,7 @@ class AcquisitionStatus(StrEnum):
     STORED = "stored"
     FAILED = "failed"
     QUARANTINED = "quarantined"
+    CANCELLED = "cancelled"
 
 
 class AcquisitionResponse(BaseModel):
@@ -24,3 +25,11 @@ class AcquisitionResponse(BaseModel):
     media_type: str | None = None
     storage_key: str | None = None
     error_code: str | None = None
+
+
+class AcquisitionJobResponse(BaseModel):
+    acquisition_id: UUID
+    asset_id: UUID
+    job_id: UUID | None = None
+    acquisition_status: AcquisitionStatus
+    job_status: str

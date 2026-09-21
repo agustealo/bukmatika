@@ -337,7 +337,7 @@ class Acquisition(Base, TimestampMixin):
         CheckConstraint(
             (
                 "status IN ('queued','resolving','downloading','verifying',"
-                "'stored','failed','quarantined')"
+                "'stored','failed','quarantined','cancelled')"
             ),
             name="ck_acquisition_status",
         ),

@@ -31,6 +31,7 @@ def test_internet_archive_exact_metadata_exposes_supported_assets_without_author
     assert record.candidate.formats == ["PDF"]
     assert record.candidate.assets[0].size_bytes == 1234
     assert record.candidate.rights[0].state is RightsState.UNKNOWN
+    assert record.candidate.assets[0].rights[0].state is RightsState.UNKNOWN
 
 
 def test_internet_archive_restricted_item_outranks_file_presence() -> None:
@@ -49,6 +50,7 @@ def test_internet_archive_restricted_item_outranks_file_presence() -> None:
     assert record is not None
     assert record.candidate.assets
     assert record.candidate.rights[0].state is RightsState.RESTRICTED
+    assert record.candidate.assets[0].rights[0].state is RightsState.RESTRICTED
 
 
 def test_internet_archive_recognized_creative_commons_uri_is_open_license_evidence() -> None:
@@ -59,9 +61,10 @@ def test_internet_archive_recognized_creative_commons_uri_is_open_license_eviden
                 "title": "Open Book",
                 "licenseurl": "https://creativecommons.org/licenses/by/4.0/",
             },
-            "files": [],
+            "files": [{"name": "open-book.epub", "format": "EPUB"}],
         },
     )
 
     assert record is not None
     assert record.candidate.rights[0].state is RightsState.OPEN_LICENSE
+    assert record.candidate.assets[0].rights[0].state is RightsState.OPEN_LICENSE

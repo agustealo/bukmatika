@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
@@ -48,18 +48,32 @@ class SearchIntent(BaseModel):
             raise ValueError("year_from cannot be greater than year_to")
 
 
+class DiscoveredAsset(BaseModel):
+    name: str
+    url: HttpUrl
+    format: str
+    media_type: str | None = None
+    size_bytes: int | None = Field(default=None, ge=0)
+    source_kind: str | None = None
+    checksums: dict[str, str] = Field(default_factory=dict)
+
+
 class DiscoveryCandidate(BaseModel):
     source: str
     source_record_id: str
+    record_kind: Literal["work", "edition"] = "work"
     work_key: str
     edition_keys: list[str] = Field(default_factory=list)
+    identifiers: dict[str, list[str]] = Field(default_factory=dict)
     title: str
     authors: list[str] = Field(default_factory=list)
     first_publish_year: int | None = None
+    publisher: str | None = None
     languages: list[str] = Field(default_factory=list)
     subjects: list[str] = Field(default_factory=list)
     landing_url: HttpUrl
     formats: list[str] = Field(default_factory=list)
+    assets: list[DiscoveredAsset] = Field(default_factory=list)
     rights: list[RightsEvidence] = Field(default_factory=list)
     source_score: Annotated[float, Field(ge=0, le=1)] = 0.5
 

@@ -61,9 +61,7 @@ class Work(Base, TimestampMixin):
 
 class Edition(Base, TimestampMixin):
     __tablename__ = "editions"
-    __table_args__ = (
-        Index("ix_editions_work_publication_year", "work_id", "publication_year"),
-    )
+    __table_args__ = (Index("ix_editions_work_publication_year", "work_id", "publication_year"),)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     work_id: Mapped[UUID] = mapped_column(
@@ -80,6 +78,7 @@ class Asset(Base, TimestampMixin):
     __tablename__ = "assets"
     __table_args__ = (
         UniqueConstraint("sha256", name="uq_assets_sha256"),
+        UniqueConstraint("edition_id", "remote_url", name="uq_assets_edition_remote_url"),
         CheckConstraint("byte_size IS NULL OR byte_size >= 0", name="ck_assets_nonnegative_size"),
     )
 
@@ -166,6 +165,30 @@ class SourceRecord(Base, TimestampMixin):
     canonical_url: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class SourceRecordLink(Base):
+    __tablename__ = "source_record_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_record_id",
+            "entity_type",
+            "entity_id",
+            "relationship",
+            name="uq_source_record_target",
+        ),
+    )
+
+    source_record_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("source_records.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    entity_type: Mapped[str] = mapped_column(String(32), primary_key=True)
+    entity_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    relationship: Mapped[str] = mapped_column(
+        String(64), primary_key=True, default="describes"
+    )
+
+
 class SourceObservation(Base):
     __tablename__ = "source_observations"
     __table_args__ = (
@@ -219,6 +242,7 @@ class MetadataAssertion(Base):
 class RightsEvidenceRecord(Base):
     __tablename__ = "rights_evidence"
     __table_args__ = (
+        UniqueConstraint("evidence_sha256", name="uq_rights_evidence_digest"),
         CheckConstraint(
             "confidence >= 0 AND confidence <= 1",
             name="ck_rights_evidence_confidence",
@@ -229,6 +253,7 @@ class RightsEvidenceRecord(Base):
     source_observation_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("source_observations.id", ondelete="SET NULL")
     )
+    evidence_sha256: Mapped[str | None] = mapped_column(String(64))
     state: Mapped[str] = mapped_column(String(32), nullable=False)
     source: Mapped[str] = mapped_column(String(255), nullable=False)
     basis: Mapped[str] = mapped_column(Text, nullable=False)

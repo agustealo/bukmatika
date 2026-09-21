@@ -2,7 +2,15 @@ import os
 from collections.abc import AsyncIterator
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+
+from bukmatika.persistence.models import Base
+
+
+async def _clear_application_tables(engine: AsyncEngine) -> None:
+    async with engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            await connection.execute(table.delete())
 
 
 @pytest.fixture
@@ -12,17 +20,11 @@ async def session() -> AsyncIterator[AsyncSession]:
         pytest.skip("PostgreSQL integration URL not configured")
 
     engine = create_async_engine(database_url, pool_pre_ping=True)
-    async with engine.connect() as connection:
-        outer_transaction = await connection.begin()
-        value = AsyncSession(
-            bind=connection,
-            expire_on_commit=False,
-            join_transaction_mode="create_savepoint",
-        )
-        try:
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    await _clear_application_tables(engine)
+    try:
+        async with factory() as value:
             yield value
-        finally:
-            await value.close()
-            if outer_transaction.is_active:
-                await outer_transaction.rollback()
-    await engine.dispose()
+    finally:
+        await _clear_application_tables(engine)
+        await engine.dispose()

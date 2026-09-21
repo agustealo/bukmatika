@@ -1,33 +1,10 @@
-import os
-
-import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.models import InteractionEvent
 from bukmatika.persistence.search import CatalogSearchRepository
-
-DATABASE_URL = os.getenv("BUKMATIKA_DATABASE_URL")
-pytestmark = pytest.mark.skipif(
-    DATABASE_URL is None,
-    reason="PostgreSQL integration URL not configured",
-)
-
-
-@pytest.fixture
-async def session() -> AsyncSession:
-    assert DATABASE_URL is not None
-    engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with factory() as value:
-        try:
-            yield value
-        finally:
-            await value.rollback()
-            await value.close()
-    await engine.dispose()
 
 
 async def test_catalog_search_uses_canonical_title_author_and_subjects(

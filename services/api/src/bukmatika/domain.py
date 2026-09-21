@@ -57,6 +57,7 @@ class DiscoveredAsset(BaseModel):
     size_bytes: int | None = Field(default=None, ge=0)
     source_kind: str | None = None
     checksums: dict[str, str] = Field(default_factory=dict)
+    rights: list[RightsEvidence] = Field(default_factory=list)
 
 
 class DiscoveryCandidate(BaseModel):

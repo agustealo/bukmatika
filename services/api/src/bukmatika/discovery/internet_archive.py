@@ -116,6 +116,7 @@ class InternetArchiveAdapter:
         year = cls._year(metadata) or cls._year(search_row)
         publisher = cls._string(metadata.get("publisher"))
         rights = cls._rights(metadata, item_payload, landing_url)
+        assets = [asset.model_copy(update={"rights": list(rights)}) for asset in assets]
         identifiers = cls._identifiers(identifier, metadata)
 
         source_payload: dict[str, Any] = {

@@ -128,6 +128,7 @@ class ProjectGutenbergAdapter:
                 )
             ]
         )
+        assets = [asset.model_copy(update={"rights": list(rights)}) for asset in assets]
 
         candidate = DiscoveryCandidate(
             source=cls.name,

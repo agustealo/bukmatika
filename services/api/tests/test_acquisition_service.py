@@ -21,7 +21,17 @@ from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.models import Acquisition, Asset, RightsDecision, StoredObject
 
 
-async def _seed_asset(session: AsyncSession, rights_state: RightsState) -> Asset:
+async def _seed_asset(
+    session: AsyncSession,
+    rights_state: RightsState,
+    *,
+    exact_asset_rights: bool = True,
+) -> Asset:
+    evidence = RightsEvidence(
+        state=rights_state,
+        source="provider-test",
+        basis="Test exact-item rights evidence.",
+    )
     resolver = CatalogResolver(CatalogRepository(session))
     await resolver.ingest(
         DiscoveredRecord(
@@ -41,15 +51,10 @@ async def _seed_asset(session: AsyncSession, rights_state: RightsState) -> Asset
                         url=HttpUrl(f"https://files.example.org/{rights_state.value}/book.pdf"),
                         format="PDF",
                         media_type="application/pdf",
+                        rights=[evidence] if exact_asset_rights else [],
                     )
                 ],
-                rights=[
-                    RightsEvidence(
-                        state=rights_state,
-                        source="provider-test",
-                        basis="Test exact-item rights evidence.",
-                    )
-                ],
+                rights=[evidence],
             ),
             source_payload={"rights": rights_state.value},
             parser_version="test-v1",
@@ -128,6 +133,47 @@ async def test_unknown_rights_deny_before_network(
     assert acquisition.error_code == "RIGHTS_DENIED"
     assert decision is not None
     assert decision.permissions["download"] is False
+
+
+async def test_candidate_level_open_license_does_not_authorize_asset(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    asset = await _seed_asset(
+        session,
+        RightsState.OPEN_LICENSE,
+        exact_asset_rights=False,
+    )
+    request_count = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        return httpx.Response(500, request=request)
+
+    async def resolver(url: str) -> PinnedTarget:
+        return _pinned(url)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        service = AcquisitionService(
+            SafeDownloader(
+                client,
+                max_bytes=1024,
+                redirect_limit=1,
+                chunk_size=64,
+                timeout_seconds=5,
+                user_agent="Bukmatika-Test",
+                resolver=resolver,
+            ),
+            LocalObjectStore(tmp_path),
+            Settings(storage_root=tmp_path),
+            session_scope_factory=_scope(session),
+        )
+        with pytest.raises(AcquisitionDenied) as denied:
+            await service.acquire(asset.id)
+
+    assert denied.value.rights_state is RightsState.UNKNOWN
+    assert request_count == 0
 
 
 async def test_open_license_downloads_stores_and_is_idempotent(

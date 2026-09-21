@@ -147,6 +147,7 @@ class LibraryOfCongressAdapter:
         assets = cls._assets(resources)
         restricted = cls._restricted(source, resources)
         rights = cls._rights(source, landing, restricted)
+        assets = [asset.model_copy(update={"rights": list(rights)}) for asset in assets]
         identifiers = cls._identifiers(record_id, source)
 
         candidate = DiscoveryCandidate(

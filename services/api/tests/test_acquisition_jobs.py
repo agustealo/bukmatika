@@ -35,6 +35,11 @@ def _scope(session: AsyncSession):  # type: ignore[no-untyped-def]
 
 
 async def _seed_open_asset(session: AsyncSession, suffix: str) -> Asset:
+    evidence = RightsEvidence(
+        state=RightsState.OPEN_LICENSE,
+        source="provider-jobs",
+        basis="Exact asset is openly licensed for the worker test.",
+    )
     resolver = CatalogResolver(CatalogRepository(session))
     await resolver.ingest(
         DiscoveredRecord(
@@ -54,15 +59,10 @@ async def _seed_open_asset(session: AsyncSession, suffix: str) -> Asset:
                         url=HttpUrl(f"https://files.example.org/{suffix}/book.pdf"),
                         format="PDF",
                         media_type="application/pdf",
+                        rights=[evidence],
                     )
                 ],
-                rights=[
-                    RightsEvidence(
-                        state=RightsState.OPEN_LICENSE,
-                        source="provider-jobs",
-                        basis="Exact asset is openly licensed for the worker test.",
-                    )
-                ],
+                rights=[evidence],
             ),
             source_payload={"suffix": suffix},
             parser_version="test-jobs-v1",

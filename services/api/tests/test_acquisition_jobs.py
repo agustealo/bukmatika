@@ -23,7 +23,7 @@ from bukmatika.domain import DiscoveredAsset, DiscoveryCandidate, RightsEvidence
 from bukmatika.persistence.acquisition import AcquisitionRepository
 from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.jobs import JobRepository, JobStatus
-from bukmatika.persistence.models import Acquisition, Asset
+from bukmatika.persistence.models import Asset
 
 
 def _scope(session: AsyncSession):  # type: ignore[no-untyped-def]

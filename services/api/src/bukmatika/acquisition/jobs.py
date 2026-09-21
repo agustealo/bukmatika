@@ -36,6 +36,12 @@ class AcquisitionQueueService:
     """User-facing authority for enqueueing, observing, and cancelling acquisitions."""
 
     _job_type = "acquisition"
+    _active_states = {
+        AcquisitionStatus.RESOLVING.value,
+        AcquisitionStatus.DOWNLOADING.value,
+        AcquisitionStatus.VERIFYING.value,
+    }
+    _terminal_job_states = {JobStatus.COMPLETED.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value}
 
     def __init__(
         self,
@@ -69,15 +75,10 @@ class AcquisitionQueueService:
                 )
 
             existing_job = await jobs.get_by_dedupe_key(dedupe_key)
-            if (
-                acquisition.status
-                in {
-                    AcquisitionStatus.RESOLVING.value,
-                    AcquisitionStatus.DOWNLOADING.value,
-                    AcquisitionStatus.VERIFYING.value,
-                }
-                and existing_job is None
-            ):
+            orphaned_active = acquisition.status in self._active_states and (
+                existing_job is None or existing_job.status in self._terminal_job_states
+            )
+            if orphaned_active:
                 recovered = await acquisitions.recover_expired_attempt(asset.id)
                 if recovered is not None:
                     acquisition = recovered
@@ -140,6 +141,18 @@ class AcquisitionQueueService:
             acquisition = await acquisitions.get_acquisition(acquisition_id)
             if acquisition is None:
                 raise AcquisitionNotFound(f"Acquisition {acquisition_id} does not exist")
+            if acquisition.status in {
+                AcquisitionStatus.STORED.value,
+                AcquisitionStatus.QUARANTINED.value,
+                AcquisitionStatus.CANCELLED.value,
+            }:
+                return AcquisitionResponse(
+                    acquisition_id=acquisition.id,
+                    asset_id=acquisition.asset_id,
+                    status=AcquisitionStatus(acquisition.status),
+                    error_code=acquisition.error_code,
+                )
+
             acquisition = await acquisitions.request_cancel(acquisition_id)
             await jobs.cancel_if_queued(dedupe_key=self._dedupe_key(acquisition_id))
             events = InteractionEventRepository(database_session)
@@ -190,16 +203,20 @@ class AcquisitionJobWorker:
     async def run(self) -> None:
         while True:
             try:
-                lease = await self._claim()
-                if lease is None:
+                if not await self.run_once():
                     await asyncio.sleep(self._settings.acquisition_worker_poll_seconds)
-                    continue
-                await self._execute(lease)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("acquisition_worker_iteration_failed")
                 await asyncio.sleep(self._settings.acquisition_worker_poll_seconds)
+
+    async def run_once(self) -> bool:
+        lease = await self._claim()
+        if lease is None:
+            return False
+        await self._execute(lease)
+        return True
 
     async def _claim(self) -> JobLease | None:
         async with self._session_scope() as database_session:
@@ -241,7 +258,7 @@ class AcquisitionJobWorker:
             await self._complete_job(lease)
         finally:
             heartbeat.cancel()
-            with suppress(asyncio.CancelledError):
+            with suppress(asyncio.CancelledError, JobLeaseLost):
                 await heartbeat
 
     async def _heartbeat_loop(self, lease: JobLease) -> None:

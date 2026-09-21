@@ -8,11 +8,14 @@ version = "0.1.0"
 description = "Bukmatika discovery, rights, catalog and acquisition API"
 requires-python = ">=3.12,<3.15"
 dependencies = [
+  "alembic>=1.20,<2",
   "fastapi>=0.116,<1",
   "httpx>=0.28,<1",
   "orjson>=3.10,<4",
+  "psycopg[binary,pool]>=3.3.6,<4",
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.10,<3",
+  "sqlalchemy[asyncio]>=2.0.54,<2.1",
   "structlog>=25,<26",
   "tenacity>=9,<10",
   "uvicorn[standard]>=0.35,<1",

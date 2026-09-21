@@ -2,13 +2,19 @@ import asyncio
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
+from pathlib import Path
 from uuid import UUID
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.acquisition.domain import AcquisitionResponse, AcquisitionStatus
-from bukmatika.acquisition.downloader import DownloadTooLarge, RemoteDownloadError, SafeDownloader
+from bukmatika.acquisition.downloader import (
+    DownloadCancelled,
+    DownloadTooLarge,
+    RemoteDownloadError,
+    SafeDownloader,
+)
 from bukmatika.acquisition.network import UnsafeRemoteURL
 from bukmatika.acquisition.storage import LocalObjectStore
 from bukmatika.acquisition.verification import FormatVerificationError, verify_download
@@ -33,6 +39,12 @@ class AcquisitionDenied(PermissionError):
         self.acquisition_id = acquisition_id
         self.rights_state = rights_state
         self.reason = reason
+
+
+class AcquisitionCancelled(RuntimeError):
+    def __init__(self, acquisition_id: UUID) -> None:
+        super().__init__("Acquisition was cancelled")
+        self.acquisition_id = acquisition_id
 
 
 class AcquisitionExecutionError(RuntimeError):
@@ -77,8 +89,20 @@ class AcquisitionService:
             return authorized
 
         temp_path = await self._storage.create_temp_path(authorized.acquisition_id)
+
+        async def cancellation_probe() -> bool:
+            return await self._is_cancel_requested(authorized.acquisition_id)
+
         try:
-            result = await self._downloader.download(authorized.remote_url, temp_path)
+            result = await self._downloader.download(
+                authorized.remote_url,
+                temp_path,
+                cancellation_probe=cancellation_probe,
+            )
+        except DownloadCancelled as exc:
+            await self._storage.discard(temp_path)
+            await self._record_cancelled(authorized)
+            raise AcquisitionCancelled(authorized.acquisition_id) from exc
         except UnsafeRemoteURL as exc:
             await self._storage.discard(temp_path)
             await self._record_failure(
@@ -104,6 +128,7 @@ class AcquisitionService:
             )
             raise AcquisitionExecutionError("REMOTE_DOWNLOAD_FAILED", str(exc)) from exc
 
+        await self._raise_if_cancelled(authorized, result.temp_path)
         async with self._session_scope() as database_session:
             await AcquisitionRepository(database_session).mark_verifying(
                 authorized.acquisition_id,
@@ -147,6 +172,7 @@ class AcquisitionService:
                 )
             raise AcquisitionExecutionError("FORMAT_VERIFICATION_FAILED", str(exc)) from exc
 
+        await self._raise_if_cancelled(authorized, result.temp_path)
         try:
             stored_file = await self._storage.commit(
                 result.temp_path,
@@ -239,11 +265,12 @@ class AcquisitionService:
                 policy_version=self._policy_version,
             )
             await InteractionEventRepository(database_session).record(
-                SemanticEventType.ACQUISITION_REQUESTED,
+                SemanticEventType.ACQUISITION_ATTEMPT_STARTED,
                 entity_type="asset",
                 entity_id=asset.id,
                 context={
                     "acquisition_id": str(acquisition.id),
+                    "attempt_count": acquisition.attempt_count,
                     "rights_state": decision.state.value,
                 },
             )
@@ -282,6 +309,28 @@ class AcquisitionService:
         if authorized is None:
             raise RuntimeError("Acquisition authorization produced no outcome")
         return authorized
+
+    async def _is_cancel_requested(self, acquisition_id: UUID) -> bool:
+        async with self._session_scope() as database_session:
+            return await AcquisitionRepository(database_session).is_cancel_requested(acquisition_id)
+
+    async def _raise_if_cancelled(self, authorized: _AuthorizedAttempt, path: Path) -> None:
+        if not await self._is_cancel_requested(authorized.acquisition_id):
+            return
+        await self._storage.discard(path)
+        await self._record_cancelled(authorized)
+        raise AcquisitionCancelled(authorized.acquisition_id)
+
+    async def _record_cancelled(self, authorized: _AuthorizedAttempt) -> None:
+        async with self._session_scope() as database_session:
+            repository = AcquisitionRepository(database_session)
+            await repository.mark_cancelled(authorized.acquisition_id)
+            await InteractionEventRepository(database_session).record(
+                SemanticEventType.ACQUISITION_CANCELLED,
+                entity_type="asset",
+                entity_id=authorized.asset_id,
+                context={"acquisition_id": str(authorized.acquisition_id)},
+            )
 
     async def _record_failure(
         self,

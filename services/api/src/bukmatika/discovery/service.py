@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from bukmatika.discovery.base import DiscoveryAdapter
@@ -19,8 +20,14 @@ class DiscoveryService:
         self._adapters = adapters
 
     async def search(self, intent: SearchIntent) -> DiscoveryResponse:
-        results = await asyncio.gather(*(self._safe_search(adapter, intent) for adapter in self._adapters))
-        errors = {result.name: result.error for result in results if result.error is not None}
+        results = await asyncio.gather(
+            *(self._safe_search(adapter, intent) for adapter in self._adapters)
+        )
+        errors: dict[str, str] = {}
+        for result in results:
+            if result.error is not None:
+                errors[result.name] = result.error
+
         candidates = self._deduplicate(
             candidate for result in results for candidate in result.candidates
         )
@@ -38,7 +45,7 @@ class DiscoveryService:
     ) -> _AdapterResult:
         try:
             return _AdapterResult(name=adapter.name, candidates=await adapter.search(intent))
-        except Exception as exc:  # provider failure must not collapse federated search
+        except Exception as exc:  # source degradation must not collapse federated search
             return _AdapterResult(
                 name=adapter.name,
                 candidates=[],
@@ -46,11 +53,9 @@ class DiscoveryService:
             )
 
     @staticmethod
-    def _deduplicate(candidates: object) -> list[DiscoveryCandidate]:
+    def _deduplicate(candidates: Iterable[DiscoveryCandidate]) -> list[DiscoveryCandidate]:
         unique: dict[tuple[str, str], DiscoveryCandidate] = {}
         for candidate in candidates:
-            if not isinstance(candidate, DiscoveryCandidate):
-                continue
             key = (candidate.source, candidate.source_record_id)
             unique.setdefault(key, candidate)
         return list(unique.values())

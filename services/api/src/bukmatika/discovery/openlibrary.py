@@ -5,6 +5,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
+from pydantic import HttpUrl
 
 from bukmatika.config import Settings
 from bukmatika.domain import DiscoveryCandidate, RightsEvidence, RightsState, SearchIntent
@@ -19,10 +20,9 @@ class OpenLibraryAdapter:
         self._settings = settings
 
     async def search(self, intent: SearchIntent) -> list[DiscoveryCandidate]:
-        params = self._params(intent)
         response = await self._client.get(
             self.endpoint,
-            params=params,
+            params=self._params(intent),
             headers=self._headers(),
             timeout=self._settings.http_timeout_seconds,
         )
@@ -76,7 +76,7 @@ class OpenLibraryAdapter:
         if not key or not title:
             return None
 
-        rights = cls._rights(row)
+        landing_url = HttpUrl(f"https://openlibrary.org{quote(key, safe='/')}")
         return DiscoveryCandidate(
             source=cls.name,
             source_record_id=key,
@@ -89,37 +89,46 @@ class OpenLibraryAdapter:
             first_publish_year=cls._integer(row.get("first_publish_year")),
             languages=cls._strings(row.get("language")),
             subjects=cls._strings(row.get("subject"))[:24],
-            landing_url=f"https://openlibrary.org{quote(key, safe='/')}",
+            landing_url=landing_url,
             formats=[],
-            rights=rights,
+            rights=cls._rights(row, landing_url),
             source_score=0.85,
         )
 
     @staticmethod
-    def _rights(row: Mapping[str, Any]) -> list[RightsEvidence]:
+    def _rights(row: Mapping[str, Any], evidence_url: HttpUrl) -> list[RightsEvidence]:
         access = OpenLibraryAdapter._string(row.get("ebook_access"))
         public_scan = row.get("public_scan_b") is True
-        key = OpenLibraryAdapter._string(row.get("key")) or ""
-        evidence_url = f"https://openlibrary.org{quote(key, safe='/')}" if key else None
 
-        if access == "public" or public_scan:
-            return [
-                RightsEvidence(
-                    state=RightsState.PUBLIC_DOMAIN,
-                    source="open_library",
-                    basis=(
-                        "Open Library marks the work/edition as public ebook access or public scan."
-                    ),
-                    evidence_url=evidence_url,
-                    confidence=0.8,
-                )
-            ]
         if access == "borrowable":
             return [
                 RightsEvidence(
                     state=RightsState.BORROW_ONLY,
                     source="open_library",
-                    basis="Open Library marks ebook access as borrowable.",
+                    basis="Open Library marks online readability for this work as borrowable.",
+                    evidence_url=evidence_url,
+                    confidence=0.95,
+                )
+            ]
+        if access == "preview" or access == "printdisabled":
+            return [
+                RightsEvidence(
+                    state=RightsState.PREVIEW_ONLY,
+                    source="open_library",
+                    basis="Open Library search metadata does not expose unrestricted access.",
+                    evidence_url=evidence_url,
+                    confidence=0.9,
+                )
+            ]
+        if access == "public" or public_scan:
+            return [
+                RightsEvidence(
+                    state=RightsState.UNKNOWN,
+                    source="open_library",
+                    basis=(
+                        "Open Library exposes a public-readability/public-scan signal, but that "
+                        "signal alone is not treated as copyright or exact-asset download authority."
+                    ),
                     evidence_url=evidence_url,
                     confidence=0.95,
                 )
@@ -128,9 +137,9 @@ class OpenLibraryAdapter:
             RightsEvidence(
                 state=RightsState.UNKNOWN,
                 source="open_library",
-                basis="Open Library search metadata does not establish downloadable rights.",
+                basis="Open Library search metadata does not establish exact-asset download rights.",
                 evidence_url=evidence_url,
-                confidence=0.7,
+                confidence=0.9,
             )
         ]
 

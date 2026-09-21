@@ -2,7 +2,7 @@ from bukmatika.discovery.openlibrary import OpenLibraryAdapter
 from bukmatika.domain import RightsState
 
 
-def test_openlibrary_public_access_maps_to_rights_evidence() -> None:
+def test_openlibrary_public_readability_does_not_become_copyright_authority() -> None:
     candidate = OpenLibraryAdapter._candidate(
         {
             "key": "/works/OL1W",
@@ -17,7 +17,7 @@ def test_openlibrary_public_access_maps_to_rights_evidence() -> None:
     )
     assert candidate is not None
     assert candidate.title == "A Historical Work"
-    assert candidate.rights[0].state is RightsState.PUBLIC_DOMAIN
+    assert candidate.rights[0].state is RightsState.UNKNOWN
 
 
 def test_openlibrary_borrowable_never_maps_to_download_authority() -> None:

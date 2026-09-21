@@ -12,7 +12,7 @@ A URL ending in `.pdf` or `.epub`, a search result containing the word â€œfree,â
 | --- | --- | --- |
 | `public_domain` | Reliable evidence indicates the edition/file is in the public domain for the deployment policy | yes |
 | `open_license` | A recognized license permits the intended download/use | yes, within license terms |
-| `authorized_download` | The rights holder/source explicitly authorizes download | yes, within authorization |
+| `authorized_download` | The rights holder/source explicitly authorizes download of the exact asset | yes, within authorization |
 | `borrow_only` | Access is governed by a lending system | no |
 | `preview_only` | Only preview access is authorized | no |
 | `unknown` | Evidence is insufficient | no |
@@ -22,10 +22,10 @@ A URL ending in `.pdf` or `.epub`, a search result containing the word â€œfree,â
 
 Prefer, in order:
 
-1. explicit structured rights/license metadata from the authoritative source;
+1. explicit structured rights/license metadata from the authoritative source for the exact edition/asset;
 2. explicit rights statement on the item/edition landing page;
 3. recognized open-license URI attached to the exact asset or edition;
-4. source-specific public-domain field with documented semantics;
+4. source-specific rights field with documented semantics;
 5. human review.
 
 Do not determine copyright solely from publication year without jurisdiction-aware policy.
@@ -50,11 +50,11 @@ Each adapter must define:
 
 ### Open Library
 
-Use documented APIs rather than scraping HTML. Cache aggressively and identify Bukmatika according to Open Library guidance. Open Library is a discovery/catalog source; availability fields can help classify public, borrow-only, or unavailable access, but the rights engine remains the authority.
+Use documented APIs rather than scraping HTML. Cache aggressively and identify Bukmatika according to Open Library guidance. Open Library describes `ebook_access` as online readability for the work. Values such as `public` and `borrowable` are useful discovery/access signals, but Bukmatika does **not** convert `public` or `public_scan_b` into a copyright/public-domain determination. Exact-asset rights must be established later by stronger evidence.
 
 ### Internet Archive
 
-Use documented metadata/search endpoints and item metadata. Acquisition must honor the access state of the exact item/file. Borrowing controls are not download authorization.
+Use documented metadata/search endpoints and item metadata. Acquisition must honor the access state and rights evidence of the exact item/file. Borrowing controls are not download authorization.
 
 ### Project Gutenberg
 

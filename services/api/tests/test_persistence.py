@@ -8,7 +8,10 @@ from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.models import SourceObservation, Work
 
 DATABASE_URL = os.getenv("BUKMATIKA_DATABASE_URL")
-pytestmark = pytest.mark.skipif(DATABASE_URL is None, reason="PostgreSQL integration URL not configured")
+pytestmark = pytest.mark.skipif(
+    DATABASE_URL is None,
+    reason="PostgreSQL integration URL not configured",
+)
 
 
 @pytest.fixture

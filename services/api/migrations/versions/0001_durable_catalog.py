@@ -2,8 +2,8 @@
 
 from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0001_durable_catalog"
@@ -12,11 +12,17 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def _timestamps() -> tuple[sa.Column[object], sa.Column[object]]:
-    return (
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+def _timestamp_column(name: str) -> sa.Column[object]:
+    return sa.Column(
+        name,
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
     )
+
+
+def _timestamps() -> tuple[sa.Column[object], sa.Column[object]]:
+    return _timestamp_column("created_at"), _timestamp_column("updated_at")
 
 
 def upgrade() -> None:
@@ -60,7 +66,11 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["work_id"], ["works.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_editions_work_publication_year", "editions", ["work_id", "publication_year"])
+    op.create_index(
+        "ix_editions_work_publication_year",
+        "editions",
+        ["work_id", "publication_year"],
+    )
     op.create_table(
         "assets",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -69,9 +79,12 @@ def upgrade() -> None:
         sa.Column("media_type", sa.String(length=255), nullable=True),
         sa.Column("remote_url", sa.Text(), nullable=True),
         sa.Column("sha256", sa.String(length=64), nullable=True),
-        sa.Column("byte_size", sa.Integer(), nullable=True),
+        sa.Column("byte_size", sa.BigInteger(), nullable=True),
         *_timestamps(),
-        sa.CheckConstraint("byte_size IS NULL OR byte_size >= 0", name="ck_assets_nonnegative_size"),
+        sa.CheckConstraint(
+            "byte_size IS NULL OR byte_size >= 0",
+            name="ck_assets_nonnegative_size",
+        ),
         sa.ForeignKeyConstraint(["edition_id"], ["editions.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("sha256", name="uq_assets_sha256"),
@@ -90,7 +103,11 @@ def upgrade() -> None:
         sa.Column("work_id", sa.Uuid(), nullable=False),
         sa.Column("contributor_id", sa.Uuid(), nullable=False),
         sa.Column("role", sa.String(length=64), nullable=False),
-        sa.ForeignKeyConstraint(["contributor_id"], ["contributors.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["contributor_id"],
+            ["contributors.id"],
+            ondelete="CASCADE",
+        ),
         sa.ForeignKeyConstraint(["work_id"], ["works.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("work_id", "contributor_id", "role"),
     )
@@ -105,7 +122,10 @@ def upgrade() -> None:
         *_timestamps(),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
-            "entity_type", "scheme", "normalized_value", name="uq_identifier_entity_scheme_value"
+            "entity_type",
+            "scheme",
+            "normalized_value",
+            name="uq_identifier_entity_scheme_value",
         ),
     )
     op.create_index("ix_identifiers_lookup", "identifiers", ["scheme", "normalized_value"])
@@ -143,12 +163,30 @@ def upgrade() -> None:
         sa.Column("payload_sha256", sa.String(length=64), nullable=False),
         sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("parser_version", sa.String(length=64), nullable=False),
-        sa.Column("first_observed_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("last_observed_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "first_observed_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "last_observed_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("observation_count", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(["source_record_id"], ["source_records.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["source_record_id"],
+            ["source_records.id"],
+            ondelete="CASCADE",
+        ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("source_record_id", "payload_sha256", name="uq_source_observation_payload"),
+        sa.UniqueConstraint(
+            "source_record_id",
+            "payload_sha256",
+            name="uq_source_observation_payload",
+        ),
     )
     op.create_table(
         "metadata_assertions",
@@ -160,9 +198,21 @@ def upgrade() -> None:
         sa.Column("source_observation_id", sa.Uuid(), nullable=False),
         sa.Column("confidence", sa.Float(), nullable=False),
         sa.Column("normalization_method", sa.String(length=128), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_metadata_confidence"),
-        sa.ForeignKeyConstraint(["source_observation_id"], ["source_observations.id"], ondelete="CASCADE"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "confidence >= 0 AND confidence <= 1",
+            name="ck_metadata_confidence",
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_observation_id"],
+            ["source_observations.id"],
+            ondelete="CASCADE",
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -180,9 +230,21 @@ def upgrade() -> None:
         sa.Column("evidence_url", sa.Text(), nullable=True),
         sa.Column("license_uri", sa.Text(), nullable=True),
         sa.Column("confidence", sa.Float(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_rights_evidence_confidence"),
-        sa.ForeignKeyConstraint(["source_observation_id"], ["source_observations.id"], ondelete="SET NULL"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "confidence >= 0 AND confidence <= 1",
+            name="ck_rights_evidence_confidence",
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_observation_id"],
+            ["source_observations.id"],
+            ondelete="SET NULL",
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_table(
@@ -195,10 +257,35 @@ def upgrade() -> None:
         sa.Column("policy_version", sa.String(length=64), nullable=False),
         sa.Column("permissions", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("reason", sa.Text(), nullable=False),
-        sa.Column("evaluated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "evaluated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_rights_decisions_subject", "rights_decisions", ["subject_type", "subject_id"])
+    op.create_index(
+        "ix_rights_decisions_subject",
+        "rights_decisions",
+        ["subject_type", "subject_id"],
+    )
+    op.create_table(
+        "rights_decision_evidence",
+        sa.Column("rights_decision_id", sa.Uuid(), nullable=False),
+        sa.Column("rights_evidence_id", sa.Uuid(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["rights_decision_id"],
+            ["rights_decisions.id"],
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["rights_evidence_id"],
+            ["rights_evidence.id"],
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("rights_decision_id", "rights_evidence_id"),
+    )
     op.create_table(
         "library_entries",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -211,7 +298,20 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["principal_id"], ["principals.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["work_id"], ["works.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("principal_id", "work_id", "edition_id", name="uq_library_entry_target"),
+    )
+    op.create_index(
+        "uq_library_entry_work_only",
+        "library_entries",
+        ["principal_id", "work_id"],
+        unique=True,
+        postgresql_where=sa.text("edition_id IS NULL"),
+    )
+    op.create_index(
+        "uq_library_entry_edition",
+        "library_entries",
+        ["principal_id", "edition_id"],
+        unique=True,
+        postgresql_where=sa.text("edition_id IS NOT NULL"),
     )
     op.create_table(
         "interaction_events",
@@ -221,7 +321,12 @@ def upgrade() -> None:
         sa.Column("entity_type", sa.String(length=32), nullable=True),
         sa.Column("entity_id", sa.Uuid(), nullable=True),
         sa.Column("context", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("occurred_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "occurred_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["principal_id"], ["principals.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -235,7 +340,10 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_interaction_events_principal_time", table_name="interaction_events")
     op.drop_table("interaction_events")
+    op.drop_index("uq_library_entry_edition", table_name="library_entries")
+    op.drop_index("uq_library_entry_work_only", table_name="library_entries")
     op.drop_table("library_entries")
+    op.drop_table("rights_decision_evidence")
     op.drop_index("ix_rights_decisions_subject", table_name="rights_decisions")
     op.drop_table("rights_decisions")
     op.drop_table("rights_evidence")

@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     Float,
@@ -13,8 +14,10 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -88,7 +91,7 @@ class Asset(Base, TimestampMixin):
     media_type: Mapped[str | None] = mapped_column(String(255))
     remote_url: Mapped[str | None] = mapped_column(Text)
     sha256: Mapped[str | None] = mapped_column(String(64))
-    byte_size: Mapped[int | None] = mapped_column(Integer)
+    byte_size: Mapped[int | None] = mapped_column(BigInteger)
 
 
 class Contributor(Base, TimestampMixin):
@@ -115,7 +118,10 @@ class Identifier(Base, TimestampMixin):
     __tablename__ = "identifiers"
     __table_args__ = (
         UniqueConstraint(
-            "entity_type", "scheme", "normalized_value", name="uq_identifier_entity_scheme_value"
+            "entity_type",
+            "scheme",
+            "normalized_value",
+            name="uq_identifier_entity_scheme_value",
         ),
         Index("ix_identifiers_lookup", "scheme", "normalized_value"),
     )
@@ -164,7 +170,9 @@ class SourceObservation(Base):
     __tablename__ = "source_observations"
     __table_args__ = (
         UniqueConstraint(
-            "source_record_id", "payload_sha256", name="uq_source_observation_payload"
+            "source_record_id",
+            "payload_sha256",
+            name="uq_source_observation_payload",
         ),
     )
 
@@ -211,7 +219,10 @@ class MetadataAssertion(Base):
 class RightsEvidenceRecord(Base):
     __tablename__ = "rights_evidence"
     __table_args__ = (
-        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_rights_evidence_confidence"),
+        CheckConstraint(
+            "confidence >= 0 AND confidence <= 1",
+            name="ck_rights_evidence_confidence",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -246,10 +257,38 @@ class RightsDecision(Base):
     )
 
 
+class RightsDecisionEvidence(Base):
+    __tablename__ = "rights_decision_evidence"
+
+    rights_decision_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("rights_decisions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    rights_evidence_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("rights_evidence.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+
+
 class LibraryEntry(Base, TimestampMixin):
     __tablename__ = "library_entries"
     __table_args__ = (
-        UniqueConstraint("principal_id", "work_id", "edition_id", name="uq_library_entry_target"),
+        Index(
+            "uq_library_entry_work_only",
+            "principal_id",
+            "work_id",
+            unique=True,
+            postgresql_where=text("edition_id IS NULL"),
+        ),
+        Index(
+            "uq_library_entry_edition",
+            "principal_id",
+            "edition_id",
+            unique=True,
+            postgresql_where=text("edition_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -267,7 +306,9 @@ class LibraryEntry(Base, TimestampMixin):
 
 class InteractionEvent(Base):
     __tablename__ = "interaction_events"
-    __table_args__ = (Index("ix_interaction_events_principal_time", "principal_id", "occurred_at"),)
+    __table_args__ = (
+        Index("ix_interaction_events_principal_time", "principal_id", "occurred_at"),
+    )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     principal_id: Mapped[UUID | None] = mapped_column(

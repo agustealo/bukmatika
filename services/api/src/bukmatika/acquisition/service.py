@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +27,8 @@ from bukmatika.persistence.models import RightsEvidenceRecord
 from bukmatika.rights import RightsEngine
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+LeaseProbe = Callable[[], Awaitable[bool]]
+LeaseGuard = Callable[[AsyncSession], Awaitable[None]]
 
 
 class AssetNotFound(LookupError):
@@ -45,6 +47,10 @@ class AcquisitionCancelled(RuntimeError):
     def __init__(self, acquisition_id: UUID) -> None:
         super().__init__("Acquisition was cancelled")
         self.acquisition_id = acquisition_id
+
+
+class AcquisitionLeaseLost(RuntimeError):
+    pass
 
 
 class AcquisitionExecutionError(RuntimeError):
@@ -83,32 +89,47 @@ class AcquisitionService:
         self._rights = RightsEngine()
         self._session_scope = session_scope_factory
 
-    async def acquire(self, asset_id: UUID) -> AcquisitionResponse:
-        authorized = await self._authorize(asset_id)
+    async def acquire(
+        self,
+        asset_id: UUID,
+        *,
+        lease_probe: LeaseProbe | None = None,
+        lease_guard: LeaseGuard | None = None,
+    ) -> AcquisitionResponse:
+        await self._ensure_lease_owned(lease_probe)
+        authorized = await self._authorize(asset_id, lease_guard=lease_guard)
         if isinstance(authorized, AcquisitionResponse):
             return authorized
 
         temp_path = await self._storage.create_temp_path(authorized.acquisition_id)
 
-        async def cancellation_probe() -> bool:
-            return await self._is_cancel_requested(authorized.acquisition_id)
+        async def interruption_probe() -> bool:
+            if await self._is_cancel_requested(authorized.acquisition_id):
+                return True
+            return lease_probe is not None and not await lease_probe()
 
         try:
             result = await self._downloader.download(
                 authorized.remote_url,
                 temp_path,
-                cancellation_probe=cancellation_probe,
+                cancellation_probe=interruption_probe,
             )
+        except asyncio.CancelledError:
+            await self._storage.discard(temp_path)
+            raise
         except DownloadCancelled as exc:
             await self._storage.discard(temp_path)
-            await self._record_cancelled(authorized)
-            raise AcquisitionCancelled(authorized.acquisition_id) from exc
+            if await self._is_cancel_requested(authorized.acquisition_id):
+                await self._record_cancelled(authorized, lease_guard=lease_guard)
+                raise AcquisitionCancelled(authorized.acquisition_id) from exc
+            raise AcquisitionLeaseLost("Acquisition worker lease was lost") from exc
         except UnsafeRemoteURL as exc:
             await self._storage.discard(temp_path)
             await self._record_failure(
                 authorized,
                 error_code="UNSAFE_REMOTE_URL",
                 detail=str(exc),
+                lease_guard=lease_guard,
             )
             raise AcquisitionExecutionError("UNSAFE_REMOTE_URL", str(exc)) from exc
         except DownloadTooLarge as exc:
@@ -117,6 +138,7 @@ class AcquisitionService:
                 authorized,
                 error_code="ASSET_TOO_LARGE",
                 detail=str(exc),
+                lease_guard=lease_guard,
             )
             raise AcquisitionExecutionError("ASSET_TOO_LARGE", str(exc)) from exc
         except (RemoteDownloadError, httpx.HTTPError) as exc:
@@ -125,11 +147,18 @@ class AcquisitionService:
                 authorized,
                 error_code="REMOTE_DOWNLOAD_FAILED",
                 detail=str(exc),
+                lease_guard=lease_guard,
             )
             raise AcquisitionExecutionError("REMOTE_DOWNLOAD_FAILED", str(exc)) from exc
 
-        await self._raise_if_cancelled(authorized, result.temp_path)
+        await self._raise_if_interrupted(
+            authorized,
+            result.temp_path,
+            lease_probe=lease_probe,
+            lease_guard=lease_guard,
+        )
         async with self._session_scope() as database_session:
+            await self._guard_lease(database_session, lease_guard)
             await AcquisitionRepository(database_session).mark_verifying(
                 authorized.acquisition_id,
                 bytes_received=result.byte_size,
@@ -148,13 +177,18 @@ class AcquisitionService:
                 archive_max_uncompressed_bytes=self._settings.archive_max_uncompressed_bytes,
                 archive_max_compression_ratio=self._settings.archive_max_compression_ratio,
             )
+        except asyncio.CancelledError:
+            await self._storage.discard(result.temp_path)
+            raise
         except FormatVerificationError as exc:
+            await self._ensure_lease_owned(lease_probe)
             quarantine_key = await self._storage.quarantine(
                 result.temp_path,
                 authorized.acquisition_id,
             )
             detail = f"{exc}; quarantine={quarantine_key}"
             async with self._session_scope() as database_session:
+                await self._guard_lease(database_session, lease_guard)
                 repository = AcquisitionRepository(database_session)
                 await repository.mark_quarantined(
                     authorized.acquisition_id,
@@ -172,23 +206,34 @@ class AcquisitionService:
                 )
             raise AcquisitionExecutionError("FORMAT_VERIFICATION_FAILED", str(exc)) from exc
 
-        await self._raise_if_cancelled(authorized, result.temp_path)
+        await self._raise_if_interrupted(
+            authorized,
+            result.temp_path,
+            lease_probe=lease_probe,
+            lease_guard=lease_guard,
+        )
         try:
             stored_file = await self._storage.commit(
                 result.temp_path,
                 sha256=result.sha256,
                 format_name=authorized.expected_format,
             )
+        except asyncio.CancelledError:
+            await self._storage.discard(result.temp_path)
+            raise
         except OSError as exc:
             await self._storage.discard(result.temp_path)
             await self._record_failure(
                 authorized,
                 error_code="STORAGE_FAILED",
                 detail=str(exc),
+                lease_guard=lease_guard,
             )
             raise AcquisitionExecutionError("STORAGE_FAILED", str(exc)) from exc
 
+        await self._ensure_lease_owned(lease_probe)
         async with self._session_scope() as database_session:
+            await self._guard_lease(database_session, lease_guard)
             repository = AcquisitionRepository(database_session)
             stored_object = await repository.upsert_stored_object(
                 sha256=result.sha256,
@@ -224,10 +269,16 @@ class AcquisitionService:
             storage_key=stored_file.storage_key,
         )
 
-    async def _authorize(self, asset_id: UUID) -> _AuthorizedAttempt | AcquisitionResponse:
+    async def _authorize(
+        self,
+        asset_id: UUID,
+        *,
+        lease_guard: LeaseGuard | None,
+    ) -> _AuthorizedAttempt | AcquisitionResponse:
         denied: AcquisitionDenied | None = None
         authorized: _AuthorizedAttempt | None = None
         async with self._session_scope() as database_session:
+            await self._guard_lease(database_session, lease_guard)
             repository = AcquisitionRepository(database_session)
             asset = await repository.get_asset(asset_id)
             if asset is None:
@@ -314,15 +365,30 @@ class AcquisitionService:
         async with self._session_scope() as database_session:
             return await AcquisitionRepository(database_session).is_cancel_requested(acquisition_id)
 
-    async def _raise_if_cancelled(self, authorized: _AuthorizedAttempt, path: Path) -> None:
-        if not await self._is_cancel_requested(authorized.acquisition_id):
-            return
-        await self._storage.discard(path)
-        await self._record_cancelled(authorized)
-        raise AcquisitionCancelled(authorized.acquisition_id)
+    async def _raise_if_interrupted(
+        self,
+        authorized: _AuthorizedAttempt,
+        path: Path,
+        *,
+        lease_probe: LeaseProbe | None,
+        lease_guard: LeaseGuard | None,
+    ) -> None:
+        if await self._is_cancel_requested(authorized.acquisition_id):
+            await self._storage.discard(path)
+            await self._record_cancelled(authorized, lease_guard=lease_guard)
+            raise AcquisitionCancelled(authorized.acquisition_id)
+        if lease_probe is not None and not await lease_probe():
+            await self._storage.discard(path)
+            raise AcquisitionLeaseLost("Acquisition worker lease was lost")
 
-    async def _record_cancelled(self, authorized: _AuthorizedAttempt) -> None:
+    async def _record_cancelled(
+        self,
+        authorized: _AuthorizedAttempt,
+        *,
+        lease_guard: LeaseGuard | None,
+    ) -> None:
         async with self._session_scope() as database_session:
+            await self._guard_lease(database_session, lease_guard)
             repository = AcquisitionRepository(database_session)
             await repository.mark_cancelled(authorized.acquisition_id)
             await InteractionEventRepository(database_session).record(
@@ -338,8 +404,10 @@ class AcquisitionService:
         *,
         error_code: str,
         detail: str,
+        lease_guard: LeaseGuard | None,
     ) -> None:
         async with self._session_scope() as database_session:
+            await self._guard_lease(database_session, lease_guard)
             repository = AcquisitionRepository(database_session)
             await repository.mark_failed(
                 authorized.acquisition_id,
@@ -355,6 +423,19 @@ class AcquisitionService:
                     "error_code": error_code,
                 },
             )
+
+    @staticmethod
+    async def _guard_lease(
+        database_session: AsyncSession,
+        lease_guard: LeaseGuard | None,
+    ) -> None:
+        if lease_guard is not None:
+            await lease_guard(database_session)
+
+    @staticmethod
+    async def _ensure_lease_owned(lease_probe: LeaseProbe | None) -> None:
+        if lease_probe is not None and not await lease_probe():
+            raise AcquisitionLeaseLost("Acquisition worker lease was lost")
 
     @staticmethod
     def _to_domain_evidence(record: RightsEvidenceRecord) -> RightsEvidence:

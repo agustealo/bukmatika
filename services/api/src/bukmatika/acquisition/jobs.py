@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, suppress
+from typing import ClassVar
 from uuid import UUID
 
 import structlog
@@ -37,12 +38,12 @@ class AcquisitionQueueService:
     """User-facing authority for enqueueing, observing, and cancelling acquisitions."""
 
     _job_type = "acquisition"
-    _active_states = {
+    _active_states: ClassVar[set[str]] = {
         AcquisitionStatus.RESOLVING.value,
         AcquisitionStatus.DOWNLOADING.value,
         AcquisitionStatus.VERIFYING.value,
     }
-    _terminal_job_states = {
+    _terminal_job_states: ClassVar[set[str]] = {
         JobStatus.COMPLETED.value,
         JobStatus.FAILED.value,
         JobStatus.CANCELLED.value,
@@ -190,7 +191,7 @@ class AcquisitionJobWorker:
     """Single-job worker loop. Multiple processes coordinate through PostgreSQL leases."""
 
     _job_type = "acquisition"
-    _retryable_codes = {"REMOTE_DOWNLOAD_FAILED", "STORAGE_FAILED"}
+    _retryable_codes: ClassVar[set[str]] = {"REMOTE_DOWNLOAD_FAILED", "STORAGE_FAILED"}
 
     def __init__(
         self,

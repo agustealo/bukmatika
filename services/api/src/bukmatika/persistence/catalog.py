@@ -35,7 +35,9 @@ class CatalogRepository:
             )
             .returning(SourceRecord)
         )
-        result = await self._session.execute(statement)
+        result = await self._session.execute(
+            statement.execution_options(populate_existing=True)
+        )
         return result.scalar_one()
 
     async def record_source_observation(
@@ -71,5 +73,7 @@ class CatalogRepository:
             )
             .returning(SourceObservation)
         )
-        result = await self._session.execute(statement)
+        result = await self._session.execute(
+            statement.execution_options(populate_existing=True)
+        )
         return result.scalar_one()

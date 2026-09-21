@@ -108,9 +108,11 @@ def _verify_zip_container(
                 if "mimetype" not in names:
                     raise FormatVerificationError("EPUB is missing the required mimetype entry")
                 info = archive.getinfo("mimetype")
+                if info.file_size > 256:
+                    raise FormatVerificationError("EPUB mimetype entry is unexpectedly large")
                 if info.compress_type != zipfile.ZIP_STORED:
                     raise FormatVerificationError("EPUB mimetype entry must be stored uncompressed")
-                if archive.read("mimetype", pwd=None) != b"application/epub+zip":
+                if archive.read("mimetype") != b"application/epub+zip":
                     raise FormatVerificationError("EPUB mimetype entry is invalid")
                 return
 
@@ -120,9 +122,9 @@ def _verify_zip_container(
                 return
 
             raise FormatVerificationError(f"Unsupported ZIP-based format: {format_name}")
+    except FormatVerificationError:
+        raise
     except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
-        if isinstance(exc, FormatVerificationError):
-            raise
         raise FormatVerificationError("Archive verification failed") from exc
 
 

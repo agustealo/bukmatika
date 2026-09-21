@@ -30,6 +30,6 @@ class AcquisitionResponse(BaseModel):
 class AcquisitionJobResponse(BaseModel):
     acquisition_id: UUID
     asset_id: UUID
-    job_id: UUID
+    job_id: UUID | None = None
     acquisition_status: AcquisitionStatus
     job_status: str

@@ -16,6 +16,12 @@ from bukmatika.persistence.models import (
 
 
 async def test_provider_rights_evidence_is_bound_to_exact_asset(session: AsyncSession) -> None:
+    evidence = RightsEvidence(
+        state=RightsState.OPEN_LICENSE,
+        source="provider-a",
+        basis="Exact asset carries an open license.",
+        license_uri=HttpUrl("https://creativecommons.org/licenses/by/4.0/"),
+    )
     resolver = CatalogResolver(CatalogRepository(session))
     await resolver.ingest(
         DiscoveredRecord(
@@ -36,16 +42,10 @@ async def test_provider_rights_evidence_is_bound_to_exact_asset(session: AsyncSe
                         format="PDF",
                         media_type="application/pdf",
                         size_bytes=42,
+                        rights=[evidence],
                     )
                 ],
-                rights=[
-                    RightsEvidence(
-                        state=RightsState.OPEN_LICENSE,
-                        source="provider-a",
-                        basis="Exact item carries an open license.",
-                        license_uri=HttpUrl("https://creativecommons.org/licenses/by/4.0/"),
-                    )
-                ],
+                rights=[evidence],
             ),
             source_payload={"id": "edition-a"},
             parser_version="test-v1",
@@ -54,17 +54,67 @@ async def test_provider_rights_evidence_is_bound_to_exact_asset(session: AsyncSe
     await session.flush()
 
     asset = await session.scalar(select(Asset))
-    evidence = await session.scalar(select(RightsEvidenceRecord))
+    evidence_record = await session.scalar(select(RightsEvidenceRecord))
     assert asset is not None
-    assert evidence is not None
+    assert evidence_record is not None
     link = await session.scalar(
         select(RightsEvidenceSubject).where(
-            RightsEvidenceSubject.rights_evidence_id == evidence.id,
+            RightsEvidenceSubject.rights_evidence_id == evidence_record.id,
             RightsEvidenceSubject.subject_type == "asset",
             RightsEvidenceSubject.subject_id == asset.id,
         )
     )
     assert link is not None
+
+
+async def test_candidate_rights_do_not_implicitly_bind_to_asset(session: AsyncSession) -> None:
+    evidence = RightsEvidence(
+        state=RightsState.OPEN_LICENSE,
+        source="provider-b",
+        basis="Edition-level license evidence only.",
+        license_uri=HttpUrl("https://creativecommons.org/licenses/by/4.0/"),
+    )
+    resolver = CatalogResolver(CatalogRepository(session))
+    await resolver.ingest(
+        DiscoveredRecord(
+            candidate=DiscoveryCandidate(
+                source="provider-b",
+                source_record_id="edition-b",
+                record_kind="edition",
+                work_key="provider-b:work-b",
+                identifiers={"isbn": ["9780000000101"]},
+                title="Edition Evidence Only",
+                authors=["B. Historian"],
+                landing_url=HttpUrl("https://example.org/edition-b"),
+                formats=["PDF"],
+                assets=[
+                    DiscoveredAsset(
+                        name="book.pdf",
+                        url=HttpUrl("https://example.org/edition-b/book.pdf"),
+                        format="PDF",
+                        media_type="application/pdf",
+                        size_bytes=42,
+                    )
+                ],
+                rights=[evidence],
+            ),
+            source_payload={"id": "edition-b"},
+            parser_version="test-v1",
+        )
+    )
+    await session.flush()
+
+    asset = await session.scalar(select(Asset))
+    assert asset is not None
+    links = list(
+        await session.scalars(
+            select(RightsEvidenceSubject).where(
+                RightsEvidenceSubject.subject_type == "asset",
+                RightsEvidenceSubject.subject_id == asset.id,
+            )
+        )
+    )
+    assert links == []
 
 
 async def test_stored_object_deduplicates_identical_content(session: AsyncSession) -> None:

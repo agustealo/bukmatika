@@ -15,6 +15,7 @@ from bukmatika.acquisition.service import (
     AcquisitionCancelled,
     AcquisitionDenied,
     AcquisitionExecutionError,
+    AcquisitionLeaseLost,
     AcquisitionService,
     AssetNotFound,
 )
@@ -41,7 +42,11 @@ class AcquisitionQueueService:
         AcquisitionStatus.DOWNLOADING.value,
         AcquisitionStatus.VERIFYING.value,
     }
-    _terminal_job_states = {JobStatus.COMPLETED.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value}
+    _terminal_job_states = {
+        JobStatus.COMPLETED.value,
+        JobStatus.FAILED.value,
+        JobStatus.CANCELLED.value,
+    }
 
     def __init__(
         self,
@@ -236,11 +241,35 @@ class AcquisitionJobWorker:
             async with self._session_scope() as database_session:
                 await AcquisitionRepository(database_session).recover_expired_attempt(asset_id)
 
+        async def lease_probe() -> bool:
+            async with self._session_scope() as database_session:
+                return await JobRepository(database_session).lease_is_owned(
+                    job_id=lease.job_id,
+                    claim_token=lease.claim_token,
+                )
+
+        async def lease_guard(database_session: AsyncSession) -> None:
+            await JobRepository(database_session).heartbeat(
+                job_id=lease.job_id,
+                claim_token=lease.claim_token,
+                lease_seconds=self._settings.acquisition_job_lease_seconds,
+            )
+
         heartbeat = asyncio.create_task(self._heartbeat_loop(lease))
         try:
-            await self._acquisition_service.acquire(asset_id)
+            await self._acquisition_service.acquire(
+                asset_id,
+                lease_probe=lease_probe,
+                lease_guard=lease_guard,
+            )
         except asyncio.CancelledError:
             raise
+        except (AcquisitionLeaseLost, JobLeaseLost):
+            logger.info(
+                "acquisition_worker_lease_lost",
+                job_id=str(lease.job_id),
+                asset_id=str(asset_id),
+            )
         except AcquisitionCancelled:
             await self._cancel_job(lease)
         except AcquisitionDenied as exc:

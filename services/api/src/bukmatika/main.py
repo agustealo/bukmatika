@@ -1,6 +1,7 @@
+import asyncio
 import unicodedata
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Annotated
 from uuid import UUID
 
@@ -9,13 +10,17 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from bukmatika.acquisition import (
-    AcquisitionDenied,
-    AcquisitionExecutionError,
+    AcquisitionJobResponse,
     AcquisitionResponse,
     AcquisitionService,
     AssetNotFound,
 )
 from bukmatika.acquisition.downloader import SafeDownloader
+from bukmatika.acquisition.jobs import (
+    AcquisitionJobWorker,
+    AcquisitionNotFound,
+    AcquisitionQueueService,
+)
 from bukmatika.acquisition.storage import LocalObjectStore
 from bukmatika.catalog import CatalogResolver
 from bukmatika.config import get_settings
@@ -62,7 +67,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         session_timeout_seconds=settings.discovery_session_timeout_seconds,
         max_records=settings.discovery_max_records,
     )
-    app.state.acquisition = AcquisitionService(
+    acquisition_executor = AcquisitionService(
         SafeDownloader(
             acquisition_client,
             max_bytes=settings.acquisition_max_bytes,
@@ -74,9 +79,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         LocalObjectStore(settings.storage_root),
         settings,
     )
+    app.state.acquisition_queue = AcquisitionQueueService(settings)
+    worker_task: asyncio.Task[None] | None = None
+    if settings.acquisition_worker_enabled:
+        worker = AcquisitionJobWorker(acquisition_executor, settings)
+        worker_task = asyncio.create_task(worker.run(), name="bukmatika-acquisition-worker")
     try:
         yield
     finally:
+        if worker_task is not None:
+            worker_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker_task
         await acquisition_client.aclose()
         await discovery_client.aclose()
 
@@ -103,10 +117,10 @@ def discovery_service(request: Request) -> DiscoveryService:
     return service
 
 
-def acquisition_service(request: Request) -> AcquisitionService:
-    service = request.app.state.acquisition
-    if not isinstance(service, AcquisitionService):
-        raise RuntimeError("Acquisition service is not initialized")
+def acquisition_queue_service(request: Request) -> AcquisitionQueueService:
+    service = request.app.state.acquisition_queue
+    if not isinstance(service, AcquisitionQueueService):
+        raise RuntimeError("Acquisition queue service is not initialized")
     return service
 
 
@@ -191,36 +205,51 @@ async def catalog_search(
     return CatalogSearchResponse(query=query, items=items)
 
 
-@app.post("/v1/assets/{asset_id}/acquire", response_model=AcquisitionResponse)
+@app.post(
+    "/v1/assets/{asset_id}/acquire",
+    response_model=AcquisitionJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def acquire_asset(
     asset_id: UUID,
-    service: Annotated[AcquisitionService, Depends(acquisition_service)],
-) -> AcquisitionResponse:
+    service: Annotated[AcquisitionQueueService, Depends(acquisition_queue_service)],
+) -> AcquisitionJobResponse:
     try:
-        return await service.acquire(asset_id)
+        return await service.enqueue(asset_id)
     except AssetNotFound as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Asset not found",
-        ) from exc
-    except AcquisitionDenied as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "RIGHTS_DENIED",
-                "acquisition_id": str(exc.acquisition_id),
-                "rights_state": exc.rights_state.value,
-            },
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found") from exc
     except AcquisitionStateConflict as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "ACQUISITION_STATE_CONFLICT"},
         ) from exc
-    except AcquisitionExecutionError as exc:
+
+
+@app.get("/v1/acquisitions/{acquisition_id}", response_model=AcquisitionResponse)
+async def acquisition_status(
+    acquisition_id: UUID,
+    service: Annotated[AcquisitionQueueService, Depends(acquisition_queue_service)],
+) -> AcquisitionResponse:
+    try:
+        return await service.get(acquisition_id)
+    except AcquisitionNotFound as exc:
         raise HTTPException(
-            status_code=_acquisition_http_status(exc.error_code),
-            detail={"code": exc.error_code},
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Acquisition not found",
+        ) from exc
+
+
+@app.post("/v1/acquisitions/{acquisition_id}/cancel", response_model=AcquisitionResponse)
+async def cancel_acquisition(
+    acquisition_id: UUID,
+    service: Annotated[AcquisitionQueueService, Depends(acquisition_queue_service)],
+) -> AcquisitionResponse:
+    try:
+        return await service.cancel(acquisition_id)
+    except AcquisitionNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Acquisition not found",
         ) from exc
 
 
@@ -233,13 +262,3 @@ def _user_agent() -> str:
     if settings.contact_email:
         return f"{settings.user_agent} ({settings.contact_email})"
     return settings.user_agent
-
-
-def _acquisition_http_status(error_code: str) -> int:
-    if error_code == "ASSET_TOO_LARGE":
-        return status.HTTP_413_CONTENT_TOO_LARGE
-    if error_code in {"UNSAFE_REMOTE_URL", "FORMAT_VERIFICATION_FAILED"}:
-        return status.HTTP_422_UNPROCESSABLE_CONTENT
-    if error_code == "STORAGE_FAILED":
-        return status.HTTP_500_INTERNAL_SERVER_ERROR
-    return status.HTTP_502_BAD_GATEWAY

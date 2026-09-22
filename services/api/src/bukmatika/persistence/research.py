@@ -9,8 +9,14 @@ from sqlalchemy.sql.elements import ColumnElement
 from bukmatika.persistence.document_models import Document, DocumentChunk, DocumentSection
 from bukmatika.persistence.models import Asset, Edition, LibraryEntry, Work
 
+MAX_READER_SELECTION_CHUNKS = 8
+
 
 class ResearchSelectionDenied(LookupError):
+    pass
+
+
+class ResearchReaderPositionInvalid(ValueError):
     pass
 
 
@@ -54,7 +60,7 @@ class ResearchRepository:
         query: str,
         limit: int,
     ) -> list[ResearchSearchMatch]:
-        contexts = await self._document_contexts(
+        contexts = await self.document_contexts(
             principal_id=principal_id,
             library_entry_ids=library_entry_ids,
         )
@@ -100,7 +106,121 @@ class ResearchRepository:
             )
         return matches
 
-    async def _document_contexts(
+    async def reader_passages(
+        self,
+        *,
+        principal_id: UUID,
+        library_entry_id: UUID,
+        document_id: UUID,
+        section_id: UUID,
+        char_offset: int,
+        selection_start: int | None,
+        selection_end: int | None,
+    ) -> list[ResearchSearchMatch]:
+        contexts = await self.document_contexts(
+            principal_id=principal_id,
+            library_entry_ids=[library_entry_id],
+        )
+        context = next(
+            (candidate for candidate in contexts if candidate.document_id == document_id),
+            None,
+        )
+        if context is None:
+            raise ResearchSelectionDenied("Reader document is unavailable to this principal")
+
+        section = await self._session.scalar(
+            select(DocumentSection).where(
+                DocumentSection.id == section_id,
+                DocumentSection.document_id == document_id,
+            )
+        )
+        if section is None:
+            raise ResearchReaderPositionInvalid("Reader section is outside the selected document")
+        if char_offset < 0 or char_offset > len(section.text):
+            raise ResearchReaderPositionInvalid("Reader character offset is outside the section")
+
+        if selection_start is not None and selection_end is not None:
+            if selection_start < 0 or selection_end > len(section.text):
+                raise ResearchReaderPositionInvalid("Reader selection is outside the section text")
+            if selection_start >= selection_end:
+                raise ResearchReaderPositionInvalid("Reader selection must have positive length")
+            chunks = list(
+                (
+                    await self._session.scalars(
+                        select(DocumentChunk)
+                        .where(
+                            DocumentChunk.document_id == document_id,
+                            DocumentChunk.section_id == section_id,
+                            DocumentChunk.char_start < selection_end,
+                            DocumentChunk.char_end > selection_start,
+                        )
+                        .order_by(DocumentChunk.ordinal)
+                    )
+                ).all()
+            )
+        else:
+            chunks = list(
+                (
+                    await self._session.scalars(
+                        select(DocumentChunk)
+                        .where(
+                            DocumentChunk.document_id == document_id,
+                            DocumentChunk.section_id == section_id,
+                            DocumentChunk.char_start <= char_offset,
+                            DocumentChunk.char_end > char_offset,
+                        )
+                        .order_by(DocumentChunk.ordinal)
+                        .limit(1)
+                    )
+                ).all()
+            )
+            if not chunks and char_offset == len(section.text):
+                last_chunk = await self._session.scalar(
+                    select(DocumentChunk)
+                    .where(
+                        DocumentChunk.document_id == document_id,
+                        DocumentChunk.section_id == section_id,
+                    )
+                    .order_by(DocumentChunk.ordinal.desc())
+                    .limit(1)
+                )
+                if last_chunk is not None:
+                    chunks = [last_chunk]
+
+        if not chunks:
+            raise ResearchReaderPositionInvalid("Reader position has no canonical text chunk")
+        if len(chunks) > MAX_READER_SELECTION_CHUNKS:
+            raise ResearchReaderPositionInvalid("Reader selection spans too many evidence chunks")
+
+        matches: list[ResearchSearchMatch] = []
+        for chunk in chunks:
+            start = chunk.char_start
+            end = chunk.char_end
+            text_value = chunk.text
+            if selection_start is not None and selection_end is not None:
+                start = max(start, selection_start)
+                end = min(end, selection_end)
+                relative_start = max(0, start - chunk.char_start)
+                relative_end = max(relative_start, end - chunk.char_start)
+                text_value = chunk.text[relative_start:relative_end]
+            matches.append(
+                ResearchSearchMatch(
+                    context=context,
+                    chunk_id=chunk.id,
+                    section_id=section.id,
+                    section_ordinal=section.ordinal,
+                    chunk_ordinal=chunk.ordinal,
+                    heading=section.heading,
+                    locator=section.locator,
+                    char_start=start,
+                    char_end=end,
+                    text=text_value,
+                    score=0.0,
+                )
+            )
+        return matches
+
+    async def document_contexts(
         self,
         *,
         principal_id: UUID,

@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from uuid import UUID
@@ -6,8 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
-from bukmatika.persistence.research import ResearchRepository, ResearchSelectionDenied
+from bukmatika.persistence.research import (
+    ResearchReaderPositionInvalid,
+    ResearchRepository,
+    ResearchSearchMatch,
+    ResearchSelectionDenied,
+)
 from bukmatika.research.domain import (
+    GroundedResearchAnswer,
+    ResearchEvidenceBundleRequest,
+    ResearchEvidenceBundleResponse,
+    ResearchEvidenceItem,
+    ResearchEvidenceSourceKind,
     ResearchPassageResponse,
     ResearchSearchRequest,
     ResearchSearchResponse,
@@ -15,9 +26,45 @@ from bukmatika.research.domain import (
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
+_GROUNDING_STOP_WORDS = frozenset(
+    {
+        "about",
+        "book",
+        "chapter",
+        "could",
+        "discuss",
+        "discusses",
+        "does",
+        "explain",
+        "from",
+        "have",
+        "how",
+        "passage",
+        "said",
+        "says",
+        "show",
+        "shows",
+        "source",
+        "text",
+        "that",
+        "this",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "would",
+    }
+)
+
+
+class ResearchEvidenceReferenceInvalid(ValueError):
+    code = "RESEARCH_EVIDENCE_REFERENCE_INVALID"
+
 
 class ResearchService:
-    """Grounded lexical retrieval over explicitly selected owned books."""
+    """Grounded retrieval and evidence assembly over explicitly selected owned books."""
 
     def __init__(
         self,
@@ -55,29 +102,181 @@ class ResearchService:
             return ResearchSearchResponse(
                 query=request.query,
                 selected_library_entry_ids=request.library_entry_ids,
-                passages=[
-                    ResearchPassageResponse(
-                        library_entry_id=match.context.library_entry_id,
-                        work_id=match.context.work_id,
-                        work_title=match.context.work_title,
-                        edition_id=match.context.edition_id,
-                        edition_title=match.context.edition_title,
-                        asset_id=match.context.asset_id,
-                        document_id=match.context.document_id,
-                        chunk_id=match.chunk_id,
-                        section_id=match.section_id,
-                        section_ordinal=match.section_ordinal,
-                        chunk_ordinal=match.chunk_ordinal,
-                        heading=match.heading,
-                        locator=match.locator,
-                        char_start=match.char_start,
-                        char_end=match.char_end,
-                        text=match.text,
-                        score=max(0.0, match.score),
-                    )
-                    for match in matches
-                ],
+                passages=[_passage_response(match) for match in matches],
             )
 
+    async def evidence_bundle(
+        self,
+        *,
+        principal_id: UUID,
+        request: ResearchEvidenceBundleRequest,
+    ) -> ResearchEvidenceBundleResponse:
+        async with self._session_scope() as database_session:
+            repository = ResearchRepository(database_session)
+            reader_matches = await repository.reader_passages(
+                principal_id=principal_id,
+                library_entry_id=request.reader.library_entry_id,
+                document_id=request.reader.document_id,
+                section_id=request.reader.section_id,
+                char_offset=request.reader.char_offset,
+                selection_start=request.reader.selection_start,
+                selection_end=request.reader.selection_end,
+            )
+            related_matches = (
+                await repository.search_owned_passages(
+                    principal_id=principal_id,
+                    library_entry_ids=request.library_entry_ids,
+                    query=_grounding_search_query(request.question),
+                    limit=request.related_limit,
+                )
+                if request.related_limit > 0
+                else []
+            )
 
-__all__ = ["ResearchSelectionDenied", "ResearchService"]
+            evidence: list[ResearchEvidenceItem] = []
+            seen_chunks: set[UUID] = set()
+            reader_kind = (
+                ResearchEvidenceSourceKind.READER_SELECTION
+                if request.reader.selection_start is not None
+                else ResearchEvidenceSourceKind.READER_POSITION
+            )
+            for match in reader_matches:
+                if match.chunk_id in seen_chunks:
+                    continue
+                seen_chunks.add(match.chunk_id)
+                evidence.append(
+                    _evidence_item(
+                        match,
+                        evidence_id=f"E{len(evidence) + 1}",
+                        source_kind=reader_kind,
+                        score=None,
+                    )
+                )
+            for match in related_matches:
+                if match.chunk_id in seen_chunks:
+                    continue
+                seen_chunks.add(match.chunk_id)
+                evidence.append(
+                    _evidence_item(
+                        match,
+                        evidence_id=f"E{len(evidence) + 1}",
+                        source_kind=ResearchEvidenceSourceKind.RELATED_PASSAGE,
+                        score=max(0.0, match.score),
+                    )
+                )
+
+            if not evidence:
+                raise ResearchReaderPositionInvalid("Reader context produced no canonical evidence")
+
+            await InteractionEventRepository(database_session).record(
+                SemanticEventType.RESEARCH_EVIDENCE_BUILT,
+                principal_id=principal_id,
+                entity_type="document",
+                entity_id=request.reader.document_id,
+                context={
+                    "library_entry_id": str(request.reader.library_entry_id),
+                    "section_id": str(request.reader.section_id),
+                    "selected_library_entry_ids": [
+                        str(entry_id) for entry_id in request.library_entry_ids
+                    ],
+                    "reader_evidence_count": len(reader_matches),
+                    "evidence_count": len(evidence),
+                },
+            )
+            return ResearchEvidenceBundleResponse(
+                question=request.question,
+                reader=request.reader,
+                selected_library_entry_ids=request.library_entry_ids,
+                evidence=evidence,
+            )
+
+    @staticmethod
+    def validate_grounded_answer(
+        *,
+        bundle: ResearchEvidenceBundleResponse,
+        answer: GroundedResearchAnswer,
+    ) -> GroundedResearchAnswer:
+        allowed = {item.evidence_id for item in bundle.evidence}
+        for claim in answer.claims:
+            unknown = sorted(set(claim.evidence_ids) - allowed)
+            if unknown:
+                raise ResearchEvidenceReferenceInvalid(
+                    "Grounded answer references unknown evidence IDs: " + ", ".join(unknown)
+                )
+        return answer
+
+
+def _grounding_search_query(question: str) -> str:
+    tokens = re.findall(r"[\w'-]{3,32}", question.casefold())
+    selected: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        if token in _GROUNDING_STOP_WORDS or token in seen:
+            continue
+        seen.add(token)
+        selected.append(token)
+        if len(selected) == 5:
+            break
+    if not selected:
+        return " ".join(question.split())
+    return " OR ".join(selected)
+
+
+def _passage_response(match: ResearchSearchMatch) -> ResearchPassageResponse:
+    return ResearchPassageResponse(
+        library_entry_id=match.context.library_entry_id,
+        work_id=match.context.work_id,
+        work_title=match.context.work_title,
+        edition_id=match.context.edition_id,
+        edition_title=match.context.edition_title,
+        asset_id=match.context.asset_id,
+        document_id=match.context.document_id,
+        chunk_id=match.chunk_id,
+        section_id=match.section_id,
+        section_ordinal=match.section_ordinal,
+        chunk_ordinal=match.chunk_ordinal,
+        heading=match.heading,
+        locator=match.locator,
+        char_start=match.char_start,
+        char_end=match.char_end,
+        text=match.text,
+        score=max(0.0, match.score),
+    )
+
+
+def _evidence_item(
+    match: ResearchSearchMatch,
+    *,
+    evidence_id: str,
+    source_kind: ResearchEvidenceSourceKind,
+    score: float | None,
+) -> ResearchEvidenceItem:
+    return ResearchEvidenceItem(
+        evidence_id=evidence_id,
+        source_kind=source_kind,
+        library_entry_id=match.context.library_entry_id,
+        work_id=match.context.work_id,
+        work_title=match.context.work_title,
+        edition_id=match.context.edition_id,
+        edition_title=match.context.edition_title,
+        asset_id=match.context.asset_id,
+        document_id=match.context.document_id,
+        chunk_id=match.chunk_id,
+        section_id=match.section_id,
+        section_ordinal=match.section_ordinal,
+        chunk_ordinal=match.chunk_ordinal,
+        heading=match.heading,
+        locator=match.locator,
+        char_start=match.char_start,
+        char_end=match.char_end,
+        text=match.text,
+        score=score,
+    )
+
+
+__all__ = [
+    "ResearchEvidenceReferenceInvalid",
+    "ResearchReaderPositionInvalid",
+    "ResearchSelectionDenied",
+    "ResearchService",
+]

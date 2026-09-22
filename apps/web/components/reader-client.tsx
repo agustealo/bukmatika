@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import { ReaderResearchPanel } from "./reader-research-panel";
 
 type ReaderLocator = Record<string, string | number>;
 
@@ -269,6 +270,8 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
   if (!document) return null;
 
   const progressPercent = Math.round((readingState?.progress_fraction ?? 0) * 100);
+  const activeSection =
+    sections.find((section) => section.section_id === activeSectionId) ?? sections[0] ?? null;
 
   return (
     <main className="reader-shell">
@@ -308,6 +311,13 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
               ))}
             </nav>
           </div>
+          <ReaderResearchPanel
+            libraryEntryId={libraryEntryId}
+            documentId={documentId}
+            sectionId={activeSection?.section_id ?? null}
+            sectionHeading={activeSection?.heading ?? null}
+            sectionLocator={activeSection?.locator ?? null}
+          />
         </aside>
 
         <article className="reader-paper" aria-label="Book text">
@@ -343,7 +353,12 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
           })}
 
           {nextAfter !== null ? (
-            <button className="reader-load-more" type="button" onClick={() => void loadMore()} disabled={loadingMore}>
+            <button
+              className="reader-load-more"
+              type="button"
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+            >
               {loadingMore ? "Loading…" : "Continue reading"}
             </button>
           ) : (

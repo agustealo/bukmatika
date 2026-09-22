@@ -193,6 +193,7 @@ def _state_response(state: ReadingState | None) -> ReadingStateResponse | None:
         status=state.status,
         progress_fraction=state.progress_fraction,
         section_id=state.section_id,
+        section_ordinal=state.section_ordinal,
         char_offset=state.char_offset,
         locator=state.locator,
     )

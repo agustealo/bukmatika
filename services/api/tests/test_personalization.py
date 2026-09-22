@@ -219,11 +219,7 @@ def test_autonomy_above_shipped_level_is_rejected_before_persistence() -> None:
 
 
 def test_personalization_routes_are_mounted() -> None:
-    paths = {
-        path
-        for route in app.routes
-        if (path := getattr(route, "path", None)) is not None
-    }
+    paths = set(app.openapi()["paths"])
     assert "/v1/personalization" in paths
     assert "/v1/personalization/preferences" in paths
     assert "/v1/personalization/preferences/{claim_id}/forget" in paths

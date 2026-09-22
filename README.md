@@ -71,7 +71,11 @@ Only the first three are eligible for unattended download. A source adapter must
 
 ## Repository status
 
-The repository is being initialized as a production-oriented foundation. See `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/RIGHTS_AND_SOURCES.md`, and `docs/ROADMAP.md` as the implementation lands.
+Bukmatika now has a real discovery, lawful-acquisition, processing, reader/research, personalization, and bounded AI spine under active consumer hardening. The exact implementation state and remaining gates live in `docs/ROADMAP.md`; architecture authority lives in `docs/ARCHITECTURE.md` and `docs/AI_ARCHITECTURE.md`.
+
+Local AI is optional. The API defaults to no model provider, and ordinary discovery, acquisition, catalog, library, reader, and evidence-building paths must continue to work without one. When `BUKMATIKA_MODEL_PROVIDER=ollama` and `BUKMATIKA_OLLAMA_MODEL` name an installed local model, Bukmatika probes the loopback Ollama runtime before advertising model-backed research. Runtime state distinguishes unconfigured, unreachable, invalid, missing-model, and ready conditions. The reader only offers grounded local synthesis in the ready state and otherwise stays on canonical evidence retrieval.
+
+The Ollama integration is loopback-only and does not use environment proxy routing. `BUKMATIKA_MODEL_TIMEOUT_SECONDS` limits generation calls and `BUKMATIKA_MODEL_READINESS_TIMEOUT_SECONDS` independently bounds the lightweight runtime/model readiness probe. Model-backed answers remain subject to the same principal ownership, action policy, evidence, citation-validation, and activity-ledger rules as the rest of the product.
 
 ## Non-goals
 

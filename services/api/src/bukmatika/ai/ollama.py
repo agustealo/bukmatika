@@ -84,12 +84,13 @@ class OllamaLocalGateway(ModelGateway):
             return self._readiness(ModelReadinessState.PROVIDER_INVALID, ready=False)
 
         installed = {
-            candidate
+            candidate.strip()
             for item in tags.models
             for candidate in (item.name, item.model)
-            if candidate is not None
+            if candidate is not None and candidate.strip()
         }
-        if self._identity.model not in installed:
+        requested_aliases = _model_aliases(self._identity.model)
+        if installed.isdisjoint(requested_aliases):
             return self._readiness(ModelReadinessState.MODEL_MISSING, ready=False)
         return self._readiness(ModelReadinessState.READY, ready=True)
 
@@ -149,6 +150,15 @@ class OllamaLocalGateway(ModelGateway):
             ready=ready,
             identity=self._identity,
         )
+
+
+def _model_aliases(model: str) -> set[str]:
+    """Return names Ollama may report for the exact requested model selection."""
+    if model.endswith(":latest"):
+        return {model, model.removesuffix(":latest")}
+    if ":" not in model:
+        return {model, f"{model}:latest"}
+    return {model}
 
 
 def _system_prompt(task: ModelTask) -> str:

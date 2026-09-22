@@ -8,9 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.ai import (
-    AIDisabled,
     ActionDecisionValue,
     ActionPolicy,
+    AIDisabled,
     CapabilityName,
     CapabilityRegistry,
     ModelDataClassification,
@@ -19,9 +19,9 @@ from bukmatika.ai import (
     ModelTask,
     PersistedPlanResponse,
     PlanCapabilityUnavailable,
+    PlanningService,
     PlanProposal,
     PlanStep,
-    PlanningService,
     UnconfiguredModelGateway,
 )
 from bukmatika.ai.gateway import StructuredResponseT

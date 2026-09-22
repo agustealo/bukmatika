@@ -38,6 +38,33 @@ type EvidenceBundle = {
   evidence: EvidenceItem[];
 };
 
+type GroundedClaim = {
+  text: string;
+  evidence_ids: string[];
+};
+
+type GroundedAnswer = {
+  claims: GroundedClaim[];
+};
+
+type GroundedResearchResponse = {
+  plan_id: string;
+  action_decision_id: string;
+  evidence: EvidenceBundle;
+  answer: GroundedAnswer;
+  model_provider: string;
+  model_name: string;
+  model_routing: string;
+};
+
+type AIStatus = {
+  configured: boolean;
+  ai_enabled: boolean;
+  provider: string | null;
+  model: string | null;
+  routing: string | null;
+};
+
 function locatorLabel(locator: ReaderLocator): string {
   const priority = ["page", "spine", "section", "paragraph", "row"];
   const parts = priority
@@ -60,55 +87,114 @@ export function ReaderResearchPanel({
 }: ReaderResearchPanelProps) {
   const [question, setQuestion] = useState("");
   const [bundle, setBundle] = useState<EvidenceBundle | null>(null);
+  const [answer, setAnswer] = useState<GroundedAnswer | null>(null);
+  const [answerModel, setAnswerModel] = useState<string | null>(null);
+  const [aiStatus, setAIStatus] = useState<AIStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const activeSectionRef = useRef(sectionId);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadAIStatus() {
+      try {
+        const response = await apiFetch("/v1/ai/status");
+        if (!response.ok) return;
+        const payload = (await response.json()) as AIStatus;
+        if (!cancelled) setAIStatus(payload);
+      } catch {
+        // Evidence building remains usable when local AI status cannot be loaded.
+      }
+    }
+
+    void loadAIStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     activeSectionRef.current = sectionId;
     setBundle(null);
+    setAnswer(null);
+    setAnswerModel(null);
     setError(null);
   }, [sectionId]);
 
-  async function buildEvidence(event: FormEvent<HTMLFormElement>) {
+  const canSynthesize = aiStatus?.configured === true && aiStatus.ai_enabled === true;
+
+  async function research(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalized = question.trim();
     const requestedSectionId = sectionId;
     if (!requestedSectionId || !normalized) return;
 
+    const requestBody = {
+      question: normalized,
+      reader: {
+        library_entry_id: libraryEntryId,
+        document_id: documentId,
+        section_id: requestedSectionId,
+        char_offset: 0,
+      },
+      library_entry_ids: [libraryEntryId],
+      related_limit: 6,
+    };
+
     setLoading(true);
     setError(null);
+    setAnswer(null);
+    setAnswerModel(null);
     try {
-      const response = await apiFetch("/v1/research/evidence", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: normalized,
-          reader: {
-            library_entry_id: libraryEntryId,
-            document_id: documentId,
-            section_id: requestedSectionId,
-            char_offset: 0,
-          },
-          library_entry_ids: [libraryEntryId],
-          related_limit: 6,
-        }),
-      });
+      const response = await apiFetch(
+        canSynthesize ? "/v1/ai/research/answer" : "/v1/research/evidence",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        },
+      );
       if (!response.ok) {
-        throw new Error(`Evidence grounding failed with HTTP ${response.status}.`);
+        throw new Error(
+          `${canSynthesize ? "Grounded answer" : "Evidence grounding"} failed with HTTP ${response.status}.`,
+        );
       }
-      const payload = (await response.json()) as EvidenceBundle;
-      if (activeSectionRef.current === requestedSectionId) {
-        setBundle(payload);
+
+      if (canSynthesize) {
+        const payload = (await response.json()) as GroundedResearchResponse;
+        if (activeSectionRef.current === requestedSectionId) {
+          setBundle(payload.evidence);
+          setAnswer(payload.answer);
+          setAnswerModel(`${payload.model_provider} · ${payload.model_name} · ${payload.model_routing}`);
+        }
+      } else {
+        const payload = (await response.json()) as EvidenceBundle;
+        if (activeSectionRef.current === requestedSectionId) {
+          setBundle(payload);
+        }
       }
     } catch (caught) {
       if (activeSectionRef.current === requestedSectionId) {
         setBundle(null);
-        setError(caught instanceof Error ? caught.message : "Could not ground this question.");
+        setAnswer(null);
+        setAnswerModel(null);
+        setError(caught instanceof Error ? caught.message : "Could not research this passage.");
       }
     } finally {
       setLoading(false);
     }
+  }
+
+  let explanation =
+    "Build a canonical source bundle from this passage and related text in the selected book.";
+  if (canSynthesize) {
+    explanation =
+      "Ask the configured local model. Every returned claim must cite the canonical evidence shown below.";
+  } else if (aiStatus?.configured === true && aiStatus.ai_enabled === false) {
+    explanation = "AI is disabled. Canonical evidence building remains available without model calls.";
+  } else if (aiStatus?.configured === false) {
+    explanation = "Local AI is not configured. Canonical evidence building remains fully available.";
   }
 
   return (
@@ -118,12 +204,9 @@ export function ReaderResearchPanel({
       <p className={styles.position}>
         {sectionLocator ? locatorLabel(sectionLocator) : "Canonical reader position"}
       </p>
-      <p className={styles.explanation}>
-        Build a source bundle from this passage and related text in the selected book. Bukmatika is
-        not generating an answer yet.
-      </p>
+      <p className={styles.explanation}>{explanation}</p>
 
-      <form className={styles.form} onSubmit={(event) => void buildEvidence(event)}>
+      <form className={styles.form} onSubmit={(event) => void research(event)}>
         <label htmlFor="reader-research-question">Research question</label>
         <textarea
           id="reader-research-question"
@@ -135,11 +218,36 @@ export function ReaderResearchPanel({
           onChange={(event) => setQuestion(event.target.value)}
         />
         <button type="submit" disabled={loading || sectionId === null || !question.trim()}>
-          {loading ? "Grounding…" : "Build evidence"}
+          {loading ? "Researching…" : canSynthesize ? "Ask local AI" : "Build evidence"}
         </button>
       </form>
 
-      {error ? <p className={styles.error} role="alert">{error}</p> : null}
+      {error ? (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      {answer ? (
+        <section className={styles.answer} aria-live="polite">
+          <div className={styles.answerHeading}>
+            <span>Grounded answer</span>
+            {answerModel ? <small>{answerModel}</small> : null}
+          </div>
+          <ol className={styles.claims}>
+            {answer.claims.map((claim, index) => (
+              <li key={`${index}-${claim.evidence_ids.join("-")}`}>
+                <p>{claim.text}</p>
+                <div className={styles.citations} aria-label="Evidence citations">
+                  {claim.evidence_ids.map((evidenceId) => (
+                    <code key={evidenceId}>{evidenceId}</code>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
 
       {bundle ? (
         <div className={styles.results} aria-live="polite">

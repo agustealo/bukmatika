@@ -51,6 +51,11 @@ from bukmatika.processing import (
     DocxDocumentParser,
     EpubDocumentParser,
     HtmlDocumentParser,
+    OcrAssetNotFound,
+    OcrJobNotFound,
+    OcrJobResponse,
+    OcrNotEligible,
+    OcrQueueService,
     ParserRegistry,
     PdfDocumentParser,
     ProcessedDocumentNotFound,
@@ -113,6 +118,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings,
     )
     app.state.acquisition_queue = AcquisitionQueueService(settings)
+    app.state.ocr_queue = OcrQueueService(settings)
     app.state.document_processing = DocumentProcessingService(
         ParserRegistry(
             (
@@ -167,6 +173,13 @@ def acquisition_queue_service(request: Request) -> AcquisitionQueueService:
     service = request.app.state.acquisition_queue
     if not isinstance(service, AcquisitionQueueService):
         raise RuntimeError("Acquisition queue service is not initialized")
+    return service
+
+
+def ocr_queue_service(request: Request) -> OcrQueueService:
+    service = request.app.state.ocr_queue
+    if not isinstance(service, OcrQueueService):
+        raise RuntimeError("OCR queue service is not initialized")
     return service
 
 
@@ -355,6 +368,43 @@ async def process_asset(
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail={"code": "DOCUMENT_PROCESSING_TIMEOUT"},
+        ) from exc
+
+
+@app.post(
+    "/v1/assets/{asset_id}/ocr",
+    response_model=OcrJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def enqueue_ocr(
+    asset_id: UUID,
+    service: Annotated[OcrQueueService, Depends(ocr_queue_service)],
+) -> OcrJobResponse:
+    try:
+        return await service.enqueue(asset_id)
+    except OcrAssetNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Asset not found",
+        ) from exc
+    except OcrNotEligible as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "OCR_NOT_ELIGIBLE"},
+        ) from exc
+
+
+@app.get("/v1/ocr-jobs/{job_id}", response_model=OcrJobResponse)
+async def ocr_status(
+    job_id: UUID,
+    service: Annotated[OcrQueueService, Depends(ocr_queue_service)],
+) -> OcrJobResponse:
+    try:
+        return await service.get(job_id)
+    except OcrJobNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OCR job not found",
         ) from exc
 
 

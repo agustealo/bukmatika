@@ -11,6 +11,7 @@ from bukmatika.processing.service import (
     DocumentProcessingService,
     ProcessedDocumentNotFound,
     ProcessingAssetNotFound,
+    ProcessingSourceChanged,
     ProcessingTimedOut,
     StoredObjectUnavailable,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "ParserRegistry",
     "ProcessedDocumentNotFound",
     "ProcessingAssetNotFound",
+    "ProcessingSourceChanged",
     "ProcessingTimedOut",
     "StoredObjectUnavailable",
     "TextDocumentParser",

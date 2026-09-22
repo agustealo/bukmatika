@@ -1,7 +1,7 @@
 import asyncio
 import os
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import ClassVar, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -23,6 +23,13 @@ class AcquisitionObjectStore(Protocol):
     async def quarantine(self, temp_path: Path, acquisition_id: UUID) -> str: ...
 
     async def discard(self, path: Path) -> None: ...
+
+
+@runtime_checkable
+class StoredObjectPathResolver(Protocol):
+    """Read-only path contract for verified stored objects."""
+
+    async def resolve_path(self, storage_key: str) -> Path: ...
 
 
 class LocalObjectStore:
@@ -60,6 +67,23 @@ class LocalObjectStore:
         await self.discard(destination)
         await asyncio.to_thread(os.replace, temp_path, destination)
         return relative.as_posix()
+
+    async def resolve_path(self, storage_key: str) -> Path:
+        key = PurePosixPath(storage_key)
+        if key.is_absolute() or not key.parts or key.parts[0] != "objects" or ".." in key.parts:
+            raise ValueError("Stored object key is outside the canonical object namespace")
+
+        root = await asyncio.to_thread(self._root.resolve, strict=False)
+        candidate = self._root.joinpath(*key.parts)
+        try:
+            resolved = await asyncio.to_thread(candidate.resolve, strict=True)
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"Stored object does not exist: {storage_key}") from exc
+        if not resolved.is_relative_to(root):
+            raise ValueError("Stored object key resolves outside the storage root")
+        if not await asyncio.to_thread(resolved.is_file):
+            raise FileNotFoundError(f"Stored object is not a regular file: {storage_key}")
+        return resolved
 
     async def discard(self, path: Path) -> None:
         try:

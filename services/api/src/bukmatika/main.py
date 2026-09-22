@@ -41,6 +41,22 @@ from bukmatika.persistence.acquisition import AcquisitionStateConflict
 from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.search import CatalogSearchRepository
+from bukmatika.processing import (
+    AssetNotStored,
+    DocumentParseError,
+    DocumentProcessingService,
+    DocumentResponse,
+    DocumentSearchResponse,
+    HtmlDocumentParser,
+    ParserRegistry,
+    ProcessedDocumentNotFound,
+    ProcessingAssetNotFound,
+    ProcessingSourceChanged,
+    ProcessingTimedOut,
+    StoredObjectUnavailable,
+    TextDocumentParser,
+    UnsupportedDocumentFormat,
+)
 
 settings = get_settings()
 
@@ -79,6 +95,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         session_timeout_seconds=settings.discovery_session_timeout_seconds,
         max_records=settings.discovery_max_records,
     )
+    object_store = LocalObjectStore(settings.storage_root)
     acquisition_executor = AcquisitionService(
         SafeDownloader(
             acquisition_client,
@@ -88,10 +105,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             timeout_seconds=settings.acquisition_timeout_seconds,
             user_agent=_user_agent(),
         ),
-        LocalObjectStore(settings.storage_root),
+        object_store,
         settings,
     )
     app.state.acquisition_queue = AcquisitionQueueService(settings)
+    app.state.document_processing = DocumentProcessingService(
+        ParserRegistry((TextDocumentParser(), HtmlDocumentParser())),
+        object_store,
+        settings,
+    )
     worker_task: asyncio.Task[None] | None = None
     if settings.acquisition_worker_enabled:
         worker = AcquisitionJobWorker(acquisition_executor, settings)
@@ -133,6 +155,13 @@ def acquisition_queue_service(request: Request) -> AcquisitionQueueService:
     service = request.app.state.acquisition_queue
     if not isinstance(service, AcquisitionQueueService):
         raise RuntimeError("Acquisition queue service is not initialized")
+    return service
+
+
+def document_processing_service(request: Request) -> DocumentProcessingService:
+    service = request.app.state.document_processing
+    if not isinstance(service, DocumentProcessingService):
+        raise RuntimeError("Document processing service is not initialized")
     return service
 
 
@@ -265,6 +294,66 @@ async def cancel_acquisition(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Acquisition not found",
+        ) from exc
+
+
+@app.post("/v1/assets/{asset_id}/process", response_model=DocumentResponse)
+async def process_asset(
+    asset_id: UUID,
+    service: Annotated[DocumentProcessingService, Depends(document_processing_service)],
+) -> DocumentResponse:
+    try:
+        return await service.process_asset(asset_id)
+    except ProcessingAssetNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Asset not found",
+        ) from exc
+    except AssetNotStored as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "ASSET_NOT_STORED"},
+        ) from exc
+    except StoredObjectUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "STORED_OBJECT_UNAVAILABLE"},
+        ) from exc
+    except ProcessingSourceChanged as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "PROCESSING_SOURCE_CHANGED"},
+        ) from exc
+    except UnsupportedDocumentFormat as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "UNSUPPORTED_DOCUMENT_FORMAT"},
+        ) from exc
+    except DocumentParseError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "DOCUMENT_PARSE_FAILED"},
+        ) from exc
+    except ProcessingTimedOut as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={"code": "DOCUMENT_PROCESSING_TIMEOUT"},
+        ) from exc
+
+
+@app.get("/v1/documents/{document_id}/search", response_model=DocumentSearchResponse)
+async def search_document(
+    document_id: UUID,
+    q: Annotated[str, Query(min_length=1, max_length=200)],
+    service: Annotated[DocumentProcessingService, Depends(document_processing_service)],
+    limit: Annotated[int, Query(ge=1, le=100)] = settings.document_search_default_limit,
+) -> DocumentSearchResponse:
+    try:
+        return await service.search_document(document_id, query=q, limit=limit)
+    except ProcessedDocumentNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found",
         ) from exc
 
 

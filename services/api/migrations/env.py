@@ -4,7 +4,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from bukmatika.config import get_settings
-from bukmatika.persistence.models import Base
+from bukmatika.persistence.document_models import Document
 
 config = context.config
 
@@ -12,7 +12,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
-target_metadata = Base.metadata
+target_metadata = Document.metadata
 
 
 def run_migrations_offline() -> None:

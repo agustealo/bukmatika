@@ -22,6 +22,11 @@ class SemanticEventType(StrEnum):
     ACQUISITION_FAILED = "acquisition.failed"
     ACQUISITION_QUARANTINED = "acquisition.quarantined"
     ACQUISITION_STORED = "acquisition.stored"
+    DOCUMENT_PROCESSING_STARTED = "document.processing_started"
+    DOCUMENT_PROCESSING_COMPLETED = "document.processing_completed"
+    DOCUMENT_PROCESSING_FAILED = "document.processing_failed"
+    DOCUMENT_SEARCH_SUBMITTED = "document.search_submitted"
+    DOCUMENT_SEARCH_COMPLETED = "document.search_completed"
 
 
 class InteractionEventRepository:

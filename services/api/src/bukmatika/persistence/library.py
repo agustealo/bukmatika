@@ -248,9 +248,9 @@ class LibraryRepository:
             .limit(1)
         )
 
-    async def strongest_rights_evidence_state(self, asset_id: UUID) -> str | None:
-        return await self._session.scalar(
-            select(RightsEvidenceRecord.state)
+    async def rights_evidence_for_asset(self, asset_id: UUID) -> list[RightsEvidenceRecord]:
+        values = await self._session.scalars(
+            select(RightsEvidenceRecord)
             .join(
                 RightsEvidenceSubject,
                 RightsEvidenceSubject.rights_evidence_id == RightsEvidenceRecord.id,
@@ -259,9 +259,9 @@ class LibraryRepository:
                 RightsEvidenceSubject.subject_type == "asset",
                 RightsEvidenceSubject.subject_id == asset_id,
             )
-            .order_by(RightsEvidenceRecord.confidence.desc(), RightsEvidenceRecord.created_at.desc())
-            .limit(1)
+            .order_by(RightsEvidenceRecord.created_at, RightsEvidenceRecord.id)
         )
+        return list(values)
 
     async def readable_document_for_entry(
         self,

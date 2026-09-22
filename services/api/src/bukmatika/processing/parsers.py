@@ -182,8 +182,8 @@ class EpubDocumentParser:
         _validate_bounded_file(path, max_bytes=max_bytes)
         try:
             with zipfile.ZipFile(path) as archive:
-                members = _safe_archive_members(archive)
-                budget = _ArchiveReadBudget(max_bytes)
+                members = _safe_archive_members(archive, label="EPUB")
+                budget = _ArchiveReadBudget(max_bytes, label="EPUB")
                 container_info = members.get(self._container_path)
                 if container_info is None:
                     raise DocumentParseError("EPUB is missing META-INF/container.xml")
@@ -223,6 +223,41 @@ class EpubDocumentParser:
         )
 
 
+class DocxDocumentParser:
+    format_name = "DOCX"
+    name = "builtin-docx"
+    version = "1"
+
+    _document_path = "word/document.xml"
+
+    def parse(self, path: Path, *, max_bytes: int) -> ParsedDocument:
+        _validate_bounded_file(path, max_bytes=max_bytes)
+        try:
+            with zipfile.ZipFile(path) as archive:
+                members = _safe_archive_members(archive, label="DOCX")
+                budget = _ArchiveReadBudget(max_bytes, label="DOCX")
+                document_info = members.get(self._document_path)
+                if document_info is None:
+                    raise DocumentParseError("DOCX is missing word/document.xml")
+                document = _parse_xml(
+                    budget.read(archive, document_info),
+                    label="DOCX document.xml",
+                )
+                sections = _docx_sections(document)
+        except DocumentParseError:
+            raise
+        except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
+            raise DocumentParseError("DOCX document could not be parsed") from exc
+
+        if not sections:
+            raise DocumentParseError("DOCX document contains no readable text")
+        return ParsedDocument(
+            parser_name=self.name,
+            parser_version=self.version,
+            sections=tuple(sections),
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class _EpubManifestItem:
     href: str
@@ -230,17 +265,22 @@ class _EpubManifestItem:
 
 
 class _ArchiveReadBudget:
-    def __init__(self, max_bytes: int) -> None:
+    def __init__(self, max_bytes: int, *, label: str) -> None:
         if max_bytes < 1:
             raise ValueError("max_bytes must be positive")
         self._remaining = max_bytes
+        self._label = label
 
     def read(self, archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> bytes:
         if info.file_size > self._remaining:
-            raise DocumentParseError("EPUB expanded content exceeds processing byte limit")
+            raise DocumentParseError(
+                f"{self._label} expanded content exceeds processing byte limit"
+            )
         payload = archive.read(info)
         if len(payload) > self._remaining:
-            raise DocumentParseError("EPUB expanded content exceeds processing byte limit")
+            raise DocumentParseError(
+                f"{self._label} expanded content exceeds processing byte limit"
+            )
         self._remaining -= len(payload)
         return payload
 
@@ -323,7 +363,7 @@ def _epub_rootfile_path(container: ElementTree.Element) -> str:
             continue
         raw = element.attrib.get("full-path")
         if raw:
-            return _normalize_archive_path(raw)
+            return _normalize_archive_path(raw, label="EPUB")
     raise DocumentParseError("EPUB container has no package rootfile")
 
 
@@ -399,14 +439,119 @@ def _epub_sections(
     return sections
 
 
-def _safe_archive_members(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
+def _docx_sections(document: ElementTree.Element) -> list[ParsedSection]:
+    body = next((element for element in document.iter() if _local_name(element.tag) == "body"), None)
+    if body is None:
+        raise DocumentParseError("DOCX document.xml has no body")
+
+    sections: list[ParsedSection] = []
+    paragraph_number = 0
+    table_number = 0
+    for block_number, child in enumerate(body, start=1):
+        child_name = _local_name(child.tag)
+        if child_name == "p":
+            paragraph_number += 1
+            text = _docx_text(child)
+            if not text:
+                continue
+            style = _docx_paragraph_style(child)
+            sections.append(
+                ParsedSection(
+                    ordinal=len(sections),
+                    heading=text if _docx_style_is_heading(style) else None,
+                    locator={
+                        "block": block_number,
+                        "type": "paragraph",
+                        "paragraph": paragraph_number,
+                    },
+                    text=text,
+                )
+            )
+            continue
+        if child_name != "tbl":
+            continue
+
+        table_number += 1
+        row_number = 0
+        for row in child:
+            if _local_name(row.tag) != "tr":
+                continue
+            row_number += 1
+            cells = [
+                _docx_cell_text(cell)
+                for cell in row
+                if _local_name(cell.tag) == "tc"
+            ]
+            row_text = "\t".join(cell for cell in cells if cell)
+            if not row_text:
+                continue
+            sections.append(
+                ParsedSection(
+                    ordinal=len(sections),
+                    heading=None,
+                    locator={
+                        "block": block_number,
+                        "type": "table_row",
+                        "table": table_number,
+                        "row": row_number,
+                    },
+                    text=row_text,
+                )
+            )
+    return sections
+
+
+def _docx_text(element: ElementTree.Element) -> str:
+    parts: list[str] = []
+    for descendant in element.iter():
+        name = _local_name(descendant.tag)
+        if name == "t" and descendant.text:
+            parts.append(descendant.text)
+        elif name == "tab":
+            parts.append("\t")
+        elif name in {"br", "cr"}:
+            parts.append("\n")
+    return _normalize_text_block("".join(parts))
+
+
+def _docx_cell_text(cell: ElementTree.Element) -> str:
+    paragraphs = [
+        _docx_text(element)
+        for element in cell
+        if _local_name(element.tag) == "p"
+    ]
+    return " / ".join(text for text in paragraphs if text)
+
+
+def _docx_paragraph_style(paragraph: ElementTree.Element) -> str | None:
+    for element in paragraph.iter():
+        if _local_name(element.tag) != "pStyle":
+            continue
+        for attribute, value in element.attrib.items():
+            if _local_name(attribute) == "val":
+                return value
+    return None
+
+
+def _docx_style_is_heading(style: str | None) -> bool:
+    if style is None:
+        return False
+    normalized = style.replace(" ", "").casefold()
+    return normalized.startswith(("heading", "title", "subtitle"))
+
+
+def _safe_archive_members(
+    archive: zipfile.ZipFile,
+    *,
+    label: str,
+) -> dict[str, zipfile.ZipInfo]:
     members: dict[str, zipfile.ZipInfo] = {}
     for info in archive.infolist():
         if info.is_dir():
             continue
-        normalized = _normalize_archive_path(info.filename)
+        normalized = _normalize_archive_path(info.filename, label=label)
         if normalized in members:
-            raise DocumentParseError("EPUB contains duplicate normalized archive paths")
+            raise DocumentParseError(f"{label} contains duplicate normalized archive paths")
         members[normalized] = info
     return members
 
@@ -417,14 +562,14 @@ def _resolve_archive_reference(base: PurePosixPath, reference: str) -> str:
         raise DocumentParseError("EPUB spine contains an external resource reference")
     decoded = unquote(split.path).replace("\\", "/")
     combined = posixpath.normpath((base / decoded).as_posix())
-    return _normalize_archive_path(combined)
+    return _normalize_archive_path(combined, label="EPUB")
 
 
-def _normalize_archive_path(value: str) -> str:
+def _normalize_archive_path(value: str, *, label: str) -> str:
     normalized = posixpath.normpath(value.replace("\\", "/"))
     path = PurePosixPath(normalized)
     if normalized in {"", "."} or path.is_absolute() or ".." in path.parts:
-        raise DocumentParseError("EPUB contains an unsafe archive path")
+        raise DocumentParseError(f"{label} contains an unsafe archive path")
     return path.as_posix()
 
 

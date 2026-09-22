@@ -33,12 +33,16 @@ class OllamaLocalGateway(ModelGateway):
         client: httpx.AsyncClient,
         base_url: str,
         model: str,
+        timeout_seconds: float,
     ) -> None:
         normalized_model = model.strip()
         if not normalized_model:
             raise ValueError("Ollama model name cannot be blank")
+        if timeout_seconds <= 0 or timeout_seconds > 60:
+            raise ValueError("Ollama timeout must be between 0 and 60 seconds")
         self._client = client
         self._base_url = _validate_loopback_base_url(base_url)
+        self._timeout_seconds = timeout_seconds
         self._identity = ModelProviderIdentity(
             provider="ollama",
             model=normalized_model,
@@ -79,7 +83,7 @@ class OllamaLocalGateway(ModelGateway):
             response = await self._client.post(
                 f"{self._base_url}/api/chat",
                 json=body,
-                timeout=request.timeout_seconds,
+                timeout=min(request.timeout_seconds, self._timeout_seconds),
             )
             response.raise_for_status()
         except httpx.HTTPError as exc:

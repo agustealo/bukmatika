@@ -19,12 +19,19 @@ from bukmatika.personalization.domain import (
     PersonalizationSettingsUpdate,
     PreferenceClaimResponse,
 )
+from bukmatika.personalization.portability import PersonalizationPortabilityService
+from bukmatika.personalization.portability_domain import (
+    PersonalizationExportResponse,
+    PersonalizationResetRequest,
+    PersonalizationResetResponse,
+)
 from bukmatika.personalization.service import PersonalizationService, PreferenceClaimNotFound
 
 router = APIRouter(prefix="/v1/personalization", tags=["personalization"])
 _personalization_service = PersonalizationService()
 _context_assembler = ContextAssembler()
 _control_service = PersonalizationControlService()
+_portability_service = PersonalizationPortabilityService()
 
 
 def personalization_service() -> PersonalizationService:
@@ -37,6 +44,10 @@ def context_assembler() -> ContextAssembler:
 
 def personalization_control_service() -> PersonalizationControlService:
     return _control_service
+
+
+def personalization_portability_service() -> PersonalizationPortabilityService:
+    return _portability_service
 
 
 @router.get("", response_model=PersonalizationProfileResponse)
@@ -71,6 +82,29 @@ async def personalization_activity(
         principal_id=identity.principal_id,
         limit=limit,
     )
+
+
+@router.get("/export", response_model=PersonalizationExportResponse)
+async def export_personalization(
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[
+        PersonalizationPortabilityService,
+        Depends(personalization_portability_service),
+    ],
+) -> PersonalizationExportResponse:
+    return await service.export(principal_id=identity.principal_id)
+
+
+@router.post("/reset", response_model=PersonalizationResetResponse)
+async def reset_personalization(
+    request: PersonalizationResetRequest,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[
+        PersonalizationPortabilityService,
+        Depends(personalization_portability_service),
+    ],
+) -> PersonalizationResetResponse:
+    return await service.reset(principal_id=identity.principal_id)
 
 
 @router.post("/preferences", response_model=PreferenceClaimResponse)

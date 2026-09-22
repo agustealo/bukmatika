@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence.document_models import Document
+from bukmatika.persistence.events import SemanticEventType
 from bukmatika.persistence.models import InteractionEvent
 from bukmatika.persistence.personalization import PersonalizationRepository
 from bukmatika.persistence.personalization_models import (
@@ -114,6 +115,17 @@ class LearningRepository:
         self._session.add(event)
         await self._session.flush()
         return event
+
+    async def latest_personalization_reset_at(self, principal_id: UUID) -> datetime | None:
+        return await self._session.scalar(
+            select(InteractionEvent.occurred_at)
+            .where(
+                InteractionEvent.principal_id == principal_id,
+                InteractionEvent.event_type == SemanticEventType.PERSONALIZATION_RESET.value,
+            )
+            .order_by(InteractionEvent.occurred_at.desc(), InteractionEvent.id.desc())
+            .limit(1)
+        )
 
     async def format_open_evidence(
         self,

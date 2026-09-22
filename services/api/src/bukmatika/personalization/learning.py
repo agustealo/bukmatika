@@ -137,6 +137,10 @@ class LearningService:
             if not user_model.learning_enabled:
                 return None
 
+            reset_at = await repository.latest_personalization_reset_at(principal_id)
+            if reset_at is not None:
+                cutoff = max(cutoff, reset_at)
+
             active = await repository.active_claim(
                 principal_id=principal_id,
                 key=PreferenceKey.FORMAT_PREFERRED.value,

@@ -1,4 +1,5 @@
 import { PersonalizationClient } from "../../components/personalization-client";
+import { PersonalizationDataControls } from "../../components/personalization-data-controls";
 
 export default function PersonalizationPage() {
   return (
@@ -17,6 +18,7 @@ export default function PersonalizationPage() {
       </header>
 
       <PersonalizationClient />
+      <PersonalizationDataControls />
     </main>
   );
 }

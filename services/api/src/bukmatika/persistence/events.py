@@ -40,6 +40,7 @@ class SemanticEventType(StrEnum):
     PREFERENCE_SET = "personalization.preference_set"
     PREFERENCE_FORGOTTEN = "personalization.preference_forgotten"
     PERSONALIZATION_SETTINGS_UPDATED = "personalization.settings_updated"
+    PERSONALIZATION_RESET = "personalization.reset"
 
 
 class InteractionEventRepository:

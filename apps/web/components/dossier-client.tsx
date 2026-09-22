@@ -41,10 +41,9 @@ type WorkDossier = {
   editions: EditionDossier[];
 };
 
-type DossierClientProps = {
-  provider: string;
-  recordId: string;
-};
+type DossierClientProps =
+  | { provider: string; recordId: string; workId?: never }
+  | { workId: string; provider?: never; recordId?: never };
 
 const ACQUIRABLE_RIGHTS = new Set(["public_domain", "open_license", "authorized_download"]);
 const ACTIVE_JOB_STATES = new Set(["queued", "running", "resolving", "downloading", "verifying"]);
@@ -60,24 +59,25 @@ function bytesLabel(bytes: number | null): string | null {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function DossierClient({ provider, recordId }: DossierClientProps) {
+export function DossierClient(props: DossierClientProps) {
   const [dossier, setDossier] = useState<WorkDossier | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionKey, setActionKey] = useState<string | null>(null);
 
-  const sourceQuery = useMemo(() => {
-    const params = new URLSearchParams({ provider, record_id: recordId });
-    return params.toString();
-  }, [provider, recordId]);
+  const dossierPath = useMemo(() => {
+    if (props.workId) return `/v1/dossiers/works/${props.workId}`;
+    const params = new URLSearchParams({ provider: props.provider, record_id: props.recordId });
+    return `/v1/dossiers/source?${params.toString()}`;
+  }, [props]);
 
   const load = useCallback(async () => {
-    const response = await apiFetch(`/v1/dossiers/source?${sourceQuery}`, { cache: "no-store" });
+    const response = await apiFetch(dossierPath, { cache: "no-store" });
     if (!response.ok) {
       throw new Error(`Dossier failed with HTTP ${response.status}.`);
     }
     setDossier((await response.json()) as WorkDossier);
-  }, [sourceQuery]);
+  }, [dossierPath]);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,9 +85,7 @@ export function DossierClient({ provider, recordId }: DossierClientProps) {
       setLoading(true);
       setError(null);
       try {
-        const response = await apiFetch(`/v1/dossiers/source?${sourceQuery}`, {
-          cache: "no-store",
-        });
+        const response = await apiFetch(dossierPath, { cache: "no-store" });
         if (!response.ok) throw new Error(`Dossier failed with HTTP ${response.status}.`);
         const body = (await response.json()) as WorkDossier;
         if (!cancelled) setDossier(body);
@@ -103,7 +101,7 @@ export function DossierClient({ provider, recordId }: DossierClientProps) {
     return () => {
       cancelled = true;
     };
-  }, [sourceQuery]);
+  }, [dossierPath]);
 
   async function perform(key: string, path: string) {
     if (actionKey) return;

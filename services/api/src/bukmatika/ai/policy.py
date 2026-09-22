@@ -30,7 +30,10 @@ class ActionPolicy:
 
     def evaluate(self, step: PlanStep, context: ContextManifest) -> PolicyDecision:
         if not context.ai_enabled or not context.model_context_ready:
-            return PolicyDecision(ActionDecisionValue.DENY, "AI context is disabled or unavailable.")
+            return PolicyDecision(
+                ActionDecisionValue.DENY,
+                "AI context is disabled or unavailable.",
+            )
         if context.autonomy_level not in (0, 1):
             return PolicyDecision(
                 ActionDecisionValue.DENY,

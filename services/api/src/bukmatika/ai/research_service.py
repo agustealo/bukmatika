@@ -12,7 +12,12 @@ from bukmatika.ai.execution import (
     ResearchAnswerExecutor,
     ResearchSearchExecutor,
 )
-from bukmatika.ai.gateway import ModelGateway, ModelProviderUnconfigured
+from bukmatika.ai.gateway import (
+    ModelGateway,
+    ModelProviderNotReady,
+    ModelProviderReadiness,
+    ModelProviderUnconfigured,
+)
 from bukmatika.ai.policy import ActionPolicy
 from bukmatika.ai.research_domain import (
     GroundedResearchCapabilityOutput,
@@ -45,11 +50,6 @@ class GroundedResearchSynthesisService:
         self._research = research_service or ResearchService(
             session_scope_factory=session_scope_factory
         )
-        provider_available = gateway.identity is not None
-        self._context = ContextAssembler(
-            session_scope_factory=session_scope_factory,
-            research_answer_available=provider_available,
-        )
         self._execution = ExecutionCoordinator(
             capability_registry=self._registry,
             executor_registry=CapabilityExecutorRegistry(
@@ -71,8 +71,17 @@ class GroundedResearchSynthesisService:
         principal_id: UUID,
         request: ResearchEvidenceBundleRequest,
     ) -> GroundedResearchExecutionResponse:
-        identity = self._gateway.identity
-        context = await self._context.assemble(
+        readiness: ModelProviderReadiness | None = None
+
+        async def research_answer_available() -> bool:
+            nonlocal readiness
+            readiness = await self._gateway.readiness()
+            return readiness.ready
+
+        context = await ContextAssembler(
+            session_scope_factory=self._session_scope,
+            research_answer_availability=research_answer_available,
+        ).assemble(
             principal_id=principal_id,
             request=ContextRequest(
                 task=ContextTask.READER,
@@ -81,8 +90,10 @@ class GroundedResearchSynthesisService:
         )
         if not context.ai_enabled:
             raise AIDisabled("AI is disabled for this principal")
-        if identity is None:
+        if readiness is None or not readiness.configured:
             raise ModelProviderUnconfigured("No model provider is configured")
+        if not readiness.ready:
+            raise ModelProviderNotReady(readiness)
 
         step = PlanStep(
             step_id="research-answer-1",

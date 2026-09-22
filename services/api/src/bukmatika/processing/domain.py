@@ -1,10 +1,9 @@
 from dataclasses import dataclass
-from typing import TypeAlias
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-DocumentLocator: TypeAlias = dict[str, str | int]
+type DocumentLocator = dict[str, str | int]
 
 
 @dataclass(frozen=True, slots=True)

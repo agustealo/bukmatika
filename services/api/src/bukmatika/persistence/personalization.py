@@ -1,11 +1,14 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bukmatika.persistence.personalization_models import PreferenceClaim, UserModel
+from bukmatika.persistence.document_models import Document
+from bukmatika.persistence.models import Asset, Edition, LibraryEntry, Work
+from bukmatika.persistence.personalization_models import Goal, PreferenceClaim, UserModel
 from bukmatika.personalization.domain import (
     ExplicitPreferenceRequest,
     PersonalizationSettingsUpdate,
@@ -14,6 +17,23 @@ from bukmatika.personalization.domain import (
 
 class PreferenceClaimNotFound(LookupError):
     pass
+
+
+class ContextGoalDenied(LookupError):
+    pass
+
+
+class ContextSelectionDenied(LookupError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class OwnedLibraryContext:
+    library_entry_id: UUID
+    work_id: UUID
+    edition_id: UUID | None
+    title: str
+    document_ids: tuple[UUID, ...]
 
 
 class PersonalizationRepository:
@@ -61,6 +81,89 @@ class PersonalizationRepository:
             )
         )
         return list(values)
+
+    async def active_goal(self, *, principal_id: UUID, goal_id: UUID) -> Goal:
+        goal = await self._session.scalar(
+            select(Goal).where(
+                Goal.id == goal_id,
+                Goal.principal_id == principal_id,
+                Goal.status == "active",
+            )
+        )
+        if goal is None:
+            raise ContextGoalDenied("Active goal is unavailable")
+        return goal
+
+    async def owned_library_contexts(
+        self,
+        *,
+        principal_id: UUID,
+        library_entry_ids: list[UUID],
+    ) -> list[OwnedLibraryContext]:
+        if not library_entry_ids:
+            return []
+        requested = set(library_entry_ids)
+        owned = set(
+            (
+                await self._session.scalars(
+                    select(LibraryEntry.id).where(
+                        LibraryEntry.principal_id == principal_id,
+                        LibraryEntry.id.in_(requested),
+                    )
+                )
+            ).all()
+        )
+        if owned != requested:
+            raise ContextSelectionDenied("One or more library selections are unavailable")
+
+        rows = (
+            await self._session.execute(
+                select(
+                    LibraryEntry.id,
+                    LibraryEntry.work_id,
+                    LibraryEntry.edition_id,
+                    Work.canonical_title,
+                    Document.id,
+                )
+                .join(Work, Work.id == LibraryEntry.work_id)
+                .outerjoin(
+                    Edition,
+                    and_(
+                        Edition.work_id == LibraryEntry.work_id,
+                        or_(
+                            LibraryEntry.edition_id.is_(None),
+                            LibraryEntry.edition_id == Edition.id,
+                        ),
+                    ),
+                )
+                .outerjoin(Asset, Asset.edition_id == Edition.id)
+                .outerjoin(Document, Document.asset_id == Asset.id)
+                .where(
+                    LibraryEntry.principal_id == principal_id,
+                    LibraryEntry.id.in_(requested),
+                )
+                .order_by(LibraryEntry.id, Document.id)
+            )
+        ).all()
+        by_entry: dict[UUID, tuple[UUID, UUID | None, str, list[UUID]]] = {}
+        for entry_id, work_id, edition_id, title, document_id in rows:
+            current = by_entry.get(entry_id)
+            if current is None:
+                current = (work_id, edition_id, title, [])
+                by_entry[entry_id] = current
+            if document_id is not None and document_id not in current[3]:
+                current[3].append(document_id)
+
+        return [
+            OwnedLibraryContext(
+                library_entry_id=entry_id,
+                work_id=by_entry[entry_id][0],
+                edition_id=by_entry[entry_id][1],
+                title=by_entry[entry_id][2],
+                document_ids=tuple(by_entry[entry_id][3]),
+            )
+            for entry_id in library_entry_ids
+        ]
 
     async def set_explicit_preference(
         self,

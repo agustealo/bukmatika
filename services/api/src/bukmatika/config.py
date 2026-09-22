@@ -43,11 +43,12 @@ class Settings(BaseSettings):
     processing_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
     processing_max_bytes: int = Field(default=67_108_864, ge=1, le=536_870_912)
     document_search_default_limit: int = Field(default=20, ge=1, le=100)
-    ocr_worker_enabled: bool = True
     ocr_worker_poll_seconds: float = Field(default=0.5, gt=0, le=30)
     ocr_job_lease_seconds: float = Field(default=600.0, ge=60, le=7200)
     ocr_job_heartbeat_seconds: float = Field(default=30.0, ge=5, le=300)
     ocr_max_attempts: int = Field(default=2, ge=1, le=5)
+    ocr_retry_base_seconds: float = Field(default=5.0, gt=0, le=120)
+    ocr_retry_max_seconds: float = Field(default=60.0, gt=0, le=900)
     ocr_tesseract_executable: str = "tesseract"
     ocr_tessdata_prefix: Path | None = None
     ocr_language: str = "eng"
@@ -55,8 +56,10 @@ class Settings(BaseSettings):
     ocr_page_timeout_seconds: float = Field(default=45.0, gt=0, le=300)
     ocr_render_dpi: int = Field(default=200, ge=72, le=400)
     ocr_max_pages: int = Field(default=1000, ge=1, le=10_000)
+    ocr_max_render_pixels: int = Field(default=50_000_000, ge=1_000_000, le=200_000_000)
     ocr_stdout_max_bytes: int = Field(default=8_388_608, ge=1024, le=67_108_864)
     ocr_stderr_max_bytes: int = Field(default=131_072, ge=1024, le=1_048_576)
+    ocr_total_text_max_bytes: int = Field(default=67_108_864, ge=1024, le=536_870_912)
     storage_root: Path = Path(".bukmatika/storage")
     user_agent: str = "Bukmatika/0.1 (+https://github.com/agustealo/bukmatika)"
     contact_email: str | None = None

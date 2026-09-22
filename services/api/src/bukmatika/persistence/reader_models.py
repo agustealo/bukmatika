@@ -2,7 +2,17 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -27,6 +37,10 @@ class ReadingState(Base, TimestampMixin):
             name="ck_reading_state_progress_fraction",
         ),
         CheckConstraint(
+            "section_ordinal IS NULL OR section_ordinal >= 0",
+            name="ck_reading_state_section_ordinal",
+        ),
+        CheckConstraint(
             "char_offset IS NULL OR char_offset >= 0",
             name="ck_reading_state_char_offset",
         ),
@@ -47,6 +61,7 @@ class ReadingState(Base, TimestampMixin):
     section_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("document_sections.id", ondelete="SET NULL")
     )
+    section_ordinal: Mapped[int | None] = mapped_column(Integer)
     char_offset: Mapped[int | None] = mapped_column(Integer)
     locator: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

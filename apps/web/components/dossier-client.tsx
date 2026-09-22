@@ -42,8 +42,8 @@ type WorkDossier = {
 };
 
 type DossierClientProps =
-  | { provider: string; recordId: string; workId?: never }
-  | { workId: string; provider?: never; recordId?: never };
+  | { provider: string; recordId: string }
+  | { workId: string };
 
 const ACTIVE_JOB_STATES = new Set(["queued", "running", "resolving", "downloading", "verifying"]);
 
@@ -65,7 +65,7 @@ export function DossierClient(props: DossierClientProps) {
   const [actionKey, setActionKey] = useState<string | null>(null);
 
   const dossierPath = useMemo(() => {
-    if (props.workId) return `/v1/dossiers/works/${props.workId}`;
+    if ("workId" in props) return `/v1/dossiers/works/${props.workId}`;
     const params = new URLSearchParams({ provider: props.provider, record_id: props.recordId });
     return `/v1/dossiers/source?${params.toString()}`;
   }, [props]);

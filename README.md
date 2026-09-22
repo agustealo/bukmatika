@@ -77,6 +77,18 @@ Local AI is optional. The API defaults to no model provider, and ordinary discov
 
 The Ollama integration is loopback-only and does not use environment proxy routing. `BUKMATIKA_MODEL_TIMEOUT_SECONDS` limits generation calls and `BUKMATIKA_MODEL_READINESS_TIMEOUT_SECONDS` independently bounds the lightweight runtime/model readiness probe. Model-backed answers remain subject to the same principal ownership, action policy, evidence, citation-validation, and activity-ledger rules as the rest of the product.
 
+### Verify a real local model
+
+After the API package is installed and the configured Ollama model is present locally, run:
+
+```text
+bukmatika-ai-smoke
+```
+
+The command uses the same canonical `ModelGateway` as the application. It first requires the provider and selected model to report ready, then sends a public, context-free structured-output verification request to the actual model. Success prints provider/model/routing identity plus the exact verification token. Unconfigured, unreachable, invalid, missing-model, transport, or structured-response failures exit non-zero. The smoke command does not use book text, reader context, annotations, or personal data.
+
+This smoke proves the installed model runtime itself. Phase 5 still requires a recorded real-runtime grounded-answer proof against canonical persisted research evidence before delegated autonomy can open.
+
 ## Non-goals
 
 - Circumventing DRM, authentication, paywalls, lending controls, or access restrictions.

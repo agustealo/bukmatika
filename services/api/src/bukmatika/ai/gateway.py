@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, JsonValue
 class ModelTask(StrEnum):
     PLAN = "plan"
     RESEARCH_ANSWER = "research_answer"
+    RUNTIME_SMOKE = "runtime_smoke"
 
 
 class ModelDataClassification(StrEnum):

@@ -1,3 +1,4 @@
+import { LocalAIStatus } from "../../components/local-ai-status";
 import { PersonalizationClient } from "../../components/personalization-client";
 import { PersonalizationDataControls } from "../../components/personalization-data-controls";
 
@@ -18,6 +19,7 @@ export default function PersonalizationPage() {
       </header>
 
       <PersonalizationClient />
+      <LocalAIStatus />
       <PersonalizationDataControls />
     </main>
   );

@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from uuid import UUID
@@ -32,6 +33,8 @@ from bukmatika.research.domain import (
 from bukmatika.research.service import ResearchSelectionDenied, ResearchService
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+_MAX_RETRIEVAL_TERMS = 24
+_MAX_RESEARCH_QUERY_CHARS = 200
 
 
 class GroundedCitationInvalid(RuntimeError):
@@ -91,13 +94,13 @@ class GroundedResearchService:
         retrieval = await self._research.search(
             principal_id=principal_id,
             request=ResearchSearchRequest(
-                query=request.question,
+                query=_retrieval_query(request.question),
                 library_entry_ids=request.library_entry_ids,
                 limit=max_passages,
             ),
         )
         if not retrieval.passages:
-            return GroundedAnswerResponse(
+            response = GroundedAnswerResponse(
                 status=GroundedAnswerStatus.NO_EVIDENCE,
                 question=request.question,
                 selected_library_entry_ids=request.library_entry_ids,
@@ -106,6 +109,12 @@ class GroundedResearchService:
                 provider=None,
                 model=None,
             )
+            await self._record_completion(
+                principal_id=principal_id,
+                response=response,
+                cited_evidence_ids=[],
+            )
+            return response
 
         evidence_packets = [
             _model_evidence_packet(
@@ -225,6 +234,21 @@ class GroundedResearchService:
                     "model": response.model,
                 },
             )
+
+
+def _retrieval_query(question: str) -> str:
+    tokens = re.findall(r"[^\W_]+", question.casefold())
+    unique_tokens = list(dict.fromkeys(token for token in tokens if len(token) > 1))
+    if not unique_tokens:
+        return question[:_MAX_RESEARCH_QUERY_CHARS]
+
+    selected: list[str] = []
+    for token in unique_tokens[:_MAX_RETRIEVAL_TERMS]:
+        candidate = " OR ".join([*selected, token])
+        if len(candidate) > _MAX_RESEARCH_QUERY_CHARS:
+            break
+        selected.append(token)
+    return " OR ".join(selected) or question[:_MAX_RESEARCH_QUERY_CHARS]
 
 
 def _model_evidence_packet(

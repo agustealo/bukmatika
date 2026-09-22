@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +34,18 @@ class OwnedLibraryContext:
     edition_id: UUID | None
     title: str
     document_ids: tuple[UUID, ...]
+
+
+async def lock_personalization_state(session: AsyncSession, principal_id: UUID) -> None:
+    """Serialize principal-scoped personalization mutations for the current transaction."""
+    await session.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended(CAST(:principal_id AS text), 0)"
+            ")"
+        ),
+        {"principal_id": str(principal_id)},
+    )
 
 
 class PersonalizationRepository:
@@ -249,6 +261,7 @@ class PersonalizationRepository:
         return user_model
 
     async def _lock_user_model(self, principal_id: UUID) -> UserModel:
+        await lock_personalization_state(self._session, principal_id)
         await self.get_or_create_user_model(principal_id)
         user_model = await self._session.scalar(
             select(UserModel)

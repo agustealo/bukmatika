@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -40,6 +41,7 @@ class SemanticEventType(StrEnum):
     PREFERENCE_SET = "personalization.preference_set"
     PREFERENCE_FORGOTTEN = "personalization.preference_forgotten"
     PERSONALIZATION_SETTINGS_UPDATED = "personalization.settings_updated"
+    PERSONALIZATION_RESET = "personalization.reset"
 
 
 class InteractionEventRepository:
@@ -56,6 +58,7 @@ class InteractionEventRepository:
         entity_type: str | None = None,
         entity_id: UUID | None = None,
         context: dict[str, Any] | None = None,
+        occurred_at: datetime | None = None,
     ) -> InteractionEvent:
         event = InteractionEvent(
             principal_id=principal_id,
@@ -64,6 +67,8 @@ class InteractionEventRepository:
             entity_id=entity_id,
             context=context or {},
         )
+        if occurred_at is not None:
+            event.occurred_at = occurred_at
         self._session.add(event)
         await self._session.flush()
         return event

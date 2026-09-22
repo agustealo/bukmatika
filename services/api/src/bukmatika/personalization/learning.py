@@ -70,6 +70,7 @@ class LearningService:
         observed_at = now or datetime.now(UTC)
         async with self._session_scope() as database_session:
             repository = LearningRepository(database_session)
+            user_model = await repository.lock_user_model(principal_id)
             event = await repository.record_outcome(
                 principal_id=principal_id,
                 outcome=request.outcome.value,
@@ -79,7 +80,6 @@ class LearningService:
                 entity_id=request.entity_id,
                 context=dict(request.context),
             )
-            user_model = await repository.lock_user_model(principal_id)
             if not user_model.learning_enabled:
                 return event.id
             if request.entity_type != "preference_claim" or request.entity_id is None:
@@ -136,6 +136,10 @@ class LearningService:
             user_model = await repository.lock_user_model(principal_id)
             if not user_model.learning_enabled:
                 return None
+
+            reset_at = await repository.latest_personalization_reset_at(principal_id)
+            if reset_at is not None:
+                cutoff = max(cutoff, reset_at)
 
             active = await repository.active_claim(
                 principal_id=principal_id,

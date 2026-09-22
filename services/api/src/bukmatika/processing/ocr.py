@@ -40,6 +40,7 @@ class TesseractPdfOcrEngine:
 
         version = await self._engine_version()
         sections: list[ParsedSection] = []
+        total_text_bytes = 0
         with tempfile.TemporaryDirectory(prefix="bukmatika-ocr-") as temp_directory:
             root = Path(temp_directory)
             for page_index in range(page_count):
@@ -51,6 +52,7 @@ class TesseractPdfOcrEngine:
                         page_index,
                         image_path,
                         self._settings.ocr_render_dpi,
+                        self._settings.ocr_max_render_pixels,
                     )
                     text = await self._recognize_image(image_path)
                 finally:
@@ -58,7 +60,20 @@ class TesseractPdfOcrEngine:
                         image_path.unlink()
                     except FileNotFoundError:
                         pass
-                normalized = _normalize_ocr_text(text)
+
+                total_text_bytes += len(text)
+                if total_text_bytes > self._settings.ocr_total_text_max_bytes:
+                    raise OcrExecutionError(
+                        "OCR_TOTAL_OUTPUT_LIMIT_EXCEEDED",
+                        "OCR text exceeded the configured total byte limit",
+                    )
+                try:
+                    normalized = _normalize_ocr_text(text)
+                except UnicodeDecodeError as exc:
+                    raise OcrExecutionError(
+                        "OCR_INVALID_OUTPUT",
+                        "Tesseract returned non-UTF-8 text output",
+                    ) from exc
                 if not normalized:
                     continue
                 sections.append(
@@ -111,6 +126,7 @@ class TesseractPdfOcrEngine:
         stdout, stderr, return_code = await self._run_process(
             command,
             timeout_seconds=self._settings.ocr_page_timeout_seconds,
+            cwd=image_path.parent,
         )
         if return_code != 0:
             raise OcrExecutionError(
@@ -124,6 +140,7 @@ class TesseractPdfOcrEngine:
         command: list[str],
         *,
         timeout_seconds: float,
+        cwd: Path | None = None,
     ) -> tuple[bytes, bytes, int]:
         env = _ocr_environment(self._settings)
         try:
@@ -133,6 +150,7 @@ class TesseractPdfOcrEngine:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
+                cwd=str(cwd) if cwd is not None else None,
             )
         except (FileNotFoundError, PermissionError, OSError) as exc:
             raise OcrExecutionError(
@@ -147,23 +165,23 @@ class TesseractPdfOcrEngine:
             _read_limited(process.stderr, self._settings.ocr_stderr_max_bytes)
         )
         wait_task = asyncio.create_task(process.wait())
+        tasks = (stdout_task, stderr_task, wait_task)
         try:
             stdout, stderr, return_code = await asyncio.wait_for(
                 asyncio.gather(stdout_task, stderr_task, wait_task),
                 timeout=timeout_seconds,
             )
+        except asyncio.CancelledError:
+            await _stop_process(process, tasks)
+            raise
         except TimeoutError as exc:
-            process.kill()
-            await process.wait()
-            _cancel_tasks(stdout_task, stderr_task, wait_task)
+            await _stop_process(process, tasks)
             raise OcrExecutionError(
                 "OCR_ENGINE_TIMEOUT",
                 "Tesseract exceeded the configured per-page timeout",
             ) from exc
         except _ProcessOutputLimit as exc:
-            process.kill()
-            await process.wait()
-            _cancel_tasks(stdout_task, stderr_task, wait_task)
+            await _stop_process(process, tasks)
             raise OcrExecutionError(
                 "OCR_OUTPUT_LIMIT_EXCEEDED",
                 "Tesseract output exceeded the configured byte limit",
@@ -186,10 +204,17 @@ async def _read_limited(stream: asyncio.StreamReader | None, limit: int) -> byte
         chunks.append(chunk)
 
 
-def _cancel_tasks(*tasks: asyncio.Task[object]) -> None:
+async def _stop_process(
+    process: asyncio.subprocess.Process,
+    tasks: tuple[asyncio.Task[bytes], asyncio.Task[bytes], asyncio.Task[int]],
+) -> None:
+    if process.returncode is None:
+        process.kill()
     for task in tasks:
         if not task.done():
             task.cancel()
+    await process.wait()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _pdf_page_count(path: Path) -> int:
@@ -203,12 +228,26 @@ def _pdf_page_count(path: Path) -> int:
         raise OcrExecutionError("OCR_PDF_OPEN_FAILED", "PDFium could not open the PDF") from exc
 
 
-def _render_pdf_page(path: Path, page_index: int, destination: Path, dpi: int) -> None:
+def _render_pdf_page(
+    path: Path,
+    page_index: int,
+    destination: Path,
+    dpi: int,
+    max_pixels: int,
+) -> None:
     try:
         document = pdfium.PdfDocument(str(path))
         try:
             page = document[page_index]
             try:
+                width_points, height_points = page.get_size()
+                width_pixels = max(1, int(width_points * dpi / 72.0))
+                height_pixels = max(1, int(height_points * dpi / 72.0))
+                if width_pixels * height_pixels > max_pixels:
+                    raise OcrExecutionError(
+                        "OCR_RENDER_LIMIT_EXCEEDED",
+                        f"PDF page {page_index + 1} exceeds the configured raster pixel limit",
+                    )
                 bitmap = page.render(scale=dpi / 72.0)
                 try:
                     image = bitmap.to_pil()

@@ -1,6 +1,5 @@
 import json
 from enum import StrEnum
-from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field, JsonValue, field_validator, model_validator
@@ -48,19 +47,6 @@ class PlanProposal(BaseModel):
         if len(step_ids) != len(set(step_ids)):
             raise ValueError("Plan step IDs must be unique")
         return self
-
-
-class PlanRequest(BaseModel):
-    user_request: str = Field(min_length=1, max_length=4_000)
-    context_request: dict[str, Any]
-
-    @field_validator("user_request")
-    @classmethod
-    def normalize_user_request(cls, value: str) -> str:
-        normalized = " ".join(value.split())
-        if not normalized:
-            raise ValueError("User request cannot be blank")
-        return normalized
 
 
 class PlannedActionDecision(BaseModel):

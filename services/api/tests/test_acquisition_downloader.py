@@ -117,7 +117,7 @@ async def test_declared_oversized_response_is_rejected_before_body_write(tmp_pat
 
 async def test_interrupted_download_resumes_with_range_and_if_range(tmp_path: Path) -> None:
     full_body = b"%PDF-1.7\nresumable-body"
-    partial = full_body[:11]
+    partial = full_body[:8]
     seen: list[httpx.Request] = []
 
     async def resolver(url: str) -> PinnedTarget:
@@ -172,7 +172,7 @@ async def test_interrupted_download_resumes_with_range_and_if_range(tmp_path: Pa
 
 async def test_if_range_full_response_restarts_instead_of_stitching(tmp_path: Path) -> None:
     original = b"%PDF-1.7\nold-version"
-    partial = original[:10]
+    partial = original[:8]
     replacement = b"%PDF-1.7\nnew-version"
     seen: list[httpx.Request] = []
 
@@ -227,7 +227,7 @@ async def test_if_range_full_response_restarts_instead_of_stitching(tmp_path: Pa
 
 async def test_resume_rejects_misaligned_content_range(tmp_path: Path) -> None:
     full_body = b"%PDF-1.7\nresumable-body"
-    partial = full_body[:11]
+    partial = full_body[:8]
     seen: list[httpx.Request] = []
 
     async def resolver(url: str) -> PinnedTarget:

@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     ocr_stdout_max_bytes: int = Field(default=8_388_608, ge=1024, le=67_108_864)
     ocr_stderr_max_bytes: int = Field(default=131_072, ge=1024, le=1_048_576)
     ocr_total_text_max_bytes: int = Field(default=67_108_864, ge=1024, le=536_870_912)
+    local_session_cookie_name: str = "bukmatika_session"
+    local_session_ttl_days: int = Field(default=30, ge=1, le=365)
+    local_session_secure_cookie: bool = False
     storage_root: Path = Path(".bukmatika/storage")
     user_agent: str = "Bukmatika/0.1 (+https://github.com/agustealo/bukmatika)"
     contact_email: str | None = None

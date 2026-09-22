@@ -43,7 +43,7 @@ from bukmatika.persistence.acquisition import AcquisitionStateConflict
 from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.search import CatalogSearchRepository
-from bukmatika.personalization import router as personalization_router
+from bukmatika.personalization.routes import router as personalization_router
 from bukmatika.processing import (
     AssetNotStored,
     DocumentParseError,

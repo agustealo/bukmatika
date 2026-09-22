@@ -9,7 +9,11 @@ from bukmatika.acquisition.storage import StoredObjectPathResolver
 from bukmatika.config import Settings
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.document_models import Document
-from bukmatika.persistence.documents import DocumentRepository, DocumentSource, DocumentSourceChanged
+from bukmatika.persistence.documents import (
+    DocumentRepository,
+    DocumentSource,
+    DocumentSourceChanged,
+)
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.processing.chunking import chunk_sections
 from bukmatika.processing.domain import (

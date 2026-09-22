@@ -87,7 +87,15 @@ bukmatika-ai-smoke
 
 The command uses the same canonical `ModelGateway` as the application. It first requires the provider and selected model to report ready, then sends a public, context-free structured-output verification request to the actual model. Success prints provider/model/routing identity plus the exact verification token. Unconfigured, unreachable, invalid, missing-model, transport, or structured-response failures exit non-zero. The smoke command does not use book text, reader context, annotations, or personal data.
 
-This smoke proves the installed model runtime itself. Phase 5 still requires a recorded real-runtime grounded-answer proof against canonical persisted research evidence before delegated autonomy can open.
+For the full grounded-path release proof, run against a migrated Bukmatika database and the same ready local model:
+
+```text
+bukmatika-grounded-ai-proof
+```
+
+This command creates a synthetic principal, library entry, document, section, and chunk inside one rollback-only PostgreSQL transaction. It then executes the real `GroundedResearchSynthesisService`, requires canonical evidence citations, verifies the persisted `research.answer` plan, model-completion audit metadata, and AI activity-ledger projection, rolls the probe transaction back, and confirms the synthetic principal did not persist. Successful output contains only provider/model/routing identity, counts, citation IDs, and proof flags; it never emits the probe passage or question.
+
+The presence of these commands is not itself release evidence. Phase 5 only closes the real-runtime gate after `bukmatika-grounded-ai-proof` is actually executed successfully against an installed local model and that result is recorded for the release candidate.
 
 ## Non-goals
 

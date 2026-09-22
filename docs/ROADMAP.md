@@ -4,10 +4,11 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 
 ## Current engineering checkpoint - 2026-09-22
 
-- Base entering the current slice: `main@8910a2aeb43bfbd35b18e72d0383bee50eb6ad08`.
-- Post-merge Quality #163 passed API Ruff, strict MyPy, Alembic migrations, the full PostgreSQL suite, web typecheck, and production web build.
-- Grounded reader research is live behind the canonical `ModelGateway` with a loopback-only Ollama provider, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, and evidence-only fallback when AI becomes unavailable.
-- Active slice: expose local-model readiness and recovery in the consumer AI control center and add an opt-in real-runtime generation smoke command that cannot pass on mock metadata alone.
+- Base entering the current slice: `main@67fe0d78b3dccd260bec69638961fccbd65f9a3d`.
+- Post-merge Quality #165 passed API Ruff, strict MyPy, Alembic migrations, the full PostgreSQL suite, web typecheck, and production web build.
+- Grounded reader research is live behind the canonical `ModelGateway` with a loopback-only Ollama provider, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, and a public real-model smoke command.
+- Active slice: add a rollback-only release-proof command that seeds canonical PostgreSQL research evidence, executes the real grounded synthesis path against the configured local model, verifies citations/plan/audit/ledger evidence, and proves the synthetic data was removed.
+- The proof command existing is not proof that an installed model passed it. Phase 5 stays open until the command is actually executed successfully against a real local model and that release-candidate result is recorded.
 - Do not advance to delegated autonomy merely because local synthesis works. Consumer-editable setup, a recorded real grounded-answer runtime proof, and the remaining Phase 5 research surfaces come first.
 
 ## Phase 0 - Foundation
@@ -99,7 +100,8 @@ Goal: introduce one bounded AI orchestration system that becomes more useful thr
 - [x] Consumer-facing runtime status and recovery guidance.
 - [ ] Consumer-editable local model configuration/setup flow.
 - [x] Real-runtime smoke command requiring readiness plus actual structured model generation.
-- [ ] Recorded real local-runtime grounded-answer release proof against canonical persisted evidence.
+- [x] Transactional grounded-runtime proof command over canonical persisted evidence, plan/audit/ledger verification, and rollback validation.
+- [ ] Recorded successful real local-runtime grounded-answer release proof against an installed model.
 
 ### Learning
 
@@ -152,8 +154,8 @@ Phase 6 remains closed until all of the following are true:
 1. the local provider reports actual runtime/model readiness rather than configuration presence;
 2. a consumer can understand and recover from unconfigured, runtime-offline, invalid-runtime, and missing-model states;
 3. the reader falls back to ordinary evidence retrieval if readiness changes between status inspection and execution;
-4. one real installed Ollama model completes the grounded-answer path against canonical persisted evidence;
-5. citation validation, AI-off behavior, ownership isolation, privacy minimization, and activity-ledger proofs remain green on the exact release candidate;
+4. one real installed Ollama model completes the grounded-answer path against canonical persisted evidence, with the proof result recorded for the exact release candidate;
+5. citation validation, AI-off behavior, ownership isolation, privacy minimization, activity-ledger projection, and rollback-clean proof data remain green on the exact release candidate;
 6. no new agent, memory, graph, embedding, or orchestration subsystem is introduced unless a remaining product requirement proves it necessary.
 
 ## Phase 6 - Bounded delegated autonomy

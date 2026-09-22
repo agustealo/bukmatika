@@ -6,7 +6,12 @@ from sqlalchemy import delete, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from bukmatika.persistence.document_models import Document, DocumentChunk, DocumentSection
+from bukmatika.persistence.document_models import (
+    Document,
+    DocumentChunk,
+    DocumentProcessingState,
+    DocumentSection,
+)
 from bukmatika.persistence.models import Asset, StoredObject
 from bukmatika.processing.domain import ParsedChunk, ParsedDocument
 
@@ -75,6 +80,52 @@ class DocumentRepository:
     async def get_document_for_asset(self, asset_id: UUID) -> Document | None:
         return await self._session.scalar(select(Document).where(Document.asset_id == asset_id))
 
+    async def get_processing_state(self, asset_id: UUID) -> DocumentProcessingState | None:
+        return await self._session.scalar(
+            select(DocumentProcessingState).where(DocumentProcessingState.asset_id == asset_id)
+        )
+
+    async def set_processing_state(
+        self,
+        *,
+        source: DocumentSource,
+        processor_name: str,
+        processor_version: str,
+        status: str,
+        error_code: str | None = None,
+        error_detail: str | None = None,
+    ) -> DocumentProcessingState:
+        await self._assert_current_source(source)
+        state = await self._session.scalar(
+            select(DocumentProcessingState)
+            .where(DocumentProcessingState.asset_id == source.asset_id)
+            .with_for_update()
+        )
+        if state is None:
+            state = DocumentProcessingState(
+                asset_id=source.asset_id,
+                stored_object_id=source.stored_object_id,
+                source_sha256=source.sha256,
+                format=source.format.upper(),
+                processor_name=processor_name,
+                processor_version=processor_version,
+                status=status,
+                error_code=error_code,
+                error_detail=error_detail,
+            )
+            self._session.add(state)
+        else:
+            state.stored_object_id = source.stored_object_id
+            state.source_sha256 = source.sha256
+            state.format = source.format.upper()
+            state.processor_name = processor_name
+            state.processor_version = processor_version
+            state.status = status
+            state.error_code = error_code
+            state.error_detail = error_detail
+        await self._session.flush()
+        return state
+
     async def persist_document(
         self,
         *,
@@ -82,14 +133,7 @@ class DocumentRepository:
         parsed: ParsedDocument,
         chunks: tuple[ParsedChunk, ...],
     ) -> Document:
-        asset = await self._session.scalar(
-            select(Asset).where(Asset.id == source.asset_id).with_for_update()
-        )
-        if asset is None:
-            raise DocumentSourceChanged("Asset disappeared while document was being processed")
-        if asset.stored_object_id != source.stored_object_id:
-            raise DocumentSourceChanged("Stored object changed while document was being processed")
-
+        await self._assert_current_source(source)
         existing = await self.get_document_for_asset(source.asset_id)
         if (
             existing is not None
@@ -184,3 +228,13 @@ class DocumentRepository:
             )
             for chunk, section, score in rows
         ]
+
+    async def _assert_current_source(self, source: DocumentSource) -> Asset:
+        asset = await self._session.scalar(
+            select(Asset).where(Asset.id == source.asset_id).with_for_update()
+        )
+        if asset is None:
+            raise DocumentSourceChanged("Asset disappeared while document was being processed")
+        if asset.stored_object_id != source.stored_object_id:
+            raise DocumentSourceChanged("Stored object changed while document was being processed")
+        return asset

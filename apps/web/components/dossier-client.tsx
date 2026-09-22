@@ -45,7 +45,6 @@ type DossierClientProps =
   | { provider: string; recordId: string; workId?: never }
   | { workId: string; provider?: never; recordId?: never };
 
-const ACQUIRABLE_RIGHTS = new Set(["public_domain", "open_license", "authorized_download"]);
 const ACTIVE_JOB_STATES = new Set(["queued", "running", "resolving", "downloading", "verifying"]);
 
 function pretty(value: string | null): string {
@@ -198,7 +197,6 @@ export function DossierClient(props: DossierClientProps) {
                 <p className="muted-copy">No concrete digital assets are resolved for this edition yet.</p>
               ) : null}
               {edition.assets.map((asset) => {
-                const acquirable = asset.rights_state ? ACQUIRABLE_RIGHTS.has(asset.rights_state) : false;
                 const acquisitionBusy = asset.acquisition_status
                   ? ACTIVE_JOB_STATES.has(asset.acquisition_status)
                   : false;
@@ -228,7 +226,7 @@ export function DossierClient(props: DossierClientProps) {
                           Read
                         </a>
                       ) : null}
-                      {!asset.stored && acquirable && !acquisitionBusy ? (
+                      {!asset.stored && asset.acquisition_allowed === true && !acquisitionBusy ? (
                         <button
                           className="secondary-action"
                           type="button"

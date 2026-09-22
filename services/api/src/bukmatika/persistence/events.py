@@ -37,6 +37,9 @@ class SemanticEventType(StrEnum):
     READING_PROGRESS_UPDATED = "reader.progress_updated"
     BOOKMARK_ADDED = "reader.bookmark_added"
     BOOKMARK_REMOVED = "reader.bookmark_removed"
+    PREFERENCE_SET = "personalization.preference_set"
+    PREFERENCE_FORGOTTEN = "personalization.preference_forgotten"
+    PERSONALIZATION_SETTINGS_UPDATED = "personalization.settings_updated"
 
 
 class InteractionEventRepository:

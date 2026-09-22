@@ -1,6 +1,7 @@
 import asyncio
 import os
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -33,10 +34,11 @@ class TesseractPdfOcrEngine:
         if page_count < 1:
             raise OcrExecutionError("OCR_PDF_EMPTY", "PDF contains no pages")
         if page_count > self._settings.ocr_max_pages:
-            raise OcrExecutionError(
-                "OCR_PAGE_LIMIT_EXCEEDED",
-                f"PDF has {page_count} pages; configured OCR limit is {self._settings.ocr_max_pages}",
+            detail = (
+                f"PDF has {page_count} pages; configured OCR limit is "
+                f"{self._settings.ocr_max_pages}"
             )
+            raise OcrExecutionError("OCR_PAGE_LIMIT_EXCEEDED", detail)
 
         version = await self._engine_version()
         sections: list[ParsedSection] = []
@@ -56,10 +58,8 @@ class TesseractPdfOcrEngine:
                     )
                     text = await self._recognize_image(image_path)
                 finally:
-                    try:
+                    with suppress(FileNotFoundError):
                         image_path.unlink()
-                    except FileNotFoundError:
-                        pass
 
                 total_text_bytes += len(text)
                 if total_text_bytes > self._settings.ocr_total_text_max_bytes:

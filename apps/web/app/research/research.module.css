@@ -57,7 +57,9 @@
 
 .researchRoot :global(.research-selection-actions button:focus-visible),
 .researchRoot :global(.research-source:focus-within),
-.researchRoot :global(.passage-actions a:focus-visible) {
+.researchRoot :global(.passage-actions a:focus-visible),
+.researchRoot :global(.grounded-citations a:focus-visible),
+.researchRoot :global(.research-query-actions button:focus-visible) {
   outline: 3px solid rgba(216, 255, 102, 0.68);
   outline-offset: 3px;
 }
@@ -124,6 +126,159 @@
   margin-bottom: 12px;
   font-size: 0.88rem;
   font-weight: 680;
+}
+
+.researchRoot :global(.research-query-actions) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.researchRoot :global(.research-query-actions span) {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.researchRoot :global(.research-ai-warning) {
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 210, 125, 0.28);
+  border-radius: 14px;
+  background: rgba(255, 210, 125, 0.06);
+}
+
+.researchRoot :global(.research-ai-warning strong) {
+  color: #ffd27d;
+  font-size: 0.8rem;
+}
+
+.researchRoot :global(.research-ai-warning span) {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.researchRoot :global(.grounded-answer) {
+  margin-top: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(216, 255, 102, 0.2);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(216, 255, 102, 0.055), rgba(26, 26, 23, 0.9));
+}
+
+.researchRoot :global(.grounded-answer-heading) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.researchRoot :global(.grounded-answer-heading h2),
+.researchRoot :global(.grounded-answer-empty h2) {
+  margin: 7px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.65rem;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+
+.researchRoot :global(.grounded-provider) {
+  border: 1px solid rgba(216, 255, 102, 0.2);
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: var(--accent);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.researchRoot :global(.grounded-claim-list) {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+}
+
+.researchRoot :global(.grounded-claim) {
+  padding: 22px;
+  background: var(--panel);
+}
+
+.researchRoot :global(.grounded-claim > p) {
+  max-width: 880px;
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.06rem;
+  line-height: 1.75;
+}
+
+.researchRoot :global(.grounded-citations) {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.researchRoot :global(.grounded-citations a) {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+  color: inherit;
+  text-decoration: none;
+}
+
+.researchRoot :global(.grounded-citations a:hover) {
+  border-color: rgba(216, 255, 102, 0.28);
+}
+
+.researchRoot :global(.grounded-citations strong) {
+  color: var(--accent);
+  font-size: 0.76rem;
+}
+
+.researchRoot :global(.grounded-citations span) {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.researchRoot :global(.grounded-citations small) {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 5px;
+  color: #d4cfc4;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.researchRoot :global(.grounded-answer-footer) {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.researchRoot :global(.grounded-answer-empty) {
+  padding: 24px;
+}
+
+.researchRoot :global(.grounded-answer-empty p) {
+  max-width: 720px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .researchRoot :global(.research-results) {
@@ -222,11 +377,18 @@
   .researchRoot :global(.research-source-list) {
     max-height: 320px;
   }
+
+  .researchRoot :global(.grounded-answer-heading) {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 620px) {
   .researchRoot :global(.research-selection-heading),
-  .researchRoot :global(.passage-actions) {
+  .researchRoot :global(.passage-actions),
+  .researchRoot :global(.research-query-actions),
+  .researchRoot :global(.grounded-answer-footer) {
     align-items: flex-start;
     flex-direction: column;
   }

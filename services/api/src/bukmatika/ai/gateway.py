@@ -150,24 +150,27 @@ class OpenAIResponsesGateway:
             "Content-Type": "application/json",
         }
 
-        if self._client is not None:
-            response = await self._client.post(
-                OPENAI_RESPONSES_URL,
-                json=payload,
-                headers=headers,
-                timeout=request.timeout_seconds,
-            )
-        else:
-            async with httpx.AsyncClient(
-                follow_redirects=False,
-                trust_env=False,
-                timeout=request.timeout_seconds,
-            ) as client:
-                response = await client.post(
+        try:
+            if self._client is not None:
+                response = await self._client.post(
                     OPENAI_RESPONSES_URL,
                     json=payload,
                     headers=headers,
+                    timeout=request.timeout_seconds,
                 )
+            else:
+                async with httpx.AsyncClient(
+                    follow_redirects=False,
+                    trust_env=False,
+                    timeout=request.timeout_seconds,
+                ) as client:
+                    response = await client.post(
+                        OPENAI_RESPONSES_URL,
+                        json=payload,
+                        headers=headers,
+                    )
+        except httpx.RequestError as exc:
+            raise ModelProviderError("OpenAI Responses API request failed") from exc
 
         if response.status_code < 200 or response.status_code >= 300:
             raise ModelProviderError(
@@ -229,7 +232,11 @@ def _task_instructions(task: ModelTask) -> str:
 
 
 def _schema_name(response_type: type[BaseModel]) -> str:
-    value = "".join(character for character in response_type.__name__ if character.isalnum() or character in "_-")
+    value = "".join(
+        character
+        for character in response_type.__name__
+        if character.isalnum() or character in "_-"
+    )
     return (value or "bukmatika_response")[:64]
 
 

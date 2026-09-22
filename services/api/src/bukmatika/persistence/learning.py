@@ -9,7 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.persistence.document_models import Document
 from bukmatika.persistence.events import SemanticEventType
 from bukmatika.persistence.models import InteractionEvent
-from bukmatika.persistence.personalization import PersonalizationRepository
+from bukmatika.persistence.personalization import (
+    PersonalizationRepository,
+    lock_personalization_state,
+)
 from bukmatika.persistence.personalization_models import (
     ActionDecision,
     OutcomeEvent,
@@ -39,6 +42,7 @@ class LearningRepository:
         self._session = session
 
     async def lock_user_model(self, principal_id: UUID) -> UserModel:
+        await lock_personalization_state(self._session, principal_id)
         await PersonalizationRepository(self._session).get_or_create_user_model(principal_id)
         user_model = await self._session.scalar(
             select(UserModel)

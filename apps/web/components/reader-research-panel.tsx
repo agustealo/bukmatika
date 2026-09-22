@@ -57,9 +57,19 @@ type GroundedResearchResponse = {
   model_routing: string;
 };
 
+type AIAvailabilityState =
+  | "ai_disabled"
+  | "unconfigured"
+  | "provider_unreachable"
+  | "provider_invalid"
+  | "model_missing"
+  | "ready";
+
 type AIStatus = {
   configured: boolean;
+  ready: boolean;
   ai_enabled: boolean;
+  state: AIAvailabilityState;
   provider: string | null;
   model: string | null;
   routing: string | null;
@@ -76,6 +86,26 @@ function locatorLabel(locator: ReaderLocator): string {
 function excerpt(text: string): string {
   const normalized = text.replace(/\s+/g, " ").trim();
   return normalized.length > 260 ? `${normalized.slice(0, 257)}…` : normalized;
+}
+
+function statusExplanation(status: AIStatus | null): string {
+  if (status === null) {
+    return "Build a canonical source bundle while local AI readiness is being checked.";
+  }
+  switch (status.state) {
+    case "ready":
+      return "Ask the ready local model. Every returned claim must cite the canonical evidence shown below.";
+    case "ai_disabled":
+      return "AI is disabled. Canonical evidence building remains available without model calls.";
+    case "unconfigured":
+      return "Local AI is not configured. Canonical evidence building remains fully available.";
+    case "provider_unreachable":
+      return "The local AI runtime is not reachable right now. Evidence building remains available.";
+    case "provider_invalid":
+      return "The local AI runtime returned an unexpected readiness response. Evidence building remains available.";
+    case "model_missing":
+      return "The configured local model is not installed. Evidence building remains available.";
+  }
 }
 
 export function ReaderResearchPanel({
@@ -122,7 +152,7 @@ export function ReaderResearchPanel({
     setError(null);
   }, [sectionId]);
 
-  const canSynthesize = aiStatus?.configured === true && aiStatus.ai_enabled === true;
+  const canSynthesize = aiStatus?.ready === true && aiStatus.ai_enabled === true;
 
   async function research(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -166,7 +196,9 @@ export function ReaderResearchPanel({
         if (activeSectionRef.current === requestedSectionId) {
           setBundle(payload.evidence);
           setAnswer(payload.answer);
-          setAnswerModel(`${payload.model_provider} · ${payload.model_name} · ${payload.model_routing}`);
+          setAnswerModel(
+            `${payload.model_provider} · ${payload.model_name} · ${payload.model_routing}`,
+          );
         }
       } else {
         const payload = (await response.json()) as EvidenceBundle;
@@ -186,17 +218,6 @@ export function ReaderResearchPanel({
     }
   }
 
-  let explanation =
-    "Build a canonical source bundle from this passage and related text in the selected book.";
-  if (canSynthesize) {
-    explanation =
-      "Ask the configured local model. Every returned claim must cite the canonical evidence shown below.";
-  } else if (aiStatus?.configured === true && aiStatus.ai_enabled === false) {
-    explanation = "AI is disabled. Canonical evidence building remains available without model calls.";
-  } else if (aiStatus?.configured === false) {
-    explanation = "Local AI is not configured. Canonical evidence building remains fully available.";
-  }
-
   return (
     <div className={styles.panel}>
       <span className={styles.eyebrow}>Research this passage</span>
@@ -204,7 +225,7 @@ export function ReaderResearchPanel({
       <p className={styles.position}>
         {sectionLocator ? locatorLabel(sectionLocator) : "Canonical reader position"}
       </p>
-      <p className={styles.explanation}>{explanation}</p>
+      <p className={styles.explanation}>{statusExplanation(aiStatus)}</p>
 
       <form className={styles.form} onSubmit={(event) => void research(event)}>
         <label htmlFor="reader-research-question">Research question</label>

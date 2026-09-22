@@ -134,7 +134,7 @@ class LearningRepository:
                     InteractionEvent.principal_id == principal_id,
                     InteractionEvent.event_type == "reader.opened",
                     InteractionEvent.entity_type == "document",
-                    InteractionEvent.occurred_at >= since,
+                    InteractionEvent.occurred_at > since,
                 )
                 .order_by(InteractionEvent.occurred_at, InteractionEvent.id)
             )
@@ -168,6 +168,28 @@ class LearningRepository:
                 PreferenceClaim.status == "active",
             )
             .with_for_update()
+        )
+
+    async def latest_inferred_contradiction(
+        self,
+        *,
+        principal_id: UUID,
+        key: str,
+        scope_type: str,
+        scope_value: str,
+    ) -> PreferenceClaim | None:
+        return await self._session.scalar(
+            select(PreferenceClaim)
+            .where(
+                PreferenceClaim.principal_id == principal_id,
+                PreferenceClaim.key == key,
+                PreferenceClaim.scope_type == scope_type,
+                PreferenceClaim.scope_value == scope_value,
+                PreferenceClaim.source == "inferred",
+                PreferenceClaim.status == "contradicted",
+            )
+            .order_by(PreferenceClaim.updated_at.desc(), PreferenceClaim.id.desc())
+            .limit(1)
         )
 
     async def create_inferred_claim(

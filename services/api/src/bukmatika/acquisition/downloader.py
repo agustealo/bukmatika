@@ -4,6 +4,7 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 from urllib.parse import urljoin
 
 import httpx
@@ -25,6 +26,12 @@ class DownloadCancelled(RemoteDownloadError):
 
 class DownloadInterrupted(RemoteDownloadError):
     pass
+
+
+class _Digest(Protocol):
+    def update(self, data: bytes, /) -> None: ...
+
+    def hexdigest(self) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,7 +241,7 @@ class SafeDownloader:
         initial_total: int,
         expected_total: int | None,
     ) -> DownloadResult:
-        digest = (
+        digest: _Digest = (
             await asyncio.to_thread(_sha256_file, temp_path)
             if append
             else hashlib.sha256()
@@ -330,7 +337,7 @@ def _file_size(path: Path) -> int:
         return 0
 
 
-def _sha256_file(path: Path) -> hashlib._Hash:
+def _sha256_file(path: Path) -> _Digest:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         while chunk := handle.read(1024 * 1024):

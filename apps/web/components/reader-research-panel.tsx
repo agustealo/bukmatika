@@ -75,6 +75,22 @@ type AIStatus = {
   routing: string | null;
 };
 
+type AIErrorPayload = {
+  detail?: {
+    code?: string;
+    state?: string;
+  };
+};
+
+const AI_AVAILABILITY_STATES = new Set<AIAvailabilityState>([
+  "ai_disabled",
+  "unconfigured",
+  "provider_unreachable",
+  "provider_invalid",
+  "model_missing",
+  "ready",
+]);
+
 function locatorLabel(locator: ReaderLocator): string {
   const priority = ["page", "spine", "section", "paragraph", "row"];
   const parts = priority
@@ -86,6 +102,32 @@ function locatorLabel(locator: ReaderLocator): string {
 function excerpt(text: string): string {
   const normalized = text.replace(/\s+/g, " ").trim();
   return normalized.length > 260 ? `${normalized.slice(0, 257)}…` : normalized;
+}
+
+function isAIAvailabilityState(value: unknown): value is AIAvailabilityState {
+  return typeof value === "string" && AI_AVAILABILITY_STATES.has(value as AIAvailabilityState);
+}
+
+async function readinessFallbackState(response: Response): Promise<AIAvailabilityState | null> {
+  if (response.status !== 503) return null;
+
+  try {
+    const payload = (await response.clone().json()) as AIErrorPayload;
+    if (payload.detail?.code === "MODEL_PROVIDER_UNCONFIGURED") {
+      return "unconfigured";
+    }
+    if (
+      payload.detail?.code === "MODEL_PROVIDER_NOT_READY" &&
+      isAIAvailabilityState(payload.detail.state) &&
+      payload.detail.state !== "ready" &&
+      payload.detail.state !== "ai_disabled"
+    ) {
+      return payload.detail.state;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function statusExplanation(status: AIStatus | null): string {
@@ -171,27 +213,45 @@ export function ReaderResearchPanel({
       library_entry_ids: [libraryEntryId],
       related_limit: 6,
     };
+    const requestInit = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    };
 
     setLoading(true);
     setError(null);
     setAnswer(null);
     setAnswerModel(null);
     try {
-      const response = await apiFetch(
+      let response = await apiFetch(
         canSynthesize ? "/v1/ai/research/answer" : "/v1/research/evidence",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestBody),
-        },
+        requestInit,
       );
+
+      if (canSynthesize && !response.ok) {
+        const fallbackState = await readinessFallbackState(response);
+        if (fallbackState !== null) {
+          setAIStatus((current) => ({
+            configured: fallbackState !== "unconfigured",
+            ready: false,
+            ai_enabled: true,
+            state: fallbackState,
+            provider: fallbackState === "unconfigured" ? null : (current?.provider ?? null),
+            model: fallbackState === "unconfigured" ? null : (current?.model ?? null),
+            routing: fallbackState === "unconfigured" ? null : (current?.routing ?? null),
+          }));
+          response = await apiFetch("/v1/research/evidence", requestInit);
+        }
+      }
+
       if (!response.ok) {
         throw new Error(
           `${canSynthesize ? "Grounded answer" : "Evidence grounding"} failed with HTTP ${response.status}.`,
         );
       }
 
-      if (canSynthesize) {
+      if (canSynthesize && response.url.includes("/v1/ai/research/answer")) {
         const payload = (await response.json()) as GroundedResearchResponse;
         if (activeSectionRef.current === requestedSectionId) {
           setBundle(payload.evidence);

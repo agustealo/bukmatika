@@ -1,4 +1,11 @@
 from bukmatika.personalization.domain import (
+    ContextGoal,
+    ContextLibraryEntry,
+    ContextManifest,
+    ContextPreference,
+    ContextRequest,
+    ContextScope,
+    ContextTask,
     ExplicitPreferenceRequest,
     PersonalizationProfileResponse,
     PersonalizationSettingsUpdate,
@@ -7,18 +14,20 @@ from bukmatika.personalization.domain import (
     PreferenceKey,
     PreferenceScopeType,
 )
-from bukmatika.personalization.routes import router
-from bukmatika.personalization.service import PersonalizationService, PreferenceClaimNotFound
 
 __all__ = [
+    "ContextGoal",
+    "ContextLibraryEntry",
+    "ContextManifest",
+    "ContextPreference",
+    "ContextRequest",
+    "ContextScope",
+    "ContextTask",
     "ExplicitPreferenceRequest",
     "PersonalizationProfileResponse",
-    "PersonalizationService",
     "PersonalizationSettingsUpdate",
-    "PreferenceClaimNotFound",
     "PreferenceClaimResponse",
     "PreferenceInfluence",
     "PreferenceKey",
     "PreferenceScopeType",
-    "router",
 ]

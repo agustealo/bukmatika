@@ -11,6 +11,7 @@ export default function LibraryPage() {
         <nav className="top-nav" aria-label="Primary navigation">
           <a href="/">Discover</a>
           <a href="/library" aria-current="page">Library</a>
+          <a href="/research">Research</a>
         </nav>
       </header>
 

@@ -76,7 +76,11 @@ async def _seed_stored_asset(
     return asset
 
 
-def _service(session: AsyncSession, store: LocalObjectStore, tmp_path: Path) -> DocumentProcessingService:
+def _service(
+    session: AsyncSession,
+    store: LocalObjectStore,
+    tmp_path: Path,
+) -> DocumentProcessingService:
     settings = Settings(
         storage_root=tmp_path,
         acquisition_worker_enabled=False,

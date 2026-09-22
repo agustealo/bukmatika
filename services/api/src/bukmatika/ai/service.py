@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.ai.capabilities import CapabilityRegistry
 from bukmatika.ai.domain import (
+    CapabilityName,
     PersistedPlanResponse,
     PlannedActionDecision,
     PlanProposal,
@@ -107,7 +108,7 @@ class PlanningService:
             decisions=[
                 PlannedActionDecision(
                     step_id=stored.step_id,
-                    capability=stored.capability,
+                    capability=CapabilityName(stored.capability),
                     decision=stored.decision,
                     reason=stored.reason,
                     policy_version=stored.policy_version,

@@ -82,16 +82,15 @@ async def test_explicit_correction_supersedes_prior_claim_and_records_events(
     claims = list(
         (
             await session.scalars(
-                select(PreferenceClaim)
-                .where(PreferenceClaim.principal_id == principal.id)
-                .order_by(PreferenceClaim.created_at, PreferenceClaim.id)
+                select(PreferenceClaim).where(PreferenceClaim.principal_id == principal.id)
             )
         ).all()
     )
     assert len(claims) == 2
-    assert claims[0].status == "superseded"
-    assert claims[1].status == "active"
-    assert claims[1].value == {"format": "EPUB"}
+    claims_by_id = {claim.id: claim for claim in claims}
+    assert claims_by_id[first.claim_id].status == "superseded"
+    assert claims_by_id[second.claim_id].status == "active"
+    assert claims_by_id[second.claim_id].value == {"format": "EPUB"}
 
     profile = await service.profile(principal_id=principal.id)
     assert [claim.claim_id for claim in profile.active_preferences] == [second.claim_id]
@@ -99,18 +98,17 @@ async def test_explicit_correction_supersedes_prior_claim_and_records_events(
     events = list(
         (
             await session.scalars(
-                select(InteractionEvent)
-                .where(
+                select(InteractionEvent).where(
                     InteractionEvent.principal_id == principal.id,
                     InteractionEvent.event_type == "personalization.preference_set",
                 )
-                .order_by(InteractionEvent.occurred_at, InteractionEvent.id)
             )
         ).all()
     )
     assert len(events) == 2
-    assert events[-1].entity_id == second.claim_id
-    assert events[-1].context["key"] == PreferenceKey.FORMAT_PREFERRED.value
+    events_by_entity = {event.entity_id: event for event in events}
+    assert second.claim_id in events_by_entity
+    assert events_by_entity[second.claim_id].context["key"] == PreferenceKey.FORMAT_PREFERRED.value
 
 
 async def test_forget_is_principal_scoped_and_preserves_deleted_audit_state(
@@ -221,7 +219,11 @@ def test_autonomy_above_shipped_level_is_rejected_before_persistence() -> None:
 
 
 def test_personalization_routes_are_mounted() -> None:
-    paths = {route.path for route in app.routes}
+    paths = {
+        path
+        for route in app.routes
+        if (path := getattr(route, "path", None)) is not None
+    }
     assert "/v1/personalization" in paths
     assert "/v1/personalization/preferences" in paths
     assert "/v1/personalization/preferences/{claim_id}/forget" in paths

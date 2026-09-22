@@ -261,7 +261,11 @@ class OcrJobWorker:
             logger.info("ocr_worker_lease_lost", job_id=str(lease.job_id))
         except OcrExecutionError as exc:
             try:
-                if exc.error_code in self._retryable_codes and lease.attempt_count < lease.max_attempts:
+                should_retry = (
+                    exc.error_code in self._retryable_codes
+                    and lease.attempt_count < lease.max_attempts
+                )
+                if should_retry:
                     await self._retry_job(lease, source, exc.error_code, exc.detail)
                 else:
                     await self._fail_job(lease, source, exc.error_code, exc.detail)

@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.domain import RightsEvidence
 from bukmatika.library.domain import (
     AssetStatusResponse,
     EditionDossierResponse,
@@ -18,7 +19,8 @@ from bukmatika.persistence.library import (
     LibraryRepository,
     LibraryTargetNotFound,
 )
-from bukmatika.persistence.models import Asset, LibraryEntry
+from bukmatika.persistence.models import Asset, LibraryEntry, RightsEvidenceRecord
+from bukmatika.rights import RightsEngine
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -32,6 +34,7 @@ class LibraryService:
         session_scope_factory: SessionScopeFactory = session_scope,
     ) -> None:
         self._session_scope = session_scope_factory
+        self._rights = RightsEngine()
 
     async def dossier_for_source(
         self,
@@ -131,9 +134,18 @@ class LibraryService:
         document = await repository.document_for_asset(asset.id)
         ocr_job = await repository.latest_ocr_job_for_asset(asset.id)
         rights_decision = await repository.latest_rights_decision_for_asset(asset.id)
-        evidence_state = None
-        if rights_decision is None:
-            evidence_state = await repository.strongest_rights_evidence_state(asset.id)
+        rights_state: str | None = None
+        acquisition_allowed: bool | None = None
+        if rights_decision is not None:
+            rights_state = rights_decision.rights_state
+            acquisition_allowed = bool(rights_decision.permissions.get("download", False))
+        else:
+            evidence_records = await repository.rights_evidence_for_asset(asset.id)
+            evidence = [_rights_evidence(record) for record in evidence_records]
+            policy = self._rights.decide(evidence)
+            rights_state = policy.state.value
+            acquisition_allowed = policy.unattended_acquisition_allowed
+
         return AssetStatusResponse(
             asset_id=asset.id,
             format=asset.format,
@@ -147,14 +159,8 @@ class LibraryService:
             ocr_job_id=ocr_job.id if ocr_job is not None else None,
             ocr_job_status=ocr_job.status if ocr_job is not None else None,
             document_id=document.id if document is not None else None,
-            rights_state=(
-                rights_decision.rights_state if rights_decision is not None else evidence_state
-            ),
-            acquisition_allowed=(
-                bool(rights_decision.permissions.get("download", False))
-                if rights_decision is not None
-                else None
-            ),
+            rights_state=rights_state,
+            acquisition_allowed=acquisition_allowed,
         )
 
     async def _library_item(
@@ -190,6 +196,19 @@ class LibraryService:
             progress_fraction=progress_fraction,
             reading_status=reading_status,
         )
+
+
+def _rights_evidence(record: RightsEvidenceRecord) -> RightsEvidence:
+    return RightsEvidence.model_validate(
+        {
+            "state": record.state,
+            "source": record.source,
+            "basis": record.basis,
+            "evidence_url": record.evidence_url,
+            "license_uri": record.license_uri,
+            "confidence": record.confidence,
+        }
+    )
 
 
 __all__ = [

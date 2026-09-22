@@ -74,13 +74,13 @@ class OllamaLocalGateway(ModelGateway):
                 f"{self._base_url}/api/tags",
                 timeout=self._readiness_timeout_seconds,
             )
-            response.raise_for_status()
-        except httpx.HTTPError:
+        except httpx.RequestError:
             return self._readiness(ModelReadinessState.PROVIDER_UNREACHABLE, ready=False)
 
         try:
+            response.raise_for_status()
             tags = _OllamaTagsResponse.model_validate(response.json())
-        except (ValueError, ValidationError):
+        except (httpx.HTTPStatusError, ValueError, ValidationError):
             return self._readiness(ModelReadinessState.PROVIDER_INVALID, ready=False)
 
         installed = {

@@ -9,7 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.ai.gateway import (
     ModelDataClassification,
     ModelProviderIdentity,
+    ModelProviderNotReady,
+    ModelProviderReadiness,
     ModelProviderUnconfigured,
+    ModelReadinessState,
     ModelRequest,
     ModelTask,
     UnconfiguredModelGateway,
@@ -46,18 +49,34 @@ def _scope(session: AsyncSession):  # type: ignore[no-untyped-def]
 
 
 class _RecordingGateway:
-    def __init__(self, evidence_id: str = "E1") -> None:
+    def __init__(
+        self,
+        evidence_id: str = "E1",
+        *,
+        readiness_state: ModelReadinessState = ModelReadinessState.READY,
+    ) -> None:
         self._identity = ModelProviderIdentity(
             provider="ollama",
             model="qwen3:8b",
             routing="local",
         )
         self._evidence_id = evidence_id
+        self._readiness_state = readiness_state
         self.calls: list[ModelRequest] = []
+        self.readiness_calls = 0
 
     @property
     def identity(self) -> ModelProviderIdentity:
         return self._identity
+
+    async def readiness(self) -> ModelProviderReadiness:
+        self.readiness_calls += 1
+        return ModelProviderReadiness(
+            state=self._readiness_state,
+            configured=True,
+            ready=self._readiness_state is ModelReadinessState.READY,
+            identity=self._identity,
+        )
 
     async def generate_structured(self, request, response_type):  # type: ignore[no-untyped-def]
         self.calls.append(request)
@@ -206,6 +225,7 @@ async def test_grounded_synthesis_uses_only_canonical_bundle_and_is_auditable(
         request=_request(entry, document, section),
     )
 
+    assert gateway.readiness_calls == 1
     assert result.model_provider == "ollama"
     assert result.model_name == "qwen3:8b"
     assert result.model_routing == "local"
@@ -232,7 +252,6 @@ async def test_grounded_synthesis_uses_only_canonical_bundle_and_is_auditable(
     assert plan is not None
     assert plan.steps[0]["capability"] == "research.answer"
     assert "research.answer" in plan.context_manifest["available_capabilities"]
-    assert text not in plan.model_dump_json() if hasattr(plan, "model_dump_json") else True
     assert text not in str(plan.steps)
     assert text not in str(plan.context_manifest)
 
@@ -263,7 +282,7 @@ async def test_grounded_synthesis_uses_only_canonical_bundle_and_is_auditable(
     assert activity.model_name == "qwen3:8b"
 
 
-async def test_ai_off_rejects_before_model_call_but_evidence_still_works(
+async def test_ai_off_rejects_before_readiness_or_model_call_but_evidence_still_works(
     session: AsyncSession,
 ) -> None:
     principal = await _principal(session, "ai-off")
@@ -289,6 +308,7 @@ async def test_ai_off_rejects_before_model_call_but_evidence_still_works(
 
     with pytest.raises(AIDisabled):
         await service.answer(principal_id=principal.id, request=request)
+    assert gateway.readiness_calls == 0
     assert gateway.calls == []
     assert await session.scalar(select(Plan).where(Plan.principal_id == principal.id)) is None
 
@@ -321,6 +341,45 @@ async def test_unconfigured_provider_fails_before_synthesis_plan(
             principal_id=principal.id,
             request=_request(entry, document, section),
         )
+    assert await session.scalar(select(Plan).where(Plan.principal_id == principal.id)) is None
+
+
+@pytest.mark.parametrize(
+    "readiness_state",
+    [
+        ModelReadinessState.PROVIDER_UNREACHABLE,
+        ModelReadinessState.PROVIDER_INVALID,
+        ModelReadinessState.MODEL_MISSING,
+    ],
+)
+async def test_not_ready_provider_creates_no_plan_or_model_call(
+    session: AsyncSession,
+    readiness_state: ModelReadinessState,
+) -> None:
+    principal = await _principal(session, f"not-ready-{readiness_state.value}")
+    entry, document, section = await _seed_book(
+        session,
+        principal=principal,
+        suffix=readiness_state.value,
+        text="Grounding remains available while the configured local runtime is not ready.",
+    )
+    gateway = _RecordingGateway(readiness_state=readiness_state)
+    scope = _scope(session)
+    service = GroundedResearchSynthesisService(
+        gateway=gateway,
+        session_scope_factory=scope,
+        research_service=ResearchService(session_scope_factory=scope),
+    )
+
+    with pytest.raises(ModelProviderNotReady) as captured:
+        await service.answer(
+            principal_id=principal.id,
+            request=_request(entry, document, section),
+        )
+
+    assert captured.value.readiness.state is readiness_state
+    assert gateway.readiness_calls == 1
+    assert gateway.calls == []
     assert await session.scalar(select(Plan).where(Plan.principal_id == principal.id)) is None
 
 

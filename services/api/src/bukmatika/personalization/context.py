@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from uuid import UUID
@@ -22,6 +22,7 @@ from bukmatika.personalization.domain import (
 )
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+ResearchAnswerAvailability = Callable[[], Awaitable[bool]]
 
 _TASK_CAPABILITIES: dict[ContextTask, tuple[str, ...]] = {
     ContextTask.DISCOVERY: ("discovery.search", "catalog.search"),
@@ -46,9 +47,11 @@ class ContextAssembler:
         *,
         session_scope_factory: SessionScopeFactory = session_scope,
         research_answer_available: bool = False,
+        research_answer_availability: ResearchAnswerAvailability | None = None,
     ) -> None:
         self._session_scope = session_scope_factory
         self._research_answer_available = research_answer_available
+        self._research_answer_availability = research_answer_availability
 
     async def assemble(
         self,
@@ -110,13 +113,7 @@ class ContextAssembler:
                 await repository.active_claims(principal_id),
                 request=request,
             )
-            capabilities = list(_TASK_CAPABILITIES[request.task])
-            if self._research_answer_available and request.task in (
-                ContextTask.RESEARCH,
-                ContextTask.READER,
-            ):
-                capabilities.append("research.answer")
-            return ContextManifest(
+            manifest = ContextManifest(
                 task=request.task,
                 ai_enabled=True,
                 learning_enabled=user_model.learning_enabled,
@@ -125,9 +122,26 @@ class ContextAssembler:
                 preferences=preferences,
                 goal=goal,
                 library_entries=library_entries,
-                available_capabilities=capabilities,
+                available_capabilities=list(_TASK_CAPABILITIES[request.task]),
                 exclusion_reasons=[],
             )
+
+        if request.task not in (ContextTask.RESEARCH, ContextTask.READER):
+            return manifest
+
+        answer_available = self._research_answer_available
+        if self._research_answer_availability is not None:
+            answer_available = await self._research_answer_availability()
+        if not answer_available:
+            return manifest
+        return manifest.model_copy(
+            update={
+                "available_capabilities": [
+                    *manifest.available_capabilities,
+                    "research.answer",
+                ]
+            }
+        )
 
     def _effective_preferences(
         self,

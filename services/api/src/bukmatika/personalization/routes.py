@@ -1,8 +1,9 @@
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
+from bukmatika.ai.gateway import ModelGateway, UnconfiguredModelGateway
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence.personalization import ContextGoalDenied, ContextSelectionDenied
 from bukmatika.personalization.context import ContextAssembler
@@ -38,9 +39,15 @@ def personalization_service() -> PersonalizationService:
 
 
 def context_assembler(request: Request) -> ContextAssembler:
-    gateway = getattr(request.app.state, "model_gateway", None)
-    provider_available = gateway is not None and getattr(gateway, "identity", None) is not None
-    return ContextAssembler(research_answer_available=provider_available)
+    candidate = getattr(request.app.state, "model_gateway", None)
+    gateway: ModelGateway = (
+        UnconfiguredModelGateway() if candidate is None else cast(ModelGateway, candidate)
+    )
+
+    async def research_answer_available() -> bool:
+        return (await gateway.readiness()).ready
+
+    return ContextAssembler(research_answer_availability=research_answer_available)
 
 
 def personalization_control_service() -> PersonalizationControlService:

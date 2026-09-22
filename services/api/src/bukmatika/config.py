@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str | None = None
     model_timeout_seconds: float = Field(default=45.0, gt=0, le=60)
+    model_readiness_timeout_seconds: float = Field(default=2.5, gt=0, le=10)
 
 
 @lru_cache

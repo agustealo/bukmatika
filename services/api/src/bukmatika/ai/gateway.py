@@ -20,6 +20,21 @@ class ModelProviderIdentity(BaseModel):
     routing: str = Field(min_length=1, max_length=32)
 
 
+class ModelReadinessState(StrEnum):
+    UNCONFIGURED = "unconfigured"
+    PROVIDER_UNREACHABLE = "provider_unreachable"
+    PROVIDER_INVALID = "provider_invalid"
+    MODEL_MISSING = "model_missing"
+    READY = "ready"
+
+
+class ModelProviderReadiness(BaseModel):
+    state: ModelReadinessState
+    configured: bool
+    ready: bool
+    identity: ModelProviderIdentity | None = None
+
+
 class ModelRequest(BaseModel):
     task: ModelTask
     payload: dict[str, JsonValue]
@@ -30,6 +45,14 @@ class ModelRequest(BaseModel):
 
 class ModelProviderUnconfigured(RuntimeError):
     code = "MODEL_PROVIDER_UNCONFIGURED"
+
+
+class ModelProviderNotReady(RuntimeError):
+    code = "MODEL_PROVIDER_NOT_READY"
+
+    def __init__(self, readiness: ModelProviderReadiness) -> None:
+        super().__init__(f"Model provider is not ready: {readiness.state.value}")
+        self.readiness = readiness
 
 
 class ModelProviderRequestFailed(RuntimeError):
@@ -47,6 +70,8 @@ class ModelGateway(Protocol):
     @property
     def identity(self) -> ModelProviderIdentity | None: ...
 
+    async def readiness(self) -> ModelProviderReadiness: ...
+
     async def generate_structured(
         self,
         request: ModelRequest,
@@ -60,6 +85,14 @@ class UnconfiguredModelGateway:
     @property
     def identity(self) -> ModelProviderIdentity | None:
         return None
+
+    async def readiness(self) -> ModelProviderReadiness:
+        return ModelProviderReadiness(
+            state=ModelReadinessState.UNCONFIGURED,
+            configured=False,
+            ready=False,
+            identity=None,
+        )
 
     async def generate_structured(
         self,

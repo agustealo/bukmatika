@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -56,7 +57,7 @@ class LearningRepository:
         action_decision_id: UUID | None,
         entity_type: str | None,
         entity_id: UUID | None,
-        context: dict[str, object],
+        context: Mapping[str, object],
     ) -> OutcomeEvent:
         plan: Plan | None = None
         if plan_id is not None:
@@ -108,7 +109,7 @@ class LearningRepository:
             outcome=outcome,
             entity_type=entity_type,
             entity_id=entity_id,
-            context=context,
+            context=dict(context),
         )
         self._session.add(event)
         await self._session.flush()
@@ -174,7 +175,7 @@ class LearningRepository:
         *,
         user_model: UserModel,
         key: str,
-        value: dict[str, object],
+        value: Mapping[str, object],
         scope_type: str,
         scope_value: str,
         confidence: float,
@@ -188,7 +189,7 @@ class LearningRepository:
             user_model_id=user_model.id,
             principal_id=user_model.principal_id,
             key=key,
-            value=value,
+            value=dict(value),
             source="inferred",
             status="active",
             confidence=confidence,

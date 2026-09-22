@@ -87,6 +87,15 @@ _DEFAULT_CAPABILITIES = (
         "Search selected owned books using the canonical research service.",
     ),
     CapabilitySpec(
+        CapabilityName.RESEARCH_ANSWER,
+        CapabilityRisk.READ_ONLY,
+        True,
+        (
+            "Synthesize a citation-grounded answer from a finite canonical research evidence "
+            "bundle. Registered but unavailable until a real ModelGateway provider is configured."
+        ),
+    ),
+    CapabilitySpec(
         CapabilityName.ACQUISITION_REQUEST,
         CapabilityRisk.CONSEQUENTIAL,
         False,

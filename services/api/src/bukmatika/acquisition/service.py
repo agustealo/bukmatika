@@ -16,7 +16,7 @@ from bukmatika.acquisition.downloader import (
     SafeDownloader,
 )
 from bukmatika.acquisition.network import UnsafeRemoteURL
-from bukmatika.acquisition.storage import LocalObjectStore
+from bukmatika.acquisition.storage import AcquisitionObjectStore
 from bukmatika.acquisition.verification import FormatVerificationError, verify_download
 from bukmatika.config import Settings
 from bukmatika.domain import RightsEvidence, RightsState
@@ -78,7 +78,7 @@ class AcquisitionService:
     def __init__(
         self,
         downloader: SafeDownloader,
-        storage: LocalObjectStore,
+        storage: AcquisitionObjectStore,
         settings: Settings,
         *,
         session_scope_factory: SessionScopeFactory = session_scope,

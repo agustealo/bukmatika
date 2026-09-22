@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence.personalization import ContextGoalDenied, ContextSelectionDenied
@@ -29,7 +29,6 @@ from bukmatika.personalization.service import PersonalizationService, Preference
 
 router = APIRouter(prefix="/v1/personalization", tags=["personalization"])
 _personalization_service = PersonalizationService()
-_context_assembler = ContextAssembler()
 _control_service = PersonalizationControlService()
 _portability_service = PersonalizationPortabilityService()
 
@@ -38,8 +37,10 @@ def personalization_service() -> PersonalizationService:
     return _personalization_service
 
 
-def context_assembler() -> ContextAssembler:
-    return _context_assembler
+def context_assembler(request: Request) -> ContextAssembler:
+    gateway = getattr(request.app.state, "model_gateway", None)
+    provider_available = gateway is not None and getattr(gateway, "identity", None) is not None
+    return ContextAssembler(research_answer_available=provider_available)
 
 
 def personalization_control_service() -> PersonalizationControlService:

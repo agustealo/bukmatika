@@ -8,11 +8,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.ai.capabilities import CapabilityRegistry, CapabilityRisk
 from bukmatika.ai.domain import CapabilityName
+from bukmatika.ai.gateway import (
+    ModelDataClassification,
+    ModelGateway,
+    ModelProviderRequestFailed,
+    ModelProviderResponseInvalid,
+    ModelProviderUnconfigured,
+    ModelRequest,
+    ModelTask,
+    UnconfiguredModelGateway,
+)
 from bukmatika.ai.policy import ActionDecisionValue, ActionPolicy
+from bukmatika.ai.research_domain import GroundedResearchCapabilityOutput
 from bukmatika.persistence import session_scope
+from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.execution import ExecutionRepository, PlanIntegrityError
 from bukmatika.personalization.domain import ContextManifest
-from bukmatika.research import ResearchSearchRequest, ResearchService
+from bukmatika.research import (
+    GroundedResearchAnswer,
+    ResearchEvidenceBundleRequest,
+    ResearchEvidenceItem,
+    ResearchEvidenceReferenceInvalid,
+    ResearchSearchRequest,
+    ResearchService,
+)
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -44,6 +63,7 @@ class CapabilityExecutor(Protocol):
         self,
         *,
         principal_id: UUID,
+        action_decision_id: UUID,
         arguments: dict[str, JsonValue],
         context: ContextManifest,
     ) -> BaseModel: ...
@@ -59,9 +79,11 @@ class ResearchSearchExecutor:
         self,
         *,
         principal_id: UUID,
+        action_decision_id: UUID,
         arguments: dict[str, JsonValue],
         context: ContextManifest,
     ) -> BaseModel:
+        del action_decision_id
         try:
             request = ResearchSearchRequest.model_validate(arguments)
         except ValidationError as exc:
@@ -75,6 +97,144 @@ class ResearchSearchExecutor:
             )
 
         return await self._service.search(principal_id=principal_id, request=request)
+
+
+class ResearchAnswerExecutor:
+    capability = CapabilityName.RESEARCH_ANSWER
+
+    def __init__(
+        self,
+        *,
+        gateway: ModelGateway | None = None,
+        research_service: ResearchService | None = None,
+        session_scope_factory: SessionScopeFactory = session_scope,
+    ) -> None:
+        self._gateway = gateway or UnconfiguredModelGateway()
+        self._research = research_service or ResearchService(
+            session_scope_factory=session_scope_factory
+        )
+        self._session_scope = session_scope_factory
+
+    async def execute(
+        self,
+        *,
+        principal_id: UUID,
+        action_decision_id: UUID,
+        arguments: dict[str, JsonValue],
+        context: ContextManifest,
+    ) -> BaseModel:
+        try:
+            request = ResearchEvidenceBundleRequest.model_validate(arguments)
+        except ValidationError as exc:
+            raise CapabilityArgumentsInvalid("Invalid research.answer arguments") from exc
+
+        selected_entry_ids = {entry.library_entry_id for entry in context.library_entries}
+        requested_entry_ids = set(request.library_entry_ids)
+        if not requested_entry_ids.issubset(selected_entry_ids):
+            raise CapabilityArgumentsInvalid(
+                "research.answer library entries must be selected in the persisted context"
+            )
+
+        identity = self._gateway.identity
+        if identity is None:
+            raise ModelProviderUnconfigured("No model provider is configured")
+
+        bundle = await self._research.evidence_bundle(
+            principal_id=principal_id,
+            request=request,
+        )
+        model_request = ModelRequest(
+            task=ModelTask.RESEARCH_ANSWER,
+            payload={
+                "question": bundle.question,
+                "evidence": [_model_evidence(item) for item in bundle.evidence],
+            },
+            data_classification=ModelDataClassification.PRIVATE_USER_CONTEXT,
+            max_output_tokens=2_048,
+            timeout_seconds=45,
+        )
+        try:
+            answer = await self._gateway.generate_structured(
+                model_request,
+                GroundedResearchAnswer,
+            )
+            answer = self._research.validate_grounded_answer(bundle=bundle, answer=answer)
+        except (
+            ModelProviderRequestFailed,
+            ModelProviderResponseInvalid,
+            ResearchEvidenceReferenceInvalid,
+        ) as exc:
+            await self._record_model_event(
+                SemanticEventType.AI_MODEL_FAILED,
+                principal_id=principal_id,
+                action_decision_id=action_decision_id,
+                provider=identity.provider,
+                model=identity.model,
+                routing=identity.routing,
+                evidence_count=len(bundle.evidence),
+                error_code=getattr(exc, "code", type(exc).__name__),
+            )
+            raise
+
+        await self._record_model_event(
+            SemanticEventType.AI_MODEL_COMPLETED,
+            principal_id=principal_id,
+            action_decision_id=action_decision_id,
+            provider=identity.provider,
+            model=identity.model,
+            routing=identity.routing,
+            evidence_count=len(bundle.evidence),
+        )
+        return GroundedResearchCapabilityOutput(
+            evidence=bundle,
+            answer=answer,
+            model_provider=identity.provider,
+            model_name=identity.model,
+            model_routing=identity.routing,
+        )
+
+    async def _record_model_event(
+        self,
+        event_type: SemanticEventType,
+        *,
+        principal_id: UUID,
+        action_decision_id: UUID,
+        provider: str,
+        model: str,
+        routing: str,
+        evidence_count: int,
+        error_code: str | None = None,
+    ) -> None:
+        context: dict[str, JsonValue] = {
+            "task": ModelTask.RESEARCH_ANSWER.value,
+            "provider": provider,
+            "model": model,
+            "routing": routing,
+            "evidence_count": evidence_count,
+        }
+        if error_code is not None:
+            context["error_code"] = error_code
+        async with self._session_scope() as database_session:
+            await InteractionEventRepository(database_session).record(
+                event_type,
+                principal_id=principal_id,
+                entity_type="action_decision",
+                entity_id=action_decision_id,
+                context=context,
+            )
+
+
+def _model_evidence(item: ResearchEvidenceItem) -> dict[str, JsonValue]:
+    return {
+        "evidence_id": item.evidence_id,
+        "work_title": item.work_title,
+        "edition_title": item.edition_title,
+        "heading": item.heading,
+        "locator": item.locator,
+        "char_start": item.char_start,
+        "char_end": item.char_end,
+        "text": item.text,
+    }
 
 
 class CapabilityExecutorRegistry:
@@ -165,6 +325,7 @@ class ExecutionCoordinator:
         executor = self._executors.get(state.step.capability)
         output = await executor.execute(
             principal_id=principal_id,
+            action_decision_id=state.decision.id,
             arguments=state.step.arguments,
             context=context,
         )

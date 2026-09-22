@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.persistence.events import SemanticEventType
 from bukmatika.persistence.models import InteractionEvent
 from bukmatika.persistence.personalization_models import (
     ActionDecision,
@@ -29,6 +30,16 @@ class PreferenceEvidenceRow:
 class ActivityRow:
     plan: Plan
     decision: ActionDecision
+
+
+@dataclass(frozen=True, slots=True)
+class ModelActivityRow:
+    decision_id: UUID
+    event_type: str
+    provider: str
+    model: str
+    routing: str | None
+    occurred_at: datetime
 
 
 class PersonalizationReadRepository:
@@ -120,6 +131,57 @@ class PersonalizationReadRepository:
             )
         ).all()
         return [ActivityRow(plan=plan, decision=decision) for plan, decision in rows]
+
+    async def model_activity_for_decisions(
+        self,
+        *,
+        principal_id: UUID,
+        decision_ids: list[UUID],
+    ) -> list[ModelActivityRow]:
+        if not decision_ids:
+            return []
+        rows = (
+            await self._session.execute(
+                select(
+                    InteractionEvent.entity_id,
+                    InteractionEvent.event_type,
+                    InteractionEvent.context,
+                    InteractionEvent.occurred_at,
+                )
+                .where(
+                    InteractionEvent.principal_id == principal_id,
+                    InteractionEvent.entity_type == "action_decision",
+                    InteractionEvent.entity_id.in_(decision_ids),
+                    InteractionEvent.event_type.in_(
+                        (
+                            SemanticEventType.AI_MODEL_COMPLETED.value,
+                            SemanticEventType.AI_MODEL_FAILED.value,
+                        )
+                    ),
+                )
+                .order_by(InteractionEvent.occurred_at, InteractionEvent.id)
+            )
+        ).all()
+        values: list[ModelActivityRow] = []
+        for decision_id, event_type, context, occurred_at in rows:
+            if decision_id is None:
+                continue
+            provider = context.get("provider")
+            model = context.get("model")
+            routing = context.get("routing")
+            if not isinstance(provider, str) or not isinstance(model, str):
+                continue
+            values.append(
+                ModelActivityRow(
+                    decision_id=decision_id,
+                    event_type=event_type,
+                    provider=provider,
+                    model=model,
+                    routing=routing if isinstance(routing, str) else None,
+                    occurred_at=occurred_at,
+                )
+            )
+        return values
 
     async def outcomes_for_decisions(
         self,

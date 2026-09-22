@@ -22,6 +22,8 @@ from bukmatika.acquisition.jobs import (
     AcquisitionQueueService,
 )
 from bukmatika.acquisition.storage import LocalObjectStore
+from bukmatika.ai.factory import build_model_gateway
+from bukmatika.ai.routes import router as ai_router
 from bukmatika.catalog import CatalogResolver
 from bukmatika.config import get_settings
 from bukmatika.discovery.gutenberg import ProjectGutenbergAdapter
@@ -79,7 +81,9 @@ settings = get_settings()
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     discovery_client = httpx.AsyncClient(follow_redirects=False)
     acquisition_client = httpx.AsyncClient(follow_redirects=False, trust_env=False)
+    model_client = httpx.AsyncClient(follow_redirects=False, trust_env=False)
     app.state.http_client = discovery_client
+    app.state.model_gateway = build_model_gateway(settings=settings, client=model_client)
     registry = ProviderRegistry(
         [
             ProviderRegistration(
@@ -148,6 +152,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             worker_task.cancel()
             with suppress(asyncio.CancelledError):
                 await worker_task
+        await model_client.aclose()
         await acquisition_client.aclose()
         await discovery_client.aclose()
 
@@ -158,6 +163,7 @@ app.include_router(library_router)
 app.include_router(reader_router)
 app.include_router(research_router)
 app.include_router(personalization_router)
+app.include_router(ai_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.web_origin],

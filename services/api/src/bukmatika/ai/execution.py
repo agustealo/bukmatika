@@ -11,6 +11,7 @@ from bukmatika.ai.domain import CapabilityName
 from bukmatika.ai.policy import ActionDecisionValue, ActionPolicy
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.execution import ExecutionRepository, PlanIntegrityError
+from bukmatika.personalization.domain import ContextManifest
 from bukmatika.research import ResearchSearchRequest, ResearchService
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
@@ -44,6 +45,7 @@ class CapabilityExecutor(Protocol):
         *,
         principal_id: UUID,
         arguments: dict[str, JsonValue],
+        context: ContextManifest,
     ) -> BaseModel: ...
 
 
@@ -58,11 +60,20 @@ class ResearchSearchExecutor:
         *,
         principal_id: UUID,
         arguments: dict[str, JsonValue],
+        context: ContextManifest,
     ) -> BaseModel:
         try:
             request = ResearchSearchRequest.model_validate(arguments)
         except ValidationError as exc:
             raise CapabilityArgumentsInvalid("Invalid research.search arguments") from exc
+
+        selected_entry_ids = {entry.library_entry_id for entry in context.library_entries}
+        requested_entry_ids = set(request.library_entry_ids)
+        if not requested_entry_ids.issubset(selected_entry_ids):
+            raise CapabilityArgumentsInvalid(
+                "research.search library entries must be selected in the persisted context"
+            )
+
         return await self._service.search(principal_id=principal_id, request=request)
 
 
@@ -155,6 +166,7 @@ class ExecutionCoordinator:
         output = await executor.execute(
             principal_id=principal_id,
             arguments=state.step.arguments,
+            context=context,
         )
         return CapabilityExecutionResponse(
             plan_id=plan_id,

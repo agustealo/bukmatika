@@ -45,8 +45,10 @@ class ContextAssembler:
         self,
         *,
         session_scope_factory: SessionScopeFactory = session_scope,
+        research_answer_available: bool = False,
     ) -> None:
         self._session_scope = session_scope_factory
+        self._research_answer_available = research_answer_available
 
     async def assemble(
         self,
@@ -108,6 +110,12 @@ class ContextAssembler:
                 await repository.active_claims(principal_id),
                 request=request,
             )
+            capabilities = list(_TASK_CAPABILITIES[request.task])
+            if self._research_answer_available and request.task in (
+                ContextTask.RESEARCH,
+                ContextTask.READER,
+            ):
+                capabilities.append("research.answer")
             return ContextManifest(
                 task=request.task,
                 ai_enabled=True,
@@ -117,7 +125,7 @@ class ContextAssembler:
                 preferences=preferences,
                 goal=goal,
                 library_entries=library_entries,
-                available_capabilities=list(_TASK_CAPABILITIES[request.task]),
+                available_capabilities=capabilities,
                 exclusion_reasons=[],
             )
 
@@ -128,10 +136,7 @@ class ContextAssembler:
         request: ContextRequest,
     ) -> list[ContextPreference]:
         applicable: dict[str, tuple[int, datetime, PreferenceClaim, str]] = {}
-        exact_scopes = {
-            (scope.scope_type.value, scope.scope_value)
-            for scope in request.scopes
-        }
+        exact_scopes = {(scope.scope_type.value, scope.scope_value) for scope in request.scopes}
         if request.goal_id is not None:
             exact_scopes.add((PreferenceScopeType.GOAL.value, str(request.goal_id)))
         task_scope = _TASK_SCOPE[request.task]

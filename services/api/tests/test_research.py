@@ -1,7 +1,7 @@
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
@@ -24,7 +24,6 @@ from bukmatika.personalization.context import ContextAssembler
 from bukmatika.personalization.domain import PersonalizationSettingsUpdate
 from bukmatika.personalization.service import PersonalizationService
 from bukmatika.research import (
-    GroundedAnswerDraft,
     GroundedAnswerStatus,
     GroundedCitationInvalid,
     GroundedResearchRequest,

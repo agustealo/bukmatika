@@ -66,6 +66,7 @@ from bukmatika.processing import (
     TextDocumentParser,
     UnsupportedDocumentFormat,
 )
+from bukmatika.reader.routes import router as reader_router
 
 settings = get_settings()
 
@@ -148,6 +149,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Bukmatika API", version="0.1.0", lifespan=lifespan)
+app.include_router(reader_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.web_origin],

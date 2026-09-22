@@ -235,20 +235,21 @@ class LearningRepository:
             ).all()
         )
         new_evidence = [item for item in evidence if item.event_id not in existing_ids]
-        if new_evidence:
-            self._session.add_all(
-                [
-                    PreferenceClaimEvidence(
-                        preference_claim_id=claim.id,
-                        interaction_event_id=item.event_id,
-                    )
-                    for item in new_evidence
-                ]
-            )
+        if not new_evidence:
+            return claim
+
+        self._session.add_all(
+            [
+                PreferenceClaimEvidence(
+                    preference_claim_id=claim.id,
+                    interaction_event_id=item.event_id,
+                )
+                for item in new_evidence
+            ]
+        )
         claim.confidence = confidence
         claim.evidence_count = len(existing_ids) + len(new_evidence)
-        if new_evidence:
-            claim.last_reinforced_at = max(item.occurred_at for item in new_evidence)
+        claim.last_reinforced_at = max(item.occurred_at for item in new_evidence)
         claim.updated_at = now
         await self._session.flush()
         return claim

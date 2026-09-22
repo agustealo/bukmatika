@@ -11,6 +11,7 @@ export default function Home() {
         <nav className="top-nav" aria-label="Primary navigation">
           <a href="/" aria-current="page">Discover</a>
           <a href="/library">Library</a>
+          <a href="/research">Research</a>
         </nav>
       </header>
 

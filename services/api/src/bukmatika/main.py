@@ -69,6 +69,7 @@ from bukmatika.processing import (
     UnsupportedDocumentFormat,
 )
 from bukmatika.reader.routes import router as reader_router
+from bukmatika.research import router as research_router
 
 settings = get_settings()
 
@@ -154,6 +155,7 @@ app = FastAPI(title="Bukmatika API", version="0.1.0", lifespan=lifespan)
 app.include_router(identity_router)
 app.include_router(library_router)
 app.include_router(reader_router)
+app.include_router(research_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.web_origin],

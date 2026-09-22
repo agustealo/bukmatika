@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
+from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence.readers import (
     ReaderAccessDenied,
     ReaderBookmarkNotFound,
@@ -29,12 +30,14 @@ def reader_service() -> ReaderService:
 async def open_reader(
     library_entry_id: UUID,
     document_id: UUID,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[ReaderService, Depends(reader_service)],
     after: Annotated[int | None, Query(ge=0)] = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 12,
 ) -> ReaderDocumentResponse:
     try:
         return await service.open_reader(
+            principal_id=identity.principal_id,
             library_entry_id=library_entry_id,
             document_id=document_id,
             after_ordinal=after,
@@ -52,10 +55,12 @@ async def save_progress(
     library_entry_id: UUID,
     document_id: UUID,
     update: ReadingProgressUpdate,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[ReaderService, Depends(reader_service)],
 ) -> ReadingStateResponse:
     try:
         return await service.save_progress(
+            principal_id=identity.principal_id,
             library_entry_id=library_entry_id,
             document_id=document_id,
             update=update,
@@ -77,10 +82,12 @@ async def add_bookmark(
     library_entry_id: UUID,
     document_id: UUID,
     create: BookmarkCreate,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[ReaderService, Depends(reader_service)],
 ) -> BookmarkResponse:
     try:
         return await service.add_bookmark(
+            principal_id=identity.principal_id,
             library_entry_id=library_entry_id,
             document_id=document_id,
             create=create,
@@ -102,10 +109,12 @@ async def remove_bookmark(
     library_entry_id: UUID,
     document_id: UUID,
     bookmark_id: UUID,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[ReaderService, Depends(reader_service)],
 ) -> Response:
     try:
         await service.remove_bookmark(
+            principal_id=identity.principal_id,
             library_entry_id=library_entry_id,
             document_id=document_id,
             bookmark_id=bookmark_id,

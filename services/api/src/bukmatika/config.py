@@ -40,6 +40,9 @@ class Settings(BaseSettings):
         le=8_589_934_592,
     )
     archive_max_compression_ratio: float = Field(default=200.0, gt=1, le=10_000)
+    processing_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    processing_max_bytes: int = Field(default=67_108_864, ge=1, le=536_870_912)
+    document_search_default_limit: int = Field(default=20, ge=1, le=100)
     storage_root: Path = Path(".bukmatika/storage")
     user_agent: str = "Bukmatika/0.1 (+https://github.com/agustealo/bukmatika)"
     contact_email: str | None = None

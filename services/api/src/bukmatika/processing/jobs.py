@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, suppress
 from pathlib import Path
-from typing import ClassVar, Protocol
+from typing import ClassVar, Protocol, TypeGuard
 from uuid import UUID
 
 import structlog
@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.acquisition.storage import StoredObjectPathResolver
 from bukmatika.config import Settings
 from bukmatika.persistence import session_scope
+from bukmatika.persistence.document_models import DocumentProcessingState
 from bukmatika.persistence.documents import (
     DocumentRepository,
     DocumentSource,
@@ -41,6 +42,10 @@ class OcrJobNotFound(LookupError):
 
 
 class OcrNotEligible(RuntimeError):
+    pass
+
+
+class _OcrAlreadyCompleted(RuntimeError):
     pass
 
 
@@ -81,7 +86,7 @@ class OcrQueueService:
                 JobStatus.RUNNING.value,
                 JobStatus.COMPLETED.value,
             }:
-                return _job_response(existing, source, state.status, state.error_code)
+                return _job_response(existing, source.asset_id, state.status, state.error_code)
 
             retryable_failed = state.status == "failed" and state.processor_name == "tesseract"
             if state.status != "requires_ocr" and not retryable_failed:
@@ -107,7 +112,7 @@ class OcrQueueService:
                     "source_sha256": source.sha256,
                 },
             )
-            return _job_response(job, source, state.status, state.error_code)
+            return _job_response(job, source.asset_id, state.status, state.error_code)
 
     async def get(self, job_id: UUID) -> OcrJobResponse:
         async with self._session_scope() as database_session:
@@ -115,15 +120,17 @@ class OcrQueueService:
             job = await jobs.get(job_id)
             if job is None or job.job_type != self._job_type:
                 raise OcrJobNotFound(f"OCR job {job_id} does not exist")
-            source = await _source_from_job(DocumentRepository(database_session), job)
-            if source is None:
-                raise OcrJobNotFound(f"OCR job {job_id} no longer has a resolvable source")
-            state = await DocumentRepository(database_session).get_processing_state(source.asset_id)
-            processing_status = state.status if _state_matches_source(state, source) else "unknown"
+            try:
+                asset_id = _asset_id_from_job(job)
+            except ValueError as exc:
+                raise OcrJobNotFound(f"OCR job {job_id} has an invalid payload") from exc
+
+            state = await DocumentRepository(database_session).get_processing_state(asset_id)
+            processing_status = state.status if state is not None else "unknown"
             error_code = job.last_error_code
-            if error_code is None and _state_matches_source(state, source):
+            if error_code is None and state is not None:
                 error_code = state.error_code
-            return _job_response(job, source, processing_status, error_code)
+            return _job_response(job, asset_id, processing_status, error_code)
 
 
 class OcrJobWorker:
@@ -248,28 +255,39 @@ class OcrJobWorker:
                     await heartbeat
         except asyncio.CancelledError:
             raise
+        except _OcrAlreadyCompleted:
+            await self._complete_job(lease)
         except JobLeaseLost:
             logger.info("ocr_worker_lease_lost", job_id=str(lease.job_id))
         except OcrExecutionError as exc:
-            if exc.error_code in self._retryable_codes and lease.attempt_count < lease.max_attempts:
-                await self._retry_job(lease, source, exc.error_code, exc.detail)
-            else:
-                await self._fail_job(lease, source, exc.error_code, exc.detail)
+            try:
+                if exc.error_code in self._retryable_codes and lease.attempt_count < lease.max_attempts:
+                    await self._retry_job(lease, source, exc.error_code, exc.detail)
+                else:
+                    await self._fail_job(lease, source, exc.error_code, exc.detail)
+            except JobLeaseLost:
+                logger.info("ocr_worker_lease_lost", job_id=str(lease.job_id))
         except (KeyError, TypeError, ValueError) as exc:
-            await self._fail_job(
-                lease,
-                source,
-                "INVALID_JOB_PAYLOAD",
-                type(exc).__name__,
-            )
+            try:
+                await self._fail_job(
+                    lease,
+                    source,
+                    "INVALID_JOB_PAYLOAD",
+                    type(exc).__name__,
+                )
+            except JobLeaseLost:
+                logger.info("ocr_worker_lease_lost", job_id=str(lease.job_id))
         except Exception as exc:
             logger.exception("ocr_worker_execution_failed", job_id=str(lease.job_id))
-            await self._fail_job(
-                lease,
-                source,
-                "OCR_INTERNAL_ERROR",
-                type(exc).__name__,
-            )
+            try:
+                await self._fail_job(
+                    lease,
+                    source,
+                    "OCR_INTERNAL_ERROR",
+                    type(exc).__name__,
+                )
+            except JobLeaseLost:
+                logger.info("ocr_worker_lease_lost", job_id=str(lease.job_id))
 
     async def _prepare_source(
         self,
@@ -300,11 +318,12 @@ class OcrJobWorker:
                     "Processing state no longer belongs to the enqueued stored PDF",
                 )
             if state.status == "completed":
-                await JobRepository(database_session).complete(
-                    job_id=lease.job_id,
-                    claim_token=lease.claim_token,
+                raise _OcrAlreadyCompleted
+            if state.status == "processing" and state.processor_name != self._engine.name:
+                raise OcrExecutionError(
+                    "OCR_NOT_ELIGIBLE",
+                    "Current stored PDF is owned by another processing authority",
                 )
-                raise JobLeaseLost("OCR job was already satisfied by a completed document")
             if state.status not in {"requires_ocr", "failed", "processing"}:
                 raise OcrExecutionError(
                     "OCR_NOT_ELIGIBLE",
@@ -339,6 +358,13 @@ class OcrJobWorker:
                     claim_token=lease.claim_token,
                     lease_seconds=self._settings.ocr_job_lease_seconds,
                 )
+
+    async def _complete_job(self, lease: JobLease) -> None:
+        async with self._session_scope() as database_session:
+            await JobRepository(database_session).complete(
+                job_id=lease.job_id,
+                claim_token=lease.claim_token,
+            )
 
     async def _retry_job(
         self,
@@ -426,29 +452,25 @@ def _parse_payload(lease: JobLease) -> tuple[UUID, UUID, str]:
     source_sha256 = str(lease.payload["source_sha256"])
     if len(source_sha256) != 64:
         raise ValueError("source_sha256 must be a SHA-256 hex digest")
+    int(source_sha256, 16)
     return asset_id, stored_object_id, source_sha256
 
 
-async def _source_from_job(repository: DocumentRepository, job: Job) -> DocumentSource | None:
+def _asset_id_from_job(job: Job) -> UUID:
     try:
-        asset_id = UUID(str(job.payload["asset_id"]))
-        stored_object_id = UUID(str(job.payload["stored_object_id"]))
-        source_sha256 = str(job.payload["source_sha256"])
-    except (KeyError, TypeError, ValueError):
-        return None
-    source = await repository.source_for_asset(asset_id)
-    if source is None:
-        return None
-    if source.stored_object_id != stored_object_id or source.sha256 != source_sha256:
-        return None
-    return source
+        return UUID(str(job.payload["asset_id"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("OCR job payload has no valid asset_id") from exc
 
 
-def _state_matches_source(state: object, source: DocumentSource) -> bool:
+def _state_matches_source(
+    state: DocumentProcessingState | None,
+    source: DocumentSource,
+) -> TypeGuard[DocumentProcessingState]:
     return bool(
         state is not None
-        and getattr(state, "stored_object_id", None) == source.stored_object_id
-        and getattr(state, "source_sha256", None) == source.sha256
+        and state.stored_object_id == source.stored_object_id
+        and state.source_sha256 == source.sha256
     )
 
 
@@ -458,13 +480,13 @@ def _dedupe_key(source: DocumentSource) -> str:
 
 def _job_response(
     job: Job,
-    source: DocumentSource,
+    asset_id: UUID,
     processing_status: str,
     error_code: str | None,
 ) -> OcrJobResponse:
     return OcrJobResponse(
         job_id=job.id,
-        asset_id=source.asset_id,
+        asset_id=asset_id,
         job_status=job.status,
         processing_status=processing_status,
         error_code=error_code,

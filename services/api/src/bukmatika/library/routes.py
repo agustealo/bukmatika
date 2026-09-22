@@ -52,7 +52,10 @@ async def save_edition(
             edition_id=edition_id,
         )
     except LibraryTargetNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Edition not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Edition not found",
+        ) from exc
 
 
 @router.get("/dossiers/works/{work_id}", response_model=WorkDossierResponse)

@@ -8,6 +8,7 @@ from bukmatika.processing.chunking import chunk_sections
 from bukmatika.processing.parsers import (
     DocumentParseError,
     DocumentRequiresOCR,
+    DocxDocumentParser,
     EpubDocumentParser,
     HtmlDocumentParser,
     PdfDocumentParser,
@@ -143,6 +144,49 @@ def test_epub_rejects_rootfile_path_escape(tmp_path: Path) -> None:
         EpubDocumentParser().parse(path, max_bytes=16_384)
 
 
+def test_docx_parser_preserves_paragraph_table_and_heading_order(tmp_path: Path) -> None:
+    path = tmp_path / "book.docx"
+    _write_docx(path)
+
+    parsed = DocxDocumentParser().parse(path, max_bytes=65_536)
+
+    assert [section.text for section in parsed.sections] == [
+        "Overview",
+        "First paragraph.",
+        "Cell A\tCell B",
+        "After table.",
+    ]
+    assert parsed.sections[0].heading == "Overview"
+    assert parsed.sections[0].locator == {
+        "block": 1,
+        "type": "paragraph",
+        "paragraph": 1,
+    }
+    assert parsed.sections[2].locator == {
+        "block": 3,
+        "type": "table_row",
+        "table": 1,
+        "row": 1,
+    }
+    assert parsed.sections[3].locator["block"] == 4
+
+
+def test_docx_rejects_dtd_and_entity_declarations(tmp_path: Path) -> None:
+    path = tmp_path / "unsafe.docx"
+    document = b"""<?xml version="1.0"?>
+    <!DOCTYPE w:document [<!ENTITY xxe "forbidden">]>
+    <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:body><w:p><w:r><w:t>&xxe;</w:t></w:r></w:p></w:body>
+    </w:document>
+    """
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", _docx_content_types())
+        archive.writestr("word/document.xml", document)
+
+    with pytest.raises(DocumentParseError, match="disallowed XML declarations"):
+        DocxDocumentParser().parse(path, max_bytes=16_384)
+
+
 def test_chunk_offsets_resolve_exactly_to_normalized_section_text(tmp_path: Path) -> None:
     path = tmp_path / "long.txt"
     text = " ".join(f"token-{index}" for index in range(220))
@@ -235,3 +279,37 @@ def _write_epub(path: Path) -> None:
         archive.writestr("OEBPS/content.opf", package)
         archive.writestr("OEBPS/chapter-1.xhtml", chapter_one)
         archive.writestr("OEBPS/chapter-2.xhtml", chapter_two)
+
+
+def _write_docx(path: Path) -> None:
+    document = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:body>
+        <w:p>
+          <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+          <w:r><w:t>Overview</w:t></w:r>
+        </w:p>
+        <w:p><w:r><w:t>First paragraph.</w:t></w:r></w:p>
+        <w:tbl>
+          <w:tr>
+            <w:tc><w:p><w:r><w:t>Cell A</w:t></w:r></w:p></w:tc>
+            <w:tc><w:p><w:r><w:t>Cell B</w:t></w:r></w:p></w:tc>
+          </w:tr>
+        </w:tbl>
+        <w:p><w:r><w:t>After table.</w:t></w:r></w:p>
+      </w:body>
+    </w:document>
+    """
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", _docx_content_types())
+        archive.writestr("word/document.xml", document)
+
+
+def _docx_content_types() -> str:
+    return """<?xml version="1.0" encoding="UTF-8"?>
+    <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+      <Default Extension="xml" ContentType="application/xml"/>
+      <Override PartName="/word/document.xml"
+        ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+    </Types>
+    """

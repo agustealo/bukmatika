@@ -1,3 +1,4 @@
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
@@ -49,3 +50,85 @@ class ResearchSearchResponse(BaseModel):
     query: str
     selected_library_entry_ids: list[UUID]
     passages: list[ResearchPassageResponse]
+
+
+class GroundedResearchRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=1_000)
+    library_entry_ids: list[UUID] = Field(min_length=1, max_length=20)
+    max_passages: int = Field(default=12, ge=1, le=30)
+
+    @field_validator("question")
+    @classmethod
+    def normalize_question(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("Grounded research question cannot be blank")
+        return normalized
+
+    @field_validator("library_entry_ids")
+    @classmethod
+    def require_unique_entries(cls, value: list[UUID]) -> list[UUID]:
+        if len(set(value)) != len(value):
+            raise ValueError("Selected library entries must be unique")
+        return value
+
+
+class GroundedClaimDraft(BaseModel):
+    text: str = Field(min_length=1, max_length=1_200)
+    evidence_ids: list[UUID] = Field(min_length=1, max_length=8)
+
+    @field_validator("text")
+    @classmethod
+    def normalize_text(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("Grounded claim cannot be blank")
+        return normalized
+
+    @field_validator("evidence_ids")
+    @classmethod
+    def unique_evidence(cls, value: list[UUID]) -> list[UUID]:
+        if len(set(value)) != len(value):
+            raise ValueError("Grounded claim evidence IDs must be unique")
+        return value
+
+
+class GroundedAnswerDraft(BaseModel):
+    claims: list[GroundedClaimDraft] = Field(min_length=1, max_length=10)
+
+
+class GroundedCitationResponse(BaseModel):
+    evidence_id: UUID
+    library_entry_id: UUID
+    work_id: UUID
+    work_title: str
+    edition_id: UUID
+    edition_title: str
+    document_id: UUID
+    chunk_id: UUID
+    section_id: UUID
+    heading: str | None
+    locator: dict[str, Any]
+    char_start: int
+    char_end: int
+    text: str
+
+
+class GroundedClaimResponse(BaseModel):
+    text: str
+    citations: list[GroundedCitationResponse]
+
+
+class GroundedAnswerStatus(StrEnum):
+    GROUNDED = "grounded"
+    NO_EVIDENCE = "no_evidence"
+
+
+class GroundedAnswerResponse(BaseModel):
+    status: GroundedAnswerStatus
+    question: str
+    selected_library_entry_ids: list[UUID]
+    retrieval_count: int
+    claims: list[GroundedClaimResponse]
+    provider: str | None
+    model: str | None

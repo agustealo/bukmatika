@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from bukmatika.ai import (
     ModelDataClassification,
     ModelProviderUnconfigured,
     ModelRequest,
+    ModelTask,
     PersistedPlanResponse,
     PlanCapabilityUnavailable,
     PlanProposal,
@@ -70,7 +71,7 @@ async def test_unconfigured_gateway_fails_closed_without_fake_output() -> None:
     with pytest.raises(ModelProviderUnconfigured) as error:
         await gateway.generate_structured(
             ModelRequest(
-                task="plan",
+                task=ModelTask.PLAN,
                 payload={"user_request": "Find relevant books"},
                 data_classification=ModelDataClassification.PRIVATE_USER_CONTEXT,
                 max_output_tokens=512,
@@ -79,6 +80,27 @@ async def test_unconfigured_gateway_fails_closed_without_fake_output() -> None:
             PlanProposal,
         )
     assert error.value.code == "MODEL_PROVIDER_UNCONFIGURED"
+
+
+async def test_default_planning_service_leaves_no_plan_when_provider_unconfigured(
+    session: AsyncSession,
+) -> None:
+    principal = await _principal(session, "unconfigured")
+    scope = _scope(session)
+    service = PlanningService(
+        context_assembler=ContextAssembler(session_scope_factory=scope),
+        session_scope_factory=scope,
+    )
+
+    with pytest.raises(ModelProviderUnconfigured) as error:
+        await service.propose(
+            principal_id=principal.id,
+            user_request="Search my books for navigation evidence.",
+            context_request=ContextRequest(task=ContextTask.RESEARCH),
+        )
+
+    assert error.value.code == "MODEL_PROVIDER_UNCONFIGURED"
+    assert await session.scalar(select(Plan).where(Plan.principal_id == principal.id)) is None
 
 
 async def test_ai_disabled_short_circuits_before_gateway_or_plan_persistence(

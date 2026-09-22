@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence import session_scope
+from bukmatika.persistence.document_models import DocumentSection
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.reader_models import Bookmark, ReadingState
 from bukmatika.persistence.readers import (
@@ -207,12 +208,16 @@ def _bookmark_response(bookmark: Bookmark) -> BookmarkResponse:
     )
 
 
-def _next_after_ordinal(*, sections: list[object], document_section_count: int, page_limit: int) -> int | None:
+def _next_after_ordinal(
+    *,
+    sections: list[DocumentSection],
+    document_section_count: int,
+    page_limit: int,
+) -> int | None:
     if not sections or len(sections) < page_limit:
         return None
-    last = sections[-1]
-    ordinal = getattr(last, "ordinal", None)
-    if not isinstance(ordinal, int) or ordinal >= document_section_count - 1:
+    ordinal = sections[-1].ordinal
+    if ordinal >= document_section_count - 1:
         return None
     return ordinal
 

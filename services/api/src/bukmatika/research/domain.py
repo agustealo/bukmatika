@@ -1,3 +1,4 @@
+import re
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -5,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 MAX_READER_SELECTION_CHARS = 6_000
+_EVIDENCE_ID_PATTERN = re.compile(r"^E[1-9][0-9]*$")
 
 
 class ResearchSearchRequest(BaseModel):
@@ -149,9 +151,8 @@ class GroundedAnswerClaim(BaseModel):
     def validate_evidence_ids(cls, values: list[str]) -> list[str]:
         if len(set(values)) != len(values):
             raise ValueError("Grounded claim evidence IDs must be unique")
-        for value in values:
-            if not value.startswith("E") or not value[1:].isdigit() or value[1:] == "0":
-                raise ValueError("Grounded claim evidence IDs must use the request-local E# format")
+        if any(_EVIDENCE_ID_PATTERN.fullmatch(value) is None for value in values):
+            raise ValueError("Grounded claim evidence IDs must use the request-local E# format")
         return values
 
 

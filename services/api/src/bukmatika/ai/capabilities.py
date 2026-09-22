@@ -12,6 +12,16 @@ class NoArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class StrictSearchIntent(SearchIntent):
+    model_config = ConfigDict(extra="forbid")
+
+
+class DiscoverySearchArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: StrictSearchIntent
+
+
 class CatalogSearchArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -60,7 +70,7 @@ class CapabilityRegistry:
             CapabilitySpec(
                 name="discovery.search",
                 risk=CapabilityRisk.NETWORK_READ,
-                argument_model=SearchIntent,
+                argument_model=DiscoverySearchArguments,
             ),
             CapabilitySpec(
                 name="catalog.search",

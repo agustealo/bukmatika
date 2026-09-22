@@ -42,6 +42,14 @@ class DocumentResponse(BaseModel):
     chunk_count: int = Field(ge=1)
 
 
+class OcrJobResponse(BaseModel):
+    job_id: UUID
+    asset_id: UUID
+    job_status: str
+    processing_status: str
+    error_code: str | None = None
+
+
 class DocumentSearchHit(BaseModel):
     chunk_id: UUID
     section_id: UUID

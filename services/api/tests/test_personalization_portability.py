@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -283,6 +284,7 @@ async def test_reset_is_atomic_preserves_product_state_and_blocks_old_learning_e
         suffix="reset",
     )
     old_event_ids: list[UUID] = []
+    old_event_times: list[datetime] = []
     for document in documents:
         event = await InteractionEventRepository(session).record(
             SemanticEventType.READER_OPENED,
@@ -292,6 +294,7 @@ async def test_reset_is_atomic_preserves_product_state_and_blocks_old_learning_e
             context={"library_entry_id": str(entry.id)},
         )
         old_event_ids.append(event.id)
+        old_event_times.append(event.occurred_at)
 
     learning = LearningService(session_scope_factory=scope)
     inferred_id = await learning.refresh_format_preference(principal_id=principal.id)
@@ -313,6 +316,7 @@ async def test_reset_is_atomic_preserves_product_state_and_blocks_old_learning_e
     assert reset.ai_enabled is True
     assert reset.learning_enabled is True
     assert reset.autonomy_level == 0
+    assert all(occurred_at < reset.reset_at for occurred_at in old_event_times)
     assert (
         await session.scalar(
             select(PreferenceClaim).where(PreferenceClaim.principal_id == principal.id)
@@ -363,6 +367,7 @@ async def test_reset_is_atomic_preserves_product_state_and_blocks_old_learning_e
     )
     assert reset_event is not None
     assert reset_event.id not in old_event_ids
+    assert reset_event.occurred_at == reset.reset_at
 
     surviving_other = await session.get(PreferenceClaim, other_claim.claim_id)
     assert surviving_other is not None
@@ -380,12 +385,29 @@ async def test_reset_is_atomic_preserves_product_state_and_blocks_old_learning_e
         is None
     )
 
+    post_reset_time = max(datetime.now(UTC), reset.reset_at + timedelta(microseconds=1))
+    for index, document in enumerate(documents):
+        await InteractionEventRepository(session).record(
+            SemanticEventType.READER_OPENED,
+            principal_id=principal.id,
+            entity_type="document",
+            entity_id=document.id,
+            context={"library_entry_id": str(entry.id)},
+            occurred_at=post_reset_time + timedelta(microseconds=index),
+        )
+    new_inferred_id = await learning.refresh_format_preference(
+        principal_id=principal.id,
+        now=post_reset_time + timedelta(seconds=1),
+    )
+    assert new_inferred_id is not None
+    assert new_inferred_id != inferred_id
+
     snapshot = await PersonalizationControlService(session_scope_factory=scope).snapshot(
         principal_id=principal.id
     )
     assert snapshot.user_model_id == reset.user_model_id
     assert snapshot.explicit_preferences == []
-    assert snapshot.inferred_preferences == []
+    assert [claim.claim_id for claim in snapshot.inferred_preferences] == [new_inferred_id]
     assert snapshot.active_goals == []
     assert snapshot.recent_activity == []
     assert snapshot.recent_outcomes == []

@@ -6,7 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence.document_models import Document
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
-from bukmatika.persistence.models import Asset, Edition, InteractionEvent, Principal, StoredObject, Work
+from bukmatika.persistence.models import (
+    Asset,
+    Edition,
+    InteractionEvent,
+    Principal,
+    StoredObject,
+    Work,
+)
 from bukmatika.persistence.personalization_models import PreferenceClaim
 from bukmatika.personalization.learning import LearningService, OutcomeCreate, OutcomeValue
 

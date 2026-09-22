@@ -24,6 +24,9 @@ dependencies = [
   "uvicorn[standard]>=0.35,<1",
 ]
 
+[project.scripts]
+bukmatika-ocr-worker = "bukmatika.processing.worker:main"
+
 [project.optional-dependencies]
 dev = [
   "mypy>=1.17,<2",

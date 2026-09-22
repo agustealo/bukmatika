@@ -131,13 +131,13 @@ class DocumentRepository:
         await self._session.flush()
 
         for chunk in chunks:
-            persisted_section = sections.get(chunk.section_ordinal)
-            if persisted_section is None:
+            chunk_section = sections.get(chunk.section_ordinal)
+            if chunk_section is None:
                 raise RuntimeError("Chunk references an unknown document section")
             self._session.add(
                 DocumentChunk(
                     document_id=document.id,
-                    section_id=persisted_section.id,
+                    section_id=chunk_section.id,
                     ordinal=chunk.ordinal,
                     char_start=chunk.char_start,
                     char_end=chunk.char_end,

@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, suppress
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +21,12 @@ from bukmatika.processing.domain import (
     DocumentSearchHit,
     DocumentSearchResponse,
 )
-from bukmatika.processing.parsers import DocumentParseError, ParserRegistry
+from bukmatika.processing.parsers import (
+    DocumentParseError,
+    DocumentParser,
+    DocumentRequiresOCR,
+    ParserRegistry,
+)
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -68,10 +73,11 @@ class DocumentProcessingService:
 
     async def process_asset(self, asset_id: UUID) -> DocumentResponse:
         source = await self._load_source(asset_id)
+        parser = self._registry.get(source.format)
+        await self._set_processing_state(source, parser, status="processing")
         await self._record_processing_started(source)
 
         try:
-            parser = self._registry.get(source.format)
             if source.byte_size > self._settings.processing_max_bytes:
                 raise DocumentParseError("Stored object exceeds configured processing byte limit")
             try:
@@ -100,6 +106,12 @@ class DocumentProcessingService:
                         parsed=parsed,
                         chunks=chunks,
                     )
+                    await repository.set_processing_state(
+                        source=source,
+                        processor_name=parsed.parser_name,
+                        processor_version=parsed.parser_version,
+                        status="completed",
+                    )
                 except DocumentSourceChanged as exc:
                     raise ProcessingSourceChanged(str(exc)) from exc
                 await InteractionEventRepository(database_session).record(
@@ -118,7 +130,18 @@ class DocumentProcessingService:
                     },
                 )
             return _document_response(document)
+        except DocumentRequiresOCR as exc:
+            await self._set_processing_state(
+                source,
+                parser,
+                status="requires_ocr",
+                error_code="DOCUMENT_REQUIRES_OCR",
+                error_detail=str(exc),
+            )
+            await self._record_processing_failed(source, exc)
+            raise
         except Exception as exc:
+            await self._set_failed_state(source, parser, exc)
             await self._record_processing_failed(source, exc)
             raise
 
@@ -186,6 +209,43 @@ class DocumentProcessingService:
             if await repository.asset_exists(asset_id):
                 raise AssetNotStored(f"Asset {asset_id} has no verified stored object")
             raise ProcessingAssetNotFound(f"Asset {asset_id} does not exist")
+
+    async def _set_processing_state(
+        self,
+        source: DocumentSource,
+        parser: DocumentParser,
+        *,
+        status: str,
+        error_code: str | None = None,
+        error_detail: str | None = None,
+    ) -> None:
+        async with self._session_scope() as database_session:
+            try:
+                await DocumentRepository(database_session).set_processing_state(
+                    source=source,
+                    processor_name=parser.name,
+                    processor_version=parser.version,
+                    status=status,
+                    error_code=error_code,
+                    error_detail=error_detail,
+                )
+            except DocumentSourceChanged as exc:
+                raise ProcessingSourceChanged(str(exc)) from exc
+
+    async def _set_failed_state(
+        self,
+        source: DocumentSource,
+        parser: DocumentParser,
+        error: Exception,
+    ) -> None:
+        with suppress(ProcessingSourceChanged):
+            await self._set_processing_state(
+                source,
+                parser,
+                status="failed",
+                error_code=type(error).__name__.upper(),
+                error_detail=str(error)[:2000],
+            )
 
     async def _record_processing_started(self, source: DocumentSource) -> None:
         async with self._session_scope() as database_session:

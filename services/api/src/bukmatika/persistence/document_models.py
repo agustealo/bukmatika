@@ -18,6 +18,33 @@ from sqlalchemy.orm import Mapped, mapped_column
 from bukmatika.persistence.models import Base, TimestampMixin
 
 
+class DocumentProcessingState(Base, TimestampMixin):
+    __tablename__ = "document_processing_states"
+    __table_args__ = (
+        UniqueConstraint("asset_id", name="uq_document_processing_state_asset"),
+        CheckConstraint(
+            "status IN ('processing','completed','requires_ocr','failed')",
+            name="ck_document_processing_state_status",
+        ),
+        Index("ix_document_processing_state_status", "status", "updated_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    asset_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
+    )
+    stored_object_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("stored_objects.id", ondelete="CASCADE"), nullable=False
+    )
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    format: Mapped[str] = mapped_column(String(32), nullable=False)
+    processor_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    processor_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_detail: Mapped[str | None] = mapped_column(Text)
+
+
 class Document(Base, TimestampMixin):
     __tablename__ = "documents"
     __table_args__ = (

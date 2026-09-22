@@ -1,4 +1,12 @@
-from bukmatika.processing.domain import DocumentResponse, DocumentSearchResponse
+from bukmatika.processing.domain import DocumentResponse, DocumentSearchResponse, OcrJobResponse
+from bukmatika.processing.jobs import (
+    OcrAssetNotFound,
+    OcrJobNotFound,
+    OcrJobWorker,
+    OcrNotEligible,
+    OcrQueueService,
+)
+from bukmatika.processing.ocr import OcrExecutionError, TesseractPdfOcrEngine
 from bukmatika.processing.parsers import (
     DocumentParseError,
     DocumentRequiresOCR,
@@ -30,6 +38,13 @@ __all__ = [
     "DocxDocumentParser",
     "EpubDocumentParser",
     "HtmlDocumentParser",
+    "OcrAssetNotFound",
+    "OcrExecutionError",
+    "OcrJobNotFound",
+    "OcrJobResponse",
+    "OcrJobWorker",
+    "OcrNotEligible",
+    "OcrQueueService",
     "ParserRegistry",
     "PdfDocumentParser",
     "ProcessedDocumentNotFound",
@@ -37,6 +52,7 @@ __all__ = [
     "ProcessingSourceChanged",
     "ProcessingTimedOut",
     "StoredObjectUnavailable",
+    "TesseractPdfOcrEngine",
     "TextDocumentParser",
     "UnsupportedDocumentFormat",
 ]

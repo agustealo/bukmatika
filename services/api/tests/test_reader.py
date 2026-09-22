@@ -103,11 +103,13 @@ async def test_reader_paginates_sections_and_persists_progress(
     session: AsyncSession,
 ) -> None:
     entry, document, sections = await _seed_reader_document(session, suffix="page")
+    entry_id = entry.id
+    document_id = document.id
     service = ReaderService(session_scope_factory=_scope(session))
 
     first_page = await service.open_reader(
-        library_entry_id=entry.id,
-        document_id=document.id,
+        library_entry_id=entry_id,
+        document_id=document_id,
         after_ordinal=None,
         limit=2,
     )
@@ -116,8 +118,8 @@ async def test_reader_paginates_sections_and_persists_progress(
     assert first_page.reading_state is None
 
     saved = await service.save_progress(
-        library_entry_id=entry.id,
-        document_id=document.id,
+        library_entry_id=entry_id,
+        document_id=document_id,
         update=ReadingProgressUpdate(
             section_id=sections[1].id,
             char_offset=7,
@@ -129,8 +131,8 @@ async def test_reader_paginates_sections_and_persists_progress(
 
     session.expire_all()
     reopened = await service.open_reader(
-        library_entry_id=entry.id,
-        document_id=document.id,
+        library_entry_id=entry_id,
+        document_id=document_id,
         after_ordinal=1,
         limit=2,
     )

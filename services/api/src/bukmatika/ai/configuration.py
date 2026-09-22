@@ -10,7 +10,15 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.ai.factory import build_model_gateway, build_selected_model_gateway
-from bukmatika.ai.gateway import ModelGateway, ModelReadinessState
+from bukmatika.ai.gateway import (
+    ModelGateway,
+    ModelProviderIdentity,
+    ModelProviderReadiness,
+    ModelReadinessState,
+    ModelRequest,
+    StructuredResponseT,
+    UnconfiguredModelGateway,
+)
 from bukmatika.ai.ollama import inspect_ollama_models
 from bukmatika.config import Settings
 from bukmatika.persistence import session_scope
@@ -77,6 +85,55 @@ class PrincipalModelRuntime:
     configuration: LocalModelConfigurationResponse
 
 
+class _EphemeralSelectedGateway:
+    """Principal-specific gateway with no mutable process-global provider selection."""
+
+    def __init__(
+        self,
+        *,
+        settings: Settings,
+        provider: str,
+        model: str | None,
+    ) -> None:
+        self._settings = settings
+        self._provider = provider
+        self._model = model
+        normalized_model = (model or "").strip()
+        self._identity = (
+            ModelProviderIdentity(provider="ollama", model=normalized_model, routing="local")
+            if provider == "ollama" and normalized_model
+            else None
+        )
+
+    @property
+    def identity(self) -> ModelProviderIdentity | None:
+        return self._identity
+
+    async def readiness(self) -> ModelProviderReadiness:
+        async with httpx.AsyncClient(follow_redirects=False, trust_env=False) as client:
+            gateway = build_selected_model_gateway(
+                settings=self._settings,
+                client=client,
+                provider=self._provider,
+                model=self._model,
+            )
+            return await gateway.readiness()
+
+    async def generate_structured(
+        self,
+        request: ModelRequest,
+        response_type: type[StructuredResponseT],
+    ) -> StructuredResponseT:
+        async with httpx.AsyncClient(follow_redirects=False, trust_env=False) as client:
+            gateway = build_selected_model_gateway(
+                settings=self._settings,
+                client=client,
+                provider=self._provider,
+                model=self._model,
+            )
+            return await gateway.generate_structured(request, response_type)
+
+
 class PrincipalModelRuntimeResolver:
     """Resolve one principal's effective gateway without changing installation network routing."""
 
@@ -84,10 +141,12 @@ class PrincipalModelRuntimeResolver:
         self,
         *,
         settings: Settings,
-        client: httpx.AsyncClient,
+        installation_gateway: ModelGateway | None = None,
+        client: httpx.AsyncClient | None = None,
         session_scope_factory: SessionScopeFactory = session_scope,
     ) -> None:
         self._settings = settings
+        self._installation_gateway = installation_gateway
         self._client = client
         self._session_scope = session_scope_factory
 
@@ -104,11 +163,28 @@ class PrincipalModelRuntimeResolver:
             model_override=model_override,
         )
         if provider_override is None:
-            gateway = build_model_gateway(settings=self._settings, client=self._client)
-        else:
+            if self._installation_gateway is not None:
+                gateway = self._installation_gateway
+            elif self._client is not None:
+                gateway = build_model_gateway(settings=self._settings, client=self._client)
+            else:
+                gateway = _EphemeralSelectedGateway(
+                    settings=self._settings,
+                    provider=self._settings.model_provider,
+                    model=self._settings.ollama_model,
+                )
+        elif self._client is not None:
             gateway = build_selected_model_gateway(
                 settings=self._settings,
                 client=self._client,
+                provider=provider_override,
+                model=model_override,
+            )
+        elif provider_override == "none":
+            gateway = UnconfiguredModelGateway()
+        else:
+            gateway = _EphemeralSelectedGateway(
+                settings=self._settings,
                 provider=provider_override,
                 model=model_override,
             )
@@ -159,11 +235,19 @@ class PrincipalModelRuntimeResolver:
         )
 
     async def installed_models(self) -> LocalModelInventoryResponse:
-        inventory = await inspect_ollama_models(
-            client=self._client,
-            base_url=self._settings.ollama_base_url,
-            timeout_seconds=self._settings.model_readiness_timeout_seconds,
-        )
+        if self._client is not None:
+            inventory = await inspect_ollama_models(
+                client=self._client,
+                base_url=self._settings.ollama_base_url,
+                timeout_seconds=self._settings.model_readiness_timeout_seconds,
+            )
+        else:
+            async with httpx.AsyncClient(follow_redirects=False, trust_env=False) as client:
+                inventory = await inspect_ollama_models(
+                    client=client,
+                    base_url=self._settings.ollama_base_url,
+                    timeout_seconds=self._settings.model_readiness_timeout_seconds,
+                )
         return LocalModelInventoryResponse(
             state=inventory.state,
             models=inventory.models,

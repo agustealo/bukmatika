@@ -62,6 +62,8 @@ class PersonalizationRepository:
                 ai_enabled=True,
                 learning_enabled=True,
                 autonomy_level=0,
+                model_provider_override=None,
+                model_name_override=None,
             )
             .on_conflict_do_nothing(constraint="uq_user_model_principal")
             .returning(UserModel)
@@ -256,6 +258,28 @@ class PersonalizationRepository:
         user_model.ai_enabled = update.ai_enabled
         user_model.learning_enabled = update.learning_enabled
         user_model.autonomy_level = update.autonomy_level
+        user_model.updated_at = datetime.now(UTC)
+        await self._session.flush()
+        return user_model
+
+    async def update_model_configuration(
+        self,
+        *,
+        principal_id: UUID,
+        provider_override: str | None,
+        model_name_override: str | None,
+    ) -> UserModel:
+        if provider_override not in (None, "none", "ollama"):
+            raise ValueError("Unsupported model provider override")
+        if provider_override == "ollama":
+            if model_name_override is None or not model_name_override.strip():
+                raise ValueError("Ollama overrides require a model name")
+        elif model_name_override is not None:
+            raise ValueError("Model name override requires Ollama")
+
+        user_model = await self._lock_user_model(principal_id)
+        user_model.model_provider_override = provider_override
+        user_model.model_name_override = model_name_override
         user_model.updated_at = datetime.now(UTC)
         await self._session.flush()
         return user_model

@@ -28,6 +28,17 @@ class UserModel(Base, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("principal_id", name="uq_user_model_principal"),
         CheckConstraint("autonomy_level BETWEEN 0 AND 3", name="ck_user_model_autonomy_level"),
+        CheckConstraint(
+            "model_provider_override IS NULL OR model_provider_override IN ('none','ollama')",
+            name="ck_user_model_model_provider_override",
+        ),
+        CheckConstraint(
+            "(model_provider_override IS NULL AND model_name_override IS NULL) OR "
+            "(model_provider_override = 'none' AND model_name_override IS NULL) OR "
+            "(model_provider_override = 'ollama' AND model_name_override IS NOT NULL "
+            "AND length(btrim(model_name_override)) > 0)",
+            name="ck_user_model_model_override_consistency",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -37,6 +48,8 @@ class UserModel(Base, TimestampMixin):
     ai_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     learning_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     autonomy_level: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    model_provider_override: Mapped[str | None] = mapped_column(String(16))
+    model_name_override: Mapped[str | None] = mapped_column(String(255))
 
 
 class PreferenceClaim(Base, TimestampMixin):

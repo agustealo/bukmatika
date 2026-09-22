@@ -3,7 +3,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
+from bukmatika.ai.configuration import PrincipalModelRuntimeResolver
 from bukmatika.ai.gateway import ModelGateway, UnconfiguredModelGateway
+from bukmatika.config import get_settings
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence.personalization import ContextGoalDenied, ContextSelectionDenied
 from bukmatika.personalization.context import ContextAssembler
@@ -38,14 +40,21 @@ def personalization_service() -> PersonalizationService:
     return _personalization_service
 
 
-def context_assembler(request: Request) -> ContextAssembler:
+async def context_assembler(
+    request: Request,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+) -> ContextAssembler:
     candidate = getattr(request.app.state, "model_gateway", None)
-    gateway: ModelGateway = (
+    installation_gateway: ModelGateway = (
         UnconfiguredModelGateway() if candidate is None else cast(ModelGateway, candidate)
     )
+    runtime = await PrincipalModelRuntimeResolver(
+        settings=get_settings(),
+        installation_gateway=installation_gateway,
+    ).resolve(principal_id=identity.principal_id)
 
     async def research_answer_available() -> bool:
-        return (await gateway.readiness()).ready
+        return (await runtime.gateway.readiness()).ready
 
     return ContextAssembler(research_answer_availability=research_answer_available)
 

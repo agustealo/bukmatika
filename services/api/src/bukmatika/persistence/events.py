@@ -44,6 +44,7 @@ class SemanticEventType(StrEnum):
     PREFERENCE_SET = "personalization.preference_set"
     PREFERENCE_FORGOTTEN = "personalization.preference_forgotten"
     PERSONALIZATION_SETTINGS_UPDATED = "personalization.settings_updated"
+    MODEL_CONFIGURATION_UPDATED = "personalization.model_configuration_updated"
     PERSONALIZATION_RESET = "personalization.reset"
 
 

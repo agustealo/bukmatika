@@ -224,3 +224,4 @@ def test_personalization_routes_are_mounted() -> None:
     assert "/v1/personalization/preferences" in paths
     assert "/v1/personalization/preferences/{claim_id}/forget" in paths
     assert "/v1/personalization/settings" in paths
+    assert "/v1/personalization/context" in paths

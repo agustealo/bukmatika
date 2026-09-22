@@ -1,12 +1,24 @@
+import posixpath
 import re
+import zipfile
+from dataclasses import dataclass
 from html.parser import HTMLParser
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import ClassVar, Protocol
+from urllib.parse import unquote, urlsplit
+from xml.etree import ElementTree
+
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 
 from bukmatika.processing.domain import ParsedDocument, ParsedSection
 
 
 class DocumentParseError(RuntimeError):
+    pass
+
+
+class DocumentRequiresOCR(DocumentParseError):
     pass
 
 
@@ -90,35 +102,147 @@ class HtmlDocumentParser:
 
     def parse(self, path: Path, *, max_bytes: int) -> ParsedDocument:
         payload = _read_bounded(path, max_bytes=max_bytes)
-        try:
-            html = payload.decode("utf-8-sig", errors="strict")
-        except UnicodeDecodeError as exc:
-            raise DocumentParseError("HTML document is not valid UTF-8") from exc
-
-        extractor = _ReadableHtmlExtractor()
-        try:
-            extractor.feed(html)
-            extractor.close()
-        except Exception as exc:
-            raise DocumentParseError("HTML document could not be parsed") from exc
-
-        sections: list[ParsedSection] = []
-        for ordinal, (tag, text) in enumerate(extractor.blocks):
-            sections.append(
-                ParsedSection(
-                    ordinal=ordinal,
-                    heading=text if tag in _ReadableHtmlExtractor.heading_tags else None,
-                    locator={"section": ordinal + 1, "element": tag},
-                    text=text,
-                )
+        html = _decode_markup(payload, label="HTML document")
+        blocks = _extract_readable_html(html, label="HTML document")
+        sections = tuple(
+            ParsedSection(
+                ordinal=ordinal,
+                heading=text if tag in _ReadableHtmlExtractor.heading_tags else None,
+                locator={"section": ordinal + 1, "element": tag},
+                text=text,
             )
+            for ordinal, (tag, text) in enumerate(blocks)
+        )
         if not sections:
             raise DocumentParseError("HTML document contains no readable text")
         return ParsedDocument(
             parser_name=self.name,
             parser_version=self.version,
+            sections=sections,
+        )
+
+
+class PdfDocumentParser:
+    format_name = "PDF"
+    name = "pypdf"
+    version = "1"
+
+    def parse(self, path: Path, *, max_bytes: int) -> ParsedDocument:
+        _validate_bounded_file(path, max_bytes=max_bytes)
+        try:
+            reader = PdfReader(path, strict=False)
+        except (OSError, PdfReadError, ValueError) as exc:
+            raise DocumentParseError("PDF document could not be opened") from exc
+
+        if reader.is_encrypted:
+            raise DocumentParseError("Encrypted PDF documents are not supported")
+        if not reader.pages:
+            raise DocumentParseError("PDF document contains no pages")
+
+        sections: list[ParsedSection] = []
+        for page_number, page in enumerate(reader.pages, start=1):
+            try:
+                text = page.extract_text() or ""
+            except Exception as exc:
+                raise DocumentParseError(
+                    f"PDF page {page_number} could not be text-extracted"
+                ) from exc
+            normalized = _normalize_text_block(text)
+            if not normalized:
+                continue
+            sections.append(
+                ParsedSection(
+                    ordinal=len(sections),
+                    heading=None,
+                    locator={"page": page_number},
+                    text=normalized,
+                )
+            )
+
+        if not sections:
+            raise DocumentRequiresOCR("PDF contains no extractable text and requires OCR")
+        return ParsedDocument(
+            parser_name=self.name,
+            parser_version=self.version,
             sections=tuple(sections),
         )
+
+
+class EpubDocumentParser:
+    format_name = "EPUB"
+    name = "builtin-epub"
+    version = "1"
+
+    _container_path = "META-INF/container.xml"
+    _readable_media_types: ClassVar[frozenset[str]] = frozenset(
+        {"application/xhtml+xml", "text/html"}
+    )
+
+    def parse(self, path: Path, *, max_bytes: int) -> ParsedDocument:
+        _validate_bounded_file(path, max_bytes=max_bytes)
+        try:
+            with zipfile.ZipFile(path) as archive:
+                members = _safe_archive_members(archive)
+                budget = _ArchiveReadBudget(max_bytes)
+                container_info = members.get(self._container_path)
+                if container_info is None:
+                    raise DocumentParseError("EPUB is missing META-INF/container.xml")
+                container = _parse_xml(
+                    budget.read(archive, container_info),
+                    label="EPUB container.xml",
+                )
+                rootfile_path = _epub_rootfile_path(container)
+                rootfile_info = members.get(rootfile_path)
+                if rootfile_info is None:
+                    raise DocumentParseError("EPUB package document is missing")
+                package = _parse_xml(
+                    budget.read(archive, rootfile_info),
+                    label="EPUB package document",
+                )
+                manifest = _epub_manifest(package)
+                spine = _epub_spine(package)
+                sections = _epub_sections(
+                    archive=archive,
+                    members=members,
+                    budget=budget,
+                    rootfile_path=rootfile_path,
+                    manifest=manifest,
+                    spine=spine,
+                )
+        except DocumentParseError:
+            raise
+        except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
+            raise DocumentParseError("EPUB document could not be parsed") from exc
+
+        if not sections:
+            raise DocumentParseError("EPUB spine contains no readable text")
+        return ParsedDocument(
+            parser_name=self.name,
+            parser_version=self.version,
+            sections=tuple(sections),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _EpubManifestItem:
+    href: str
+    media_type: str
+
+
+class _ArchiveReadBudget:
+    def __init__(self, max_bytes: int) -> None:
+        if max_bytes < 1:
+            raise ValueError("max_bytes must be positive")
+        self._remaining = max_bytes
+
+    def read(self, archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> bytes:
+        if info.file_size > self._remaining:
+            raise DocumentParseError("EPUB expanded content exceeds processing byte limit")
+        payload = archive.read(info)
+        if len(payload) > self._remaining:
+            raise DocumentParseError("EPUB expanded content exceeds processing byte limit")
+        self._remaining -= len(payload)
+        return payload
 
 
 class _ReadableHtmlExtractor(HTMLParser):
@@ -193,7 +317,151 @@ class _ReadableHtmlExtractor(HTMLParser):
         self._parts = []
 
 
-def _read_bounded(path: Path, *, max_bytes: int) -> bytes:
+def _epub_rootfile_path(container: ElementTree.Element) -> str:
+    for element in container.iter():
+        if _local_name(element.tag) != "rootfile":
+            continue
+        raw = element.attrib.get("full-path")
+        if raw:
+            return _normalize_archive_path(raw)
+    raise DocumentParseError("EPUB container has no package rootfile")
+
+
+def _epub_manifest(package: ElementTree.Element) -> dict[str, _EpubManifestItem]:
+    manifest: dict[str, _EpubManifestItem] = {}
+    for element in package.iter():
+        if _local_name(element.tag) != "item":
+            continue
+        item_id = element.attrib.get("id")
+        href = element.attrib.get("href")
+        media_type = element.attrib.get("media-type")
+        if item_id and href and media_type:
+            manifest[item_id] = _EpubManifestItem(href=href, media_type=media_type)
+    if not manifest:
+        raise DocumentParseError("EPUB package manifest is empty")
+    return manifest
+
+
+def _epub_spine(package: ElementTree.Element) -> tuple[str, ...]:
+    for element in package.iter():
+        if _local_name(element.tag) != "spine":
+            continue
+        identifiers = tuple(
+            child.attrib["idref"]
+            for child in element
+            if _local_name(child.tag) == "itemref" and child.attrib.get("idref")
+        )
+        if identifiers:
+            return identifiers
+    raise DocumentParseError("EPUB package spine is empty")
+
+
+def _epub_sections(
+    *,
+    archive: zipfile.ZipFile,
+    members: dict[str, zipfile.ZipInfo],
+    budget: _ArchiveReadBudget,
+    rootfile_path: str,
+    manifest: dict[str, _EpubManifestItem],
+    spine: tuple[str, ...],
+) -> list[ParsedSection]:
+    sections: list[ParsedSection] = []
+    package_directory = PurePosixPath(rootfile_path).parent
+    for spine_position, item_id in enumerate(spine, start=1):
+        item = manifest.get(item_id)
+        if item is None:
+            raise DocumentParseError(f"EPUB spine references missing manifest item {item_id!r}")
+        if item.media_type not in EpubDocumentParser._readable_media_types:
+            continue
+        member_path = _resolve_archive_reference(package_directory, item.href)
+        info = members.get(member_path)
+        if info is None:
+            raise DocumentParseError(f"EPUB spine item is missing: {member_path}")
+        markup = _decode_markup(
+            budget.read(archive, info),
+            label=f"EPUB spine item {member_path}",
+        )
+        blocks = _extract_readable_html(markup, label=f"EPUB spine item {member_path}")
+        for item_section, (tag, text) in enumerate(blocks, start=1):
+            sections.append(
+                ParsedSection(
+                    ordinal=len(sections),
+                    heading=text if tag in _ReadableHtmlExtractor.heading_tags else None,
+                    locator={
+                        "spine": spine_position,
+                        "item": member_path,
+                        "section": item_section,
+                        "element": tag,
+                    },
+                    text=text,
+                )
+            )
+    return sections
+
+
+def _safe_archive_members(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
+    members: dict[str, zipfile.ZipInfo] = {}
+    for info in archive.infolist():
+        if info.is_dir():
+            continue
+        normalized = _normalize_archive_path(info.filename)
+        if normalized in members:
+            raise DocumentParseError("EPUB contains duplicate normalized archive paths")
+        members[normalized] = info
+    return members
+
+
+def _resolve_archive_reference(base: PurePosixPath, reference: str) -> str:
+    split = urlsplit(reference)
+    if split.scheme or split.netloc:
+        raise DocumentParseError("EPUB spine contains an external resource reference")
+    decoded = unquote(split.path).replace("\\", "/")
+    combined = posixpath.normpath((base / decoded).as_posix())
+    return _normalize_archive_path(combined)
+
+
+def _normalize_archive_path(value: str) -> str:
+    normalized = posixpath.normpath(value.replace("\\", "/"))
+    path = PurePosixPath(normalized)
+    if normalized in {"", "."} or path.is_absolute() or ".." in path.parts:
+        raise DocumentParseError("EPUB contains an unsafe archive path")
+    return path.as_posix()
+
+
+def _parse_xml(payload: bytes, *, label: str) -> ElementTree.Element:
+    lowered = payload.lower()
+    if b"<!doctype" in lowered or b"<!entity" in lowered:
+        raise DocumentParseError(f"{label} contains disallowed XML declarations")
+    try:
+        return ElementTree.fromstring(payload)
+    except ElementTree.ParseError as exc:
+        raise DocumentParseError(f"{label} is malformed XML") from exc
+
+
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _extract_readable_html(html: str, *, label: str) -> list[tuple[str, str]]:
+    extractor = _ReadableHtmlExtractor()
+    try:
+        extractor.feed(html)
+        extractor.close()
+    except Exception as exc:
+        raise DocumentParseError(f"{label} could not be parsed") from exc
+    return extractor.blocks
+
+
+def _decode_markup(payload: bytes, *, label: str) -> str:
+    try:
+        if payload.startswith((b"\xff\xfe", b"\xfe\xff")):
+            return payload.decode("utf-16", errors="strict")
+        return payload.decode("utf-8-sig", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise DocumentParseError(f"{label} is not valid UTF-8/UTF-16") from exc
+
+
+def _validate_bounded_file(path: Path, *, max_bytes: int) -> int:
     if max_bytes < 1:
         raise ValueError("max_bytes must be positive")
     try:
@@ -202,6 +470,11 @@ def _read_bounded(path: Path, *, max_bytes: int) -> bytes:
         raise DocumentParseError("Document source could not be inspected") from exc
     if size > max_bytes:
         raise DocumentParseError("Document exceeds configured processing byte limit")
+    return size
+
+
+def _read_bounded(path: Path, *, max_bytes: int) -> bytes:
+    _validate_bounded_file(path, max_bytes=max_bytes)
     try:
         with path.open("rb") as handle:
             payload = handle.read(max_bytes + 1)

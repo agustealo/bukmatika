@@ -1,3 +1,4 @@
+from enum import StrEnum
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -10,6 +11,7 @@ from bukmatika.ai.execution import (
 )
 from bukmatika.ai.gateway import (
     ModelGateway,
+    ModelProviderNotReady,
     ModelProviderRequestFailed,
     ModelProviderResponseInvalid,
     ModelProviderUnconfigured,
@@ -27,9 +29,20 @@ from bukmatika.research import ResearchEvidenceBundleRequest, ResearchEvidenceRe
 router = APIRouter(prefix="/v1/ai", tags=["ai"])
 
 
+class AIAvailabilityState(StrEnum):
+    AI_DISABLED = "ai_disabled"
+    UNCONFIGURED = "unconfigured"
+    PROVIDER_UNREACHABLE = "provider_unreachable"
+    PROVIDER_INVALID = "provider_invalid"
+    MODEL_MISSING = "model_missing"
+    READY = "ready"
+
+
 class AIProviderStatusResponse(BaseModel):
     configured: bool
+    ready: bool
     ai_enabled: bool
+    state: AIAvailabilityState
     provider: str | None
     model: str | None
     routing: str | None
@@ -53,11 +66,26 @@ async def ai_provider_status(
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     gateway: Annotated[ModelGateway, Depends(model_gateway)],
 ) -> AIProviderStatusResponse:
-    provider = gateway.identity
     profile = await PersonalizationService().profile(principal_id=identity.principal_id)
+    provider = gateway.identity
+    if not profile.ai_enabled:
+        return AIProviderStatusResponse(
+            configured=provider is not None,
+            ready=False,
+            ai_enabled=False,
+            state=AIAvailabilityState.AI_DISABLED,
+            provider=provider.provider if provider is not None else None,
+            model=provider.model if provider is not None else None,
+            routing=provider.routing if provider is not None else None,
+        )
+
+    readiness = await gateway.readiness()
+    provider = readiness.identity
     return AIProviderStatusResponse(
-        configured=provider is not None,
-        ai_enabled=profile.ai_enabled,
+        configured=readiness.configured,
+        ready=readiness.ready,
+        ai_enabled=True,
+        state=AIAvailabilityState(readiness.state.value),
         provider=provider.provider if provider is not None else None,
         model=provider.model if provider is not None else None,
         routing=provider.routing if provider is not None else None,
@@ -79,6 +107,14 @@ async def grounded_research_answer(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": exc.code},
+        ) from exc
+    except ModelProviderNotReady as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": exc.code,
+                "state": exc.readiness.state.value,
+            },
         ) from exc
     except (AIDisabled, AIExecutionDisabled) as exc:
         raise HTTPException(

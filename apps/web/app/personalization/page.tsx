@@ -1,9 +1,8 @@
-import { ResearchClient } from "../../components/research-client";
-import styles from "./research.module.css";
+import { PersonalizationClient } from "../../components/personalization-client";
 
-export default function ResearchPage() {
+export default function PersonalizationPage() {
   return (
-    <main className={`app-shell ${styles.researchRoot}`}>
+    <main className="app-shell">
       <header className="masthead">
         <a className="brand" href="/" aria-label="Bukmatika home">
           <span className="brand-mark" aria-hidden="true">B</span>
@@ -12,12 +11,12 @@ export default function ResearchPage() {
         <nav className="top-nav" aria-label="Primary navigation">
           <a href="/">Discover</a>
           <a href="/library">Library</a>
-          <a href="/research" aria-current="page">Research</a>
-          <a href="/personalization">AI</a>
+          <a href="/research">Research</a>
+          <a href="/personalization" aria-current="page">AI</a>
         </nav>
       </header>
 
-      <ResearchClient />
+      <PersonalizationClient />
     </main>
   );
 }

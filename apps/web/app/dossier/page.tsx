@@ -23,6 +23,7 @@ export default async function DossierPage({ searchParams }: DossierPageProps) {
           <a href="/">Discover</a>
           <a href="/library">Library</a>
           <a href="/research">Research</a>
+          <a href="/personalization">AI</a>
         </nav>
       </header>
 

@@ -12,6 +12,7 @@ export default function LibraryPage() {
           <a href="/">Discover</a>
           <a href="/library" aria-current="page">Library</a>
           <a href="/research">Research</a>
+          <a href="/personalization">AI</a>
         </nav>
       </header>
 

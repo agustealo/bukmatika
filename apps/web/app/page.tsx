@@ -12,6 +12,7 @@ export default function Home() {
           <a href="/" aria-current="page">Discover</a>
           <a href="/library">Library</a>
           <a href="/research">Research</a>
+          <a href="/personalization">AI</a>
         </nav>
       </header>
 

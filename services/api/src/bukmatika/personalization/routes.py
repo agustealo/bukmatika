@@ -1,11 +1,16 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence.personalization import ContextGoalDenied, ContextSelectionDenied
 from bukmatika.personalization.context import ContextAssembler
+from bukmatika.personalization.control import PersonalizationControlService
+from bukmatika.personalization.control_domain import (
+    ActivityLedgerResponse,
+    PersonalizationControlCenterResponse,
+)
 from bukmatika.personalization.domain import (
     ContextManifest,
     ContextRequest,
@@ -19,6 +24,7 @@ from bukmatika.personalization.service import PersonalizationService, Preference
 router = APIRouter(prefix="/v1/personalization", tags=["personalization"])
 _personalization_service = PersonalizationService()
 _context_assembler = ContextAssembler()
+_control_service = PersonalizationControlService()
 
 
 def personalization_service() -> PersonalizationService:
@@ -29,12 +35,42 @@ def context_assembler() -> ContextAssembler:
     return _context_assembler
 
 
+def personalization_control_service() -> PersonalizationControlService:
+    return _control_service
+
+
 @router.get("", response_model=PersonalizationProfileResponse)
 async def personalization_profile(
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[PersonalizationService, Depends(personalization_service)],
 ) -> PersonalizationProfileResponse:
     return await service.profile(principal_id=identity.principal_id)
+
+
+@router.get("/control-center", response_model=PersonalizationControlCenterResponse)
+async def personalization_control_center(
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[
+        PersonalizationControlService,
+        Depends(personalization_control_service),
+    ],
+) -> PersonalizationControlCenterResponse:
+    return await service.snapshot(principal_id=identity.principal_id)
+
+
+@router.get("/activity", response_model=ActivityLedgerResponse)
+async def personalization_activity(
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[
+        PersonalizationControlService,
+        Depends(personalization_control_service),
+    ],
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> ActivityLedgerResponse:
+    return await service.activity(
+        principal_id=identity.principal_id,
+        limit=limit,
+    )
 
 
 @router.post("/preferences", response_model=PreferenceClaimResponse)

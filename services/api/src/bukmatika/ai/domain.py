@@ -17,6 +17,7 @@ class CapabilityName(StrEnum):
     LIBRARY_SAVE = "library.save"
     READER_OPEN = "reader.open"
     RESEARCH_SEARCH = "research.search"
+    RESEARCH_ANSWER = "research.answer"
     ACQUISITION_REQUEST = "acquisition.request"
     PREFERENCES_PROPOSE = "preferences.propose"
     GOALS_UPDATE = "goals.update"

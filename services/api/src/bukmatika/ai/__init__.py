@@ -20,11 +20,11 @@ from bukmatika.ai.gateway import (
     UnconfiguredModelGateway,
 )
 from bukmatika.ai.policy import ActionDecisionValue, ActionPolicy, PolicyDecision
-from bukmatika.ai.service import AIDisabled, AIContextUnavailable, PlanningService
+from bukmatika.ai.service import AIContextUnavailable, AIDisabled, PlanningService
 
 __all__ = [
-    "AIDisabled",
     "AIContextUnavailable",
+    "AIDisabled",
     "ActionDecisionValue",
     "ActionPolicy",
     "CapabilityName",

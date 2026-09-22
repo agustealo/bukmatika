@@ -157,5 +157,4 @@ class GroundedAnswerClaim(BaseModel):
 
 
 class GroundedResearchAnswer(BaseModel):
-    answer: str = Field(min_length=1, max_length=8_000)
     claims: list[GroundedAnswerClaim] = Field(min_length=1, max_length=20)

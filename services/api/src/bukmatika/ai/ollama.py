@@ -8,8 +8,10 @@ from pydantic import BaseModel, ValidationError
 from bukmatika.ai.gateway import (
     ModelGateway,
     ModelProviderIdentity,
+    ModelProviderReadiness,
     ModelProviderRequestFailed,
     ModelProviderResponseInvalid,
+    ModelReadinessState,
     ModelRequest,
     ModelTask,
     StructuredResponseT,
@@ -24,6 +26,15 @@ class _OllamaChatResponse(BaseModel):
     message: _OllamaMessage
 
 
+class _OllamaInstalledModel(BaseModel):
+    name: str
+    model: str | None = None
+
+
+class _OllamaTagsResponse(BaseModel):
+    models: list[_OllamaInstalledModel]
+
+
 class OllamaLocalGateway(ModelGateway):
     """Loopback-only Ollama adapter using the native structured-output chat API."""
 
@@ -34,15 +45,19 @@ class OllamaLocalGateway(ModelGateway):
         base_url: str,
         model: str,
         timeout_seconds: float,
+        readiness_timeout_seconds: float,
     ) -> None:
         normalized_model = model.strip()
         if not normalized_model:
             raise ValueError("Ollama model name cannot be blank")
         if timeout_seconds <= 0 or timeout_seconds > 60:
             raise ValueError("Ollama timeout must be between 0 and 60 seconds")
+        if readiness_timeout_seconds <= 0 or readiness_timeout_seconds > 10:
+            raise ValueError("Ollama readiness timeout must be between 0 and 10 seconds")
         self._client = client
         self._base_url = _validate_loopback_base_url(base_url)
         self._timeout_seconds = timeout_seconds
+        self._readiness_timeout_seconds = readiness_timeout_seconds
         self._identity = ModelProviderIdentity(
             provider="ollama",
             model=normalized_model,
@@ -52,6 +67,31 @@ class OllamaLocalGateway(ModelGateway):
     @property
     def identity(self) -> ModelProviderIdentity:
         return self._identity
+
+    async def readiness(self) -> ModelProviderReadiness:
+        try:
+            response = await self._client.get(
+                f"{self._base_url}/api/tags",
+                timeout=self._readiness_timeout_seconds,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError:
+            return self._readiness(ModelReadinessState.PROVIDER_UNREACHABLE, ready=False)
+
+        try:
+            tags = _OllamaTagsResponse.model_validate(response.json())
+        except (ValueError, ValidationError):
+            return self._readiness(ModelReadinessState.PROVIDER_INVALID, ready=False)
+
+        installed = {
+            candidate
+            for item in tags.models
+            for candidate in (item.name, item.model)
+            if candidate is not None
+        }
+        if self._identity.model not in installed:
+            return self._readiness(ModelReadinessState.MODEL_MISSING, ready=False)
+        return self._readiness(ModelReadinessState.READY, ready=True)
 
     async def generate_structured(
         self,
@@ -96,6 +136,19 @@ class OllamaLocalGateway(ModelGateway):
             raise ModelProviderResponseInvalid(
                 "Local Ollama returned an invalid structured response"
             ) from exc
+
+    def _readiness(
+        self,
+        state: ModelReadinessState,
+        *,
+        ready: bool,
+    ) -> ModelProviderReadiness:
+        return ModelProviderReadiness(
+            state=state,
+            configured=True,
+            ready=ready,
+            identity=self._identity,
+        )
 
 
 def _system_prompt(task: ModelTask) -> str:

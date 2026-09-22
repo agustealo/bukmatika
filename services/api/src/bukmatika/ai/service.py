@@ -16,7 +16,7 @@ from bukmatika.ai.gateway import (
     ModelGateway,
     ModelRequest,
     ModelTask,
-    UnconfiguredModelGateway,
+    build_default_model_gateway,
 )
 from bukmatika.ai.policy import ActionPolicy
 from bukmatika.persistence import session_scope
@@ -46,7 +46,7 @@ class PlanningService:
         context_assembler: ContextAssembler | None = None,
         session_scope_factory: SessionScopeFactory = session_scope,
     ) -> None:
-        self._gateway = gateway or UnconfiguredModelGateway()
+        self._gateway = gateway or build_default_model_gateway()
         self._registry = registry or CapabilityRegistry()
         self._context_assembler = context_assembler or ContextAssembler(
             session_scope_factory=session_scope_factory

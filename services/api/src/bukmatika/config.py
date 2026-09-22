@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -67,6 +68,10 @@ class Settings(BaseSettings):
     user_agent: str = "Bukmatika/0.1 (+https://github.com/agustealo/bukmatika)"
     contact_email: str | None = None
     web_origin: str = "http://localhost:3000"
+    model_provider: Literal["none", "ollama"] = "none"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str | None = None
+    model_timeout_seconds: float = Field(default=45.0, gt=0, le=60)
 
 
 @lru_cache

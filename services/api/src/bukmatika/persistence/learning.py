@@ -248,16 +248,26 @@ class LearningRepository:
     ) -> PreferenceClaim:
         if claim.source != "inferred":
             raise ValueError("Only inferred claims may be reinforced by the learning engine")
-        existing_ids = set(
-            (
+        existing_document_ids = {
+            document_id
+            for document_id in (
                 await self._session.scalars(
-                    select(PreferenceClaimEvidence.interaction_event_id).where(
-                        PreferenceClaimEvidence.preference_claim_id == claim.id
+                    select(InteractionEvent.entity_id)
+                    .join(
+                        PreferenceClaimEvidence,
+                        PreferenceClaimEvidence.interaction_event_id == InteractionEvent.id,
+                    )
+                    .where(
+                        PreferenceClaimEvidence.preference_claim_id == claim.id,
+                        InteractionEvent.entity_type == "document",
                     )
                 )
             ).all()
-        )
-        new_evidence = [item for item in evidence if item.event_id not in existing_ids]
+            if document_id is not None
+        }
+        new_evidence = [
+            item for item in evidence if item.document_id not in existing_document_ids
+        ]
         if not new_evidence:
             return claim
 
@@ -271,7 +281,7 @@ class LearningRepository:
             ]
         )
         claim.confidence = confidence
-        claim.evidence_count = len(existing_ids) + len(new_evidence)
+        claim.evidence_count = len(existing_document_ids) + len(new_evidence)
         claim.last_reinforced_at = max(item.occurred_at for item in new_evidence)
         claim.updated_at = now
         await self._session.flush()

@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from uuid import UUID
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.library import LibraryService
@@ -211,6 +212,44 @@ async def test_source_dossier_resolves_canonical_status_and_saved_edition(
     assert status.document_id == document.id
     assert status.rights_state == "public_domain"
     assert status.acquisition_allowed is True
+
+
+async def test_dossier_fallback_rights_uses_canonical_deny_priority(
+    session: AsyncSession,
+) -> None:
+    principal, _, _, asset, _, source = await _seed_dossier(session, suffix="rights-fallback")
+    await session.execute(
+        delete(RightsDecision).where(
+            RightsDecision.subject_type == "asset",
+            RightsDecision.subject_id == asset.id,
+        )
+    )
+    restricted = RightsEvidenceRecord(
+        state="restricted",
+        source="rights-review",
+        basis="Exact asset is restricted despite permissive provider metadata.",
+        confidence=0.1,
+    )
+    session.add(restricted)
+    await session.flush()
+    session.add(
+        RightsEvidenceSubject(
+            rights_evidence_id=restricted.id,
+            subject_type="asset",
+            subject_id=asset.id,
+        )
+    )
+    await session.flush()
+
+    response = await LibraryService(session_scope_factory=_scope(session)).dossier_for_source(
+        principal_id=principal.id,
+        provider=source.provider,
+        provider_record_id=source.provider_record_id,
+    )
+
+    status = response.editions[0].assets[0]
+    assert status.rights_state == "restricted"
+    assert status.acquisition_allowed is False
 
 
 async def test_save_edition_is_idempotent_and_library_resolves_read_progress(

@@ -31,12 +31,17 @@ class ReaderAccess:
 
 
 class ReaderRepository:
-    """Canonical persistence authority for document reading state."""
+    """Canonical persistence authority for principal-scoped document reading state."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def require_access(self, library_entry_id: UUID, document_id: UUID) -> ReaderAccess:
+    async def require_access(
+        self,
+        principal_id: UUID,
+        library_entry_id: UUID,
+        document_id: UUID,
+    ) -> ReaderAccess:
         row = (
             await self._session.execute(
                 select(LibraryEntry, Document)
@@ -44,6 +49,7 @@ class ReaderRepository:
                 .join(Edition, Edition.id == Asset.edition_id)
                 .where(
                     LibraryEntry.id == library_entry_id,
+                    LibraryEntry.principal_id == principal_id,
                     Document.id == document_id,
                     LibraryEntry.work_id == Edition.work_id,
                     or_(
@@ -57,7 +63,7 @@ class ReaderRepository:
             )
         ).one_or_none()
         if row is None:
-            raise ReaderAccessDenied("Library entry does not own this processed document")
+            raise ReaderAccessDenied("Principal does not own this processed document")
         library_entry, document = row
         return ReaderAccess(
             library_entry_id=library_entry.id,

@@ -26,6 +26,7 @@ dependencies = [
 
 [project.scripts]
 bukmatika-ai-smoke = "bukmatika.ai.smoke:main"
+bukmatika-grounded-ai-proof = "bukmatika.ai.grounded_smoke:main"
 bukmatika-ocr-worker = "bukmatika.processing.worker:main"
 
 [project.optional-dependencies]

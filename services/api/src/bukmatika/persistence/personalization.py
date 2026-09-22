@@ -6,7 +6,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence.personalization_models import PreferenceClaim, UserModel
-from bukmatika.personalization.domain import ExplicitPreferenceRequest, PersonalizationSettingsUpdate
+from bukmatika.personalization.domain import (
+    ExplicitPreferenceRequest,
+    PersonalizationSettingsUpdate,
+)
 
 
 class PreferenceClaimNotFound(LookupError):

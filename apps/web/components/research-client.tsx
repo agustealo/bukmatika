@@ -47,6 +47,42 @@ type ResearchSearchResponse = {
   passages: ResearchPassage[];
 };
 
+type GroundedCitation = {
+  evidence_id: string;
+  library_entry_id: string;
+  work_id: string;
+  work_title: string;
+  edition_id: string;
+  edition_title: string;
+  document_id: string;
+  chunk_id: string;
+  section_id: string;
+  heading: string | null;
+  locator: Record<string, string | number>;
+  char_start: number;
+  char_end: number;
+  text: string;
+};
+
+type GroundedClaim = {
+  text: string;
+  citations: GroundedCitation[];
+};
+
+type GroundedAnswerResponse = {
+  status: "grounded" | "no_evidence" | "insufficient_evidence";
+  question: string;
+  selected_library_entry_ids: string[];
+  retrieval_count: number;
+  claims: GroundedClaim[];
+  provider: string | null;
+  model: string | null;
+};
+
+type ProductErrorPayload = {
+  detail?: string | { code?: string };
+};
+
 const MAX_SELECTIONS = 20;
 
 function locatorLabel(locator: Record<string, string | number>): string {
@@ -61,14 +97,45 @@ function selectionLabel(count: number): string {
   return `${count} book${count === 1 ? "" : "s"} selected`;
 }
 
+async function groundedErrorMessage(response: Response): Promise<string> {
+  let code: string | null = null;
+  try {
+    const payload = (await response.json()) as ProductErrorPayload;
+    if (typeof payload.detail === "object" && payload.detail !== null) {
+      code = payload.detail.code ?? null;
+    } else if (typeof payload.detail === "string") {
+      return payload.detail;
+    }
+  } catch {
+    // Fall through to the status-based message.
+  }
+
+  if (code === "AI_DISABLED") {
+    return "AI assistance is disabled. Exact passage search remains available.";
+  }
+  if (code === "MODEL_PROVIDER_UNCONFIGURED") {
+    return "AI synthesis is not configured. Exact passage search remains available.";
+  }
+  if (code === "RESEARCH_SELECTION_UNAVAILABLE") {
+    return "One or more selected books are no longer available to this library profile.";
+  }
+  if (code === "GROUNDED_CITATION_INVALID") {
+    return "The generated answer failed citation validation and was not shown.";
+  }
+  return `Grounded answer failed with HTTP ${response.status}. Passage search is still available.`;
+}
+
 export function ResearchClient() {
   const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ResearchSearchResponse | null>(null);
+  const [answer, setAnswer] = useState<GroundedAnswerResponse | null>(null);
   const [loadingLibrary, setLoadingLibrary] = useState(true);
   const [searching, setSearching] = useState(false);
+  const [answering, setAnswering] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const readable = useMemo(
     () => library.filter((item) => item.readable_document_id !== null),
@@ -99,6 +166,12 @@ export function ResearchClient() {
     };
   }, []);
 
+  function resetResearchOutputs() {
+    setResults(null);
+    setAnswer(null);
+    setAiError(null);
+  }
+
   function toggleEntry(entryId: string) {
     setSelected((current) => {
       if (current.includes(entryId)) {
@@ -107,10 +180,22 @@ export function ResearchClient() {
       if (current.length >= MAX_SELECTIONS) return current;
       return [...current, entryId];
     });
+    resetResearchOutputs();
   }
 
   function selectAllReadable() {
     setSelected(readable.slice(0, MAX_SELECTIONS).map((item) => item.library_entry_id));
+    resetResearchOutputs();
+  }
+
+  function clearSelection() {
+    setSelected([]);
+    resetResearchOutputs();
+  }
+
+  function updateQuery(value: string) {
+    setQuery(value);
+    resetResearchOutputs();
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -142,15 +227,49 @@ export function ResearchClient() {
     }
   }
 
+  async function askGrounded() {
+    const normalized = query.trim();
+    if (!normalized || selected.length === 0 || answering) return;
+
+    setAnswering(true);
+    setAiError(null);
+    try {
+      const response = await apiFetch("/v1/research/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: normalized,
+          library_entry_ids: selected,
+          max_passages: 12,
+        }),
+      });
+      if (!response.ok) {
+        setAnswer(null);
+        setAiError(await groundedErrorMessage(response));
+        return;
+      }
+      setAnswer((await response.json()) as GroundedAnswerResponse);
+    } catch (caught) {
+      setAnswer(null);
+      setAiError(
+        caught instanceof Error
+          ? `${caught.message} Passage search is still available.`
+          : "Grounded answer failed. Passage search is still available.",
+      );
+    } finally {
+      setAnswering(false);
+    }
+  }
+
   return (
     <section className="research-surface" aria-label="Selected-book research">
       <div className="surface-heading">
         <div>
           <p className="eyebrow">Grounded research</p>
-          <h1>Search the books you actually own.</h1>
+          <h1>Research the books you actually own.</h1>
           <p>
-            Select up to {MAX_SELECTIONS} readable books. Bukmatika searches their canonical text
-            and returns exact passages with source coordinates. No AI synthesis is used here.
+            Select up to {MAX_SELECTIONS} readable books. Search their canonical text directly or
+            ask for an AI-assisted answer whose claims must resolve to exact retrieved passages.
           </p>
         </div>
       </div>
@@ -178,7 +297,7 @@ export function ResearchClient() {
                   Select readable
                 </button>
                 {selected.length > 0 ? (
-                  <button type="button" onClick={() => setSelected([])}>Clear</button>
+                  <button type="button" onClick={clearSelection}>Clear</button>
                 ) : null}
               </div>
             </div>
@@ -216,12 +335,12 @@ export function ResearchClient() {
 
           <div className="research-main">
             <form className="research-query" onSubmit={submit}>
-              <label htmlFor="research-query">What should Bukmatika find in these books?</label>
+              <label htmlFor="research-query">What should Bukmatika investigate?</label>
               <div className="search-row">
                 <input
                   id="research-query"
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => updateQuery(event.target.value)}
                   placeholder="maritime trade before 1492, astronomical navigation, treaty language…"
                   autoComplete="off"
                 />
@@ -232,11 +351,34 @@ export function ResearchClient() {
                   {searching ? "Searching…" : "Search passages"}
                 </button>
               </div>
+              <div className="research-query-actions">
+                <button
+                  type="button"
+                  className="secondary-action"
+                  disabled={answering || selected.length === 0 || !query.trim()}
+                  onClick={() => void askGrounded()}
+                >
+                  {answering ? "Grounding answer…" : "Ask with AI"}
+                </button>
+                <span>
+                  AI synthesis is optional. Passage search remains available when AI is disabled or
+                  no model provider is configured.
+                </span>
+              </div>
               <p className="search-note">
-                Results are lexical matches from PostgreSQL full-text search over only the selected
-                owned documents. Every result resolves back to canonical source text.
+                Retrieval is PostgreSQL full-text search over only the selected owned documents.
+                Grounded answers are validated against the exact retrieved chunk IDs before display.
               </p>
             </form>
+
+            {aiError ? (
+              <div className="research-ai-warning" role="status">
+                <strong>AI answer unavailable</strong>
+                <span>{aiError}</span>
+              </div>
+            ) : null}
+
+            {answer ? <GroundedAnswer answer={answer} /> : null}
 
             {results ? (
               <div className="research-results" aria-live="polite">
@@ -278,19 +420,85 @@ export function ResearchClient() {
                   </div>
                 )}
               </div>
-            ) : (
+            ) : !answer ? (
               <div className="research-empty-state">
-                <span className="reader-meta-label">Exact evidence first</span>
-                <h2>No synthesis layer yet.</h2>
+                <span className="reader-meta-label">Evidence first</span>
+                <h2>Search directly, or ask a grounded question.</h2>
                 <p>
-                  This workspace deliberately shows the retrieval evidence before we add grounded
-                  question answering. The future reasoning layer must cite these canonical passages.
+                  The same principal-scoped retrieval spine powers both paths. AI answers cannot
+                  introduce a citation that was not present in the selected-book retrieval set.
                 </p>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}
+    </section>
+  );
+}
+
+function GroundedAnswer({ answer }: { answer: GroundedAnswerResponse }) {
+  if (answer.status === "no_evidence") {
+    return (
+      <section className="grounded-answer grounded-answer-empty" aria-live="polite">
+        <span className="reader-meta-label">Grounded answer</span>
+        <h2>No supporting passage was retrieved.</h2>
+        <p>Bukmatika did not call the model because the selected books produced no evidence.</p>
+      </section>
+    );
+  }
+
+  if (answer.status === "insufficient_evidence") {
+    return (
+      <section className="grounded-answer grounded-answer-empty" aria-live="polite">
+        <span className="reader-meta-label">Grounded answer</span>
+        <h2>The retrieved evidence is not enough to answer safely.</h2>
+        <p>
+          The synthesis layer declined to make a claim. Try a narrower question or inspect the exact
+          passages directly.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="grounded-answer" aria-live="polite">
+      <div className="grounded-answer-heading">
+        <div>
+          <span className="reader-meta-label">Grounded answer</span>
+          <h2>Answer from selected-book evidence</h2>
+        </div>
+        <span className="grounded-provider">
+          {answer.provider && answer.model
+            ? `${answer.provider} · ${answer.model}`
+            : "Configured model gateway"}
+        </span>
+      </div>
+
+      <div className="grounded-claim-list">
+        {answer.claims.map((claim, claimIndex) => (
+          <article className="grounded-claim" key={`${claimIndex}-${claim.text}`}>
+            <p>{claim.text}</p>
+            <div className="grounded-citations" aria-label={`Citations for claim ${claimIndex + 1}`}>
+              {claim.citations.map((citation, citationIndex) => (
+                <a
+                  key={citation.evidence_id}
+                  href={`/read/${citation.library_entry_id}/${citation.document_id}#reader-section-${citation.section_id}`}
+                >
+                  <strong>[{claimIndex + 1}.{citationIndex + 1}] {citation.work_title}</strong>
+                  <span>{citation.edition_title} · {locatorLabel(citation.locator)}</span>
+                  <small>{citation.text}</small>
+                </a>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="grounded-answer-footer">
+        <span>{answer.retrieval_count} retrieved passage packets validated for this answer.</span>
+        <span>{selectionLabel(answer.selected_library_entry_ids.length)}</span>
+      </div>
     </section>
   );
 }

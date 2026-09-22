@@ -21,6 +21,7 @@ def build_model_gateway(
         base_url=settings.ollama_base_url,
         model=model,
         timeout_seconds=settings.model_timeout_seconds,
+        readiness_timeout_seconds=settings.model_readiness_timeout_seconds,
     )
 
 

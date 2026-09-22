@@ -1,7 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -67,6 +68,14 @@ class Settings(BaseSettings):
     user_agent: str = "Bukmatika/0.1 (+https://github.com/agustealo/bukmatika)"
     contact_email: str | None = None
     web_origin: str = "http://localhost:3000"
+
+    ai_provider: Literal["none", "openai"] = "none"
+    openai_api_key: SecretStr | None = None
+    openai_model: str = Field(default="gpt-5.6-terra", min_length=1, max_length=128)
+    model_timeout_seconds: float = Field(default=30.0, gt=0, le=60)
+    grounded_answer_max_passages: int = Field(default=12, ge=1, le=30)
+    grounded_answer_max_passage_chars: int = Field(default=4_000, ge=256, le=12_000)
+    grounded_answer_max_output_tokens: int = Field(default=1_500, ge=128, le=4_096)
 
 
 @lru_cache

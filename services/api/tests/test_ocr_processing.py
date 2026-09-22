@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -42,7 +43,7 @@ class _SuccessfulOcrEngine:
         self.calls = 0
 
     async def recognize(self, path: Path) -> ParsedDocument:
-        assert path.is_file()
+        assert await asyncio.to_thread(path.is_file)
         self.calls += 1
         return ParsedDocument(
             parser_name=self.name,

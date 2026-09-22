@@ -8,9 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.acquisition.storage import StoredObjectPathResolver
 from bukmatika.config import Settings
 from bukmatika.persistence import session_scope
+from bukmatika.persistence.document_models import Document
 from bukmatika.persistence.documents import DocumentRepository, DocumentSource, DocumentSourceChanged
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
-from bukmatika.persistence.document_models import Document
 from bukmatika.processing.chunking import chunk_sections
 from bukmatika.processing.domain import (
     DocumentResponse,
@@ -35,6 +35,10 @@ class StoredObjectUnavailable(RuntimeError):
 
 
 class ProcessingTimedOut(RuntimeError):
+    pass
+
+
+class ProcessingSourceChanged(RuntimeError):
     pass
 
 
@@ -86,11 +90,14 @@ class DocumentProcessingService:
             chunks = chunk_sections(parsed.sections)
             async with self._session_scope() as database_session:
                 repository = DocumentRepository(database_session)
-                document = await repository.persist_document(
-                    source=source,
-                    parsed=parsed,
-                    chunks=chunks,
-                )
+                try:
+                    document = await repository.persist_document(
+                        source=source,
+                        parsed=parsed,
+                        chunks=chunks,
+                    )
+                except DocumentSourceChanged as exc:
+                    raise ProcessingSourceChanged(str(exc)) from exc
                 await InteractionEventRepository(database_session).record(
                     SemanticEventType.DOCUMENT_PROCESSING_COMPLETED,
                     entity_type="document",

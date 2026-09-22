@@ -36,6 +36,7 @@ from bukmatika.domain import (
     DiscoveryResponse,
     SearchIntent,
 )
+from bukmatika.identity import router as identity_router
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.acquisition import AcquisitionStateConflict
 from bukmatika.persistence.catalog import CatalogRepository
@@ -149,11 +150,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Bukmatika API", version="0.1.0", lifespan=lifespan)
+app.include_router(identity_router)
 app.include_router(reader_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.web_origin],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 import styles from "./reader-research-panel.module.css";
@@ -62,11 +62,19 @@ export function ReaderResearchPanel({
   const [bundle, setBundle] = useState<EvidenceBundle | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activeSectionRef = useRef(sectionId);
+
+  useEffect(() => {
+    activeSectionRef.current = sectionId;
+    setBundle(null);
+    setError(null);
+  }, [sectionId]);
 
   async function buildEvidence(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalized = question.trim();
-    if (!sectionId || !normalized) return;
+    const requestedSectionId = sectionId;
+    if (!requestedSectionId || !normalized) return;
 
     setLoading(true);
     setError(null);
@@ -79,7 +87,7 @@ export function ReaderResearchPanel({
           reader: {
             library_entry_id: libraryEntryId,
             document_id: documentId,
-            section_id: sectionId,
+            section_id: requestedSectionId,
             char_offset: 0,
           },
           library_entry_ids: [libraryEntryId],
@@ -89,10 +97,15 @@ export function ReaderResearchPanel({
       if (!response.ok) {
         throw new Error(`Evidence grounding failed with HTTP ${response.status}.`);
       }
-      setBundle((await response.json()) as EvidenceBundle);
+      const payload = (await response.json()) as EvidenceBundle;
+      if (activeSectionRef.current === requestedSectionId) {
+        setBundle(payload);
+      }
     } catch (caught) {
-      setBundle(null);
-      setError(caught instanceof Error ? caught.message : "Could not ground this question.");
+      if (activeSectionRef.current === requestedSectionId) {
+        setBundle(null);
+        setError(caught instanceof Error ? caught.message : "Could not ground this question.");
+      }
     } finally {
       setLoading(false);
     }

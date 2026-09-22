@@ -32,6 +32,7 @@ class SemanticEventType(StrEnum):
     DOCUMENT_OCR_FAILED = "document.ocr_failed"
     DOCUMENT_SEARCH_SUBMITTED = "document.search_submitted"
     DOCUMENT_SEARCH_COMPLETED = "document.search_completed"
+    RESEARCH_SEARCH_COMPLETED = "research.search_completed"
     READER_OPENED = "reader.opened"
     READING_PROGRESS_UPDATED = "reader.progress_updated"
     BOOKMARK_ADDED = "reader.bookmark_added"

@@ -27,6 +27,7 @@ from bukmatika.personalization.service import PersonalizationService
 from bukmatika.research import ResearchEvidenceBundleRequest, ResearchEvidenceReferenceInvalid
 
 router = APIRouter(prefix="/v1/ai", tags=["ai"])
+_personalization_service = PersonalizationService()
 
 
 class AIAvailabilityState(StrEnum):
@@ -55,6 +56,10 @@ def model_gateway(request: Request) -> ModelGateway:
     return gateway
 
 
+def personalization_service() -> PersonalizationService:
+    return _personalization_service
+
+
 def grounded_research_service(
     gateway: Annotated[ModelGateway, Depends(model_gateway)],
 ) -> GroundedResearchSynthesisService:
@@ -65,8 +70,9 @@ def grounded_research_service(
 async def ai_provider_status(
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     gateway: Annotated[ModelGateway, Depends(model_gateway)],
+    profile_service: Annotated[PersonalizationService, Depends(personalization_service)],
 ) -> AIProviderStatusResponse:
-    profile = await PersonalizationService().profile(principal_id=identity.principal_id)
+    profile = await profile_service.profile(principal_id=identity.principal_id)
     provider = gateway.identity
     if not profile.ai_enabled:
         return AIProviderStatusResponse(

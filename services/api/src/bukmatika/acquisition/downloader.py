@@ -138,7 +138,9 @@ class SafeDownloader:
                                 "Resume response did not start at the requested byte offset"
                             )
                         if range_end < range_start:
-                            raise RemoteDownloadError("Resume response returned an invalid byte range")
+                            raise RemoteDownloadError(
+                                "Resume response returned an invalid byte range"
+                            )
                         if range_total is not None:
                             if range_total > self._max_bytes:
                                 raise DownloadTooLarge(

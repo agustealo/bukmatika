@@ -209,13 +209,15 @@ class ReaderRepository:
         state = await self.state_for(access.library_entry_id, access.document.id)
         if state is None:
             raise ReaderBookmarkNotFound("Bookmark does not exist")
-        result = await self._session.execute(
-            delete(Bookmark).where(
+        deleted_id = await self._session.scalar(
+            delete(Bookmark)
+            .where(
                 Bookmark.id == bookmark_id,
                 Bookmark.reading_state_id == state.id,
             )
+            .returning(Bookmark.id)
         )
-        if result.rowcount != 1:
+        if deleted_id is None:
             raise ReaderBookmarkNotFound("Bookmark does not exist")
 
     async def _validated_section(

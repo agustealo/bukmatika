@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { apiFetch } from "../lib/api";
+
 type ReaderLocator = Record<string, string | number>;
 
 type ReaderSection = {
@@ -52,11 +54,10 @@ type ReaderClientProps = {
   documentId: string;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const PAGE_SIZE = 12;
 
 function readerUrl(libraryEntryId: string, documentId: string, after?: number): string {
-  const base = `${API_BASE}/v1/library/${libraryEntryId}/documents/${documentId}/reader`;
+  const base = `/v1/library/${libraryEntryId}/documents/${documentId}/reader`;
   const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
   if (after !== undefined) params.set("after", String(after));
   return `${base}?${params.toString()}`;
@@ -83,13 +84,13 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
   const lastPersistedSection = useRef<string | null>(null);
 
   const basePath = useMemo(
-    () => `${API_BASE}/v1/library/${libraryEntryId}/documents/${documentId}`,
+    () => `/v1/library/${libraryEntryId}/documents/${documentId}`,
     [libraryEntryId, documentId],
   );
 
   const fetchPage = useCallback(
     async (after?: number): Promise<ReaderDocument> => {
-      const response = await fetch(readerUrl(libraryEntryId, documentId, after), {
+      const response = await apiFetch(readerUrl(libraryEntryId, documentId, after), {
         cache: "no-store",
       });
       if (!response.ok) {
@@ -175,7 +176,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
     const timer = window.setTimeout(async () => {
       const progress = Math.min(1, (section.ordinal + 1) / document.section_count);
       try {
-        const response = await fetch(`${basePath}/progress`, {
+        const response = await apiFetch(`${basePath}/progress`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -222,7 +223,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
     setError(null);
     try {
       if (existing) {
-        const response = await fetch(`${basePath}/bookmarks/${existing.bookmark_id}/remove`, {
+        const response = await apiFetch(`${basePath}/bookmarks/${existing.bookmark_id}/remove`, {
           method: "POST",
         });
         if (!response.ok) throw new Error(`Bookmark removal failed with HTTP ${response.status}.`);
@@ -231,7 +232,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
         );
         return;
       }
-      const response = await fetch(`${basePath}/bookmarks`, {
+      const response = await apiFetch(`${basePath}/bookmarks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -259,7 +260,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
   if (error && !document) {
     return (
       <main className="reader-shell">
-        <a className="reader-back" href="/">← Library discovery</a>
+        <a className="reader-back" href="/library">← Library</a>
         <div className="error-card" role="alert">{error}</div>
       </main>
     );
@@ -273,7 +274,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
     <main className="reader-shell">
       <header className="reader-toolbar">
         <div>
-          <a className="reader-back" href="/">← Bukmatika</a>
+          <a className="reader-back" href="/library">← Library</a>
           <p className="reader-kicker">{document.format} · {document.parser_name}</p>
         </div>
         <div className="reader-progress" aria-label={`Reading progress ${progressPercent}%`}>

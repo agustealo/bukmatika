@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -202,11 +202,13 @@ class PersonalizationPortabilityRepository:
         await self._session.execute(delete(UserModel).where(UserModel.id == current_model.id))
         await self._session.flush()
 
+        reset_at = datetime.now(UTC)
         reset_event = await InteractionEventRepository(self._session).record(
             SemanticEventType.PERSONALIZATION_RESET,
             principal_id=principal_id,
             entity_type="user_model",
             context={"schema_version": 1},
+            occurred_at=reset_at,
         )
         fresh_model = UserModel(
             principal_id=principal_id,

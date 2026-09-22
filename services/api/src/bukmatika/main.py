@@ -48,6 +48,7 @@ from bukmatika.processing import (
     DocumentRequiresOCR,
     DocumentResponse,
     DocumentSearchResponse,
+    DocxDocumentParser,
     EpubDocumentParser,
     HtmlDocumentParser,
     ParserRegistry,
@@ -119,6 +120,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 HtmlDocumentParser(),
                 PdfDocumentParser(),
                 EpubDocumentParser(),
+                DocxDocumentParser(),
             )
         ),
         object_store,

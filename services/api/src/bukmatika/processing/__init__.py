@@ -2,6 +2,7 @@ from bukmatika.processing.domain import DocumentResponse, DocumentSearchResponse
 from bukmatika.processing.parsers import (
     DocumentParseError,
     DocumentRequiresOCR,
+    DocxDocumentParser,
     EpubDocumentParser,
     HtmlDocumentParser,
     ParserRegistry,
@@ -26,6 +27,7 @@ __all__ = [
     "DocumentRequiresOCR",
     "DocumentResponse",
     "DocumentSearchResponse",
+    "DocxDocumentParser",
     "EpubDocumentParser",
     "HtmlDocumentParser",
     "ParserRegistry",

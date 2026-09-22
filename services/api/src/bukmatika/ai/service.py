@@ -74,19 +74,19 @@ class PlanningService:
         if not context.model_context_ready:
             raise AIContextUnavailable("Model context is not available")
 
-        proposal = await self._gateway.generate_structured(
-            ModelRequest(
-                task=ModelTask.PLAN,
-                payload={
+        model_request = ModelRequest.model_validate(
+            {
+                "task": ModelTask.PLAN.value,
+                "payload": {
                     "user_request": normalized_request,
                     "context": context.model_dump(mode="json"),
                 },
-                data_classification=ModelDataClassification.PRIVATE_USER_CONTEXT,
-                max_output_tokens=2_048,
-                timeout_seconds=30,
-            ),
-            PlanProposal,
+                "data_classification": ModelDataClassification.PRIVATE_USER_CONTEXT.value,
+                "max_output_tokens": 2_048,
+                "timeout_seconds": 30,
+            }
         )
+        proposal = await self._gateway.generate_structured(model_request, PlanProposal)
         self._registry.validate_plan(proposal, context)
         decisions = [self._policy.evaluate(step, context) for step in proposal.steps]
 

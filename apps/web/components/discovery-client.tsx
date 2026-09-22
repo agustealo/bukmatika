@@ -41,6 +41,14 @@ function rightsLabel(candidate: Candidate): string {
   return state.replaceAll("_", " ");
 }
 
+function dossierHref(candidate: Candidate): string {
+  const params = new URLSearchParams({
+    provider: candidate.source,
+    record_id: candidate.source_record_id,
+  });
+  return `/dossier?${params.toString()}`;
+}
+
 export function DiscoveryClient() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<DiscoveryResponse | null>(null);
@@ -95,8 +103,8 @@ export function DiscoveryClient() {
           </button>
         </div>
         <p className="search-note">
-          Live results currently use the Open Library adapter. More source adapters land as
-          independent vertical slices.
+          Live federated discovery queries Open Library, Internet Archive, Project Gutenberg,
+          and the Library of Congress. Source failures degrade independently.
         </p>
       </form>
 
@@ -137,9 +145,14 @@ export function DiscoveryClient() {
                 {candidate.subjects.length > 0 ? (
                   <p className="subjects">{candidate.subjects.slice(0, 4).join(" · ")}</p>
                 ) : null}
-                <a href={candidate.landing_url} target="_blank" rel="noreferrer">
-                  Open source record <span aria-hidden="true">↗</span>
-                </a>
+                <div className="book-actions">
+                  <a className="primary-card-link" href={dossierHref(candidate)}>
+                    View dossier
+                  </a>
+                  <a className="secondary-link" href={candidate.landing_url} target="_blank" rel="noreferrer">
+                    Source <span aria-hidden="true">↗</span>
+                  </a>
+                </div>
               </article>
             ))}
           </div>

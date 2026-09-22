@@ -146,6 +146,15 @@ class LearningService:
             if active is not None and active.source == "explicit":
                 return None
 
+            contradiction = await repository.latest_inferred_contradiction(
+                principal_id=principal_id,
+                key=PreferenceKey.FORMAT_PREFERRED.value,
+                scope_type=PreferenceScopeType.GLOBAL.value,
+                scope_value="",
+            )
+            if contradiction is not None:
+                cutoff = max(cutoff, contradiction.updated_at)
+
             evidence = await repository.format_open_evidence(
                 principal_id=principal_id,
                 since=cutoff,

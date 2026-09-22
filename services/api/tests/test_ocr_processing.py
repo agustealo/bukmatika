@@ -3,14 +3,17 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from pypdf import PdfWriter
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.acquisition.storage import LocalObjectStore
 from bukmatika.config import Settings
 from bukmatika.persistence.document_models import DocumentProcessingState
+from bukmatika.persistence.documents import DocumentRepository
 from bukmatika.persistence.models import Asset, Edition, StoredObject, Work
 from bukmatika.processing import (
     DocumentProcessingService,
@@ -132,9 +135,7 @@ async def test_requires_ocr_state_can_be_queued_and_completed_durably(
     with pytest.raises(DocumentRequiresOCR):
         await processing.process_asset(asset.id)
 
-    state = await session.get(DocumentProcessingState, asset.id)
-    if state is None:
-        state = await _processing_state_for_asset(session, asset.id)
+    state = await _processing_state_for_asset(session, asset.id)
     assert state is not None
     assert state.status == "requires_ocr"
     assert state.error_code == "DOCUMENT_REQUIRES_OCR"
@@ -158,7 +159,8 @@ async def test_requires_ocr_state_can_be_queued_and_completed_durably(
     completed = await queue.get(first.job_id)
     assert completed.job_status == "completed"
     assert completed.processing_status == "completed"
-    document = await processing.search_document_for_test(asset.id)
+    document = await DocumentRepository(session).get_document_for_asset(asset.id)
+    assert document is not None
     assert document.parser_name == "test-ocr"
     assert document.source_sha256 == state.source_sha256
 
@@ -260,10 +262,8 @@ async def test_missing_tesseract_engine_fails_explicitly(tmp_path: Path) -> None
 
 async def _processing_state_for_asset(
     session: AsyncSession,
-    asset_id: object,
+    asset_id: UUID,
 ) -> DocumentProcessingState | None:
-    from sqlalchemy import select
-
     return await session.scalar(
         select(DocumentProcessingState).where(DocumentProcessingState.asset_id == asset_id)
     )

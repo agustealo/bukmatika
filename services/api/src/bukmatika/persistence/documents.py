@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import delete, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from bukmatika.persistence.document_models import Document, DocumentChunk, DocumentSection
 from bukmatika.persistence.models import Asset, StoredObject
@@ -117,26 +118,26 @@ class DocumentRepository:
         await self._session.flush()
 
         sections: dict[int, DocumentSection] = {}
-        for section in parsed.sections:
-            row = DocumentSection(
+        for parsed_section in parsed.sections:
+            persisted_section = DocumentSection(
                 document_id=document.id,
-                ordinal=section.ordinal,
-                heading=section.heading,
-                locator=section.locator,
-                text=section.text,
+                ordinal=parsed_section.ordinal,
+                heading=parsed_section.heading,
+                locator=parsed_section.locator,
+                text=parsed_section.text,
             )
-            self._session.add(row)
-            sections[section.ordinal] = row
+            self._session.add(persisted_section)
+            sections[parsed_section.ordinal] = persisted_section
         await self._session.flush()
 
         for chunk in chunks:
-            section = sections.get(chunk.section_ordinal)
-            if section is None:
+            persisted_section = sections.get(chunk.section_ordinal)
+            if persisted_section is None:
                 raise RuntimeError("Chunk references an unknown document section")
             self._session.add(
                 DocumentChunk(
                     document_id=document.id,
-                    section_id=section.id,
+                    section_id=persisted_section.id,
                     ordinal=chunk.ordinal,
                     char_start=chunk.char_start,
                     char_end=chunk.char_end,
@@ -153,7 +154,7 @@ class DocumentRepository:
         query: str,
         limit: int,
     ) -> list[DocumentSearchMatch]:
-        configuration = literal_column("'simple'::regconfig")
+        configuration: ColumnElement[Any] = literal_column("'simple'::regconfig")
         tsquery = func.websearch_to_tsquery(configuration, query)
         rank = func.ts_rank_cd(DocumentChunk.search_vector, tsquery).label("score")
         rows = (

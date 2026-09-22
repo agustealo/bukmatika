@@ -36,6 +36,11 @@ class ActionPolicy:
                 ActionDecisionValue.DENY,
                 "Only autonomy Levels 0-1 are currently supported.",
             )
+        if step.capability.value not in context.available_capabilities:
+            return PolicyDecision(
+                ActionDecisionValue.DENY,
+                "Capability is not available in the validated context.",
+            )
 
         spec = self._registry.get(step.capability)
         if spec.risk is CapabilityRisk.READ_ONLY:

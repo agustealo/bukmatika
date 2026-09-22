@@ -25,6 +25,11 @@ class SemanticEventType(StrEnum):
     DOCUMENT_PROCESSING_STARTED = "document.processing_started"
     DOCUMENT_PROCESSING_COMPLETED = "document.processing_completed"
     DOCUMENT_PROCESSING_FAILED = "document.processing_failed"
+    DOCUMENT_OCR_REQUESTED = "document.ocr_requested"
+    DOCUMENT_OCR_STARTED = "document.ocr_started"
+    DOCUMENT_OCR_RETRY_SCHEDULED = "document.ocr_retry_scheduled"
+    DOCUMENT_OCR_COMPLETED = "document.ocr_completed"
+    DOCUMENT_OCR_FAILED = "document.ocr_failed"
     DOCUMENT_SEARCH_SUBMITTED = "document.search_submitted"
     DOCUMENT_SEARCH_COMPLETED = "document.search_completed"
 

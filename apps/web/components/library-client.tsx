@@ -126,7 +126,7 @@ export function LibraryClient() {
                       {progress > 0 ? "Continue reading" : "Read"}
                     </a>
                   ) : null}
-                  <a className="secondary-link" href={`/dossier?provider=library&record_id=${item.work_id}`}>
+                  <a className="secondary-link" href={`/dossier?work_id=${item.work_id}`}>
                     Details
                   </a>
                 </div>

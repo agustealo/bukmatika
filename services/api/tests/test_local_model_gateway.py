@@ -82,7 +82,7 @@ async def test_ollama_gateway_uses_native_schema_output_and_local_identity() -> 
     assert timeout["read"] == 7
 
 
-async def test_ollama_readiness_is_metadata_only_and_requires_exact_model() -> None:
+async def test_ollama_readiness_is_metadata_only_and_requires_requested_model() -> None:
     captured: dict[str, object] = {}
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -117,6 +117,36 @@ async def test_ollama_readiness_is_metadata_only_and_requires_exact_model() -> N
     timeout = captured["timeout"]
     assert isinstance(timeout, dict)
     assert timeout["read"] == 1.25
+
+
+async def test_ollama_readiness_accepts_implicit_latest_alias() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.content == b""
+        return httpx.Response(
+            200,
+            json={"models": [{"name": "llama3.2:latest", "model": "llama3.2:latest"}]},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        readiness = await _gateway(client, model="llama3.2").readiness()
+
+    assert readiness.state is ModelReadinessState.READY
+    assert readiness.ready is True
+
+
+async def test_ollama_readiness_accepts_bare_name_for_explicit_latest_alias() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.content == b""
+        return httpx.Response(
+            200,
+            json={"models": [{"name": "llama3.2", "model": "llama3.2"}]},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        readiness = await _gateway(client, model="llama3.2:latest").readiness()
+
+    assert readiness.state is ModelReadinessState.READY
+    assert readiness.ready is True
 
 
 async def test_ollama_readiness_does_not_accept_different_model_tag() -> None:

@@ -2,17 +2,25 @@
 
 The roadmap is organized by vertical slices. A slice is complete only when the real user path works end-to-end.
 
+## Current engineering checkpoint - 2026-09-22
+
+- Base entering the current slice: `main@ceba77a38ca88f8703d04097e4f149b069b733a4`.
+- Post-merge Quality #156 passed API Ruff, strict MyPy, Alembic migrations, the full PostgreSQL suite, web typecheck, and production web build.
+- Grounded reader research is live behind the canonical `ModelGateway` with a loopback-only Ollama provider, citation validation, policy-gated execution, AI activity evidence, and evidence-only fallback when AI is unavailable.
+- Active slice: make local-model availability truthful at runtime by distinguishing configured, unreachable, invalid, missing-model, and ready states before advertising or executing `research.answer`.
+- Do not advance to delegated autonomy merely because local synthesis works. Consumer setup, real-runtime proof, recovery behavior, and the remaining Phase 5 research surfaces come first.
+
 ## Phase 0 - Foundation
 
 - [x] Product thesis and guardrails.
 - [x] Canonical architecture and rights states.
 - [x] Repository initialization.
 - [x] Adaptive AI architecture and autonomy invariants.
-- [ ] CI quality gates.
-- [ ] Database migrations.
+- [x] CI quality gates.
+- [x] Database migrations.
 - [ ] Local development bootstrap.
 - [ ] Structured logging and request correlation.
-- [ ] Canonical semantic interaction-event vocabulary.
+- [x] Canonical semantic interaction-event vocabulary.
 
 ## Phase 1 - Real discovery
 
@@ -21,12 +29,12 @@ Goal: a user can search a topic and receive normalized, rights-classified real r
 - [x] Canonical search/domain contracts.
 - [x] Open Library adapter.
 - [x] Discovery API endpoint.
-- [ ] Internet Archive adapter.
-- [ ] Project Gutenberg catalog adapter.
-- [ ] Library of Congress adapter.
+- [x] Internet Archive adapter.
+- [x] Project Gutenberg catalog adapter.
+- [x] Library of Congress adapter.
 - [ ] Provider health and rate-limit telemetry.
-- [ ] Work/edition duplicate resolver backed by PostgreSQL.
-- [ ] Search result persistence.
+- [x] Work/edition duplicate resolver backed by PostgreSQL.
+- [x] Search result persistence.
 - [ ] Explicit discovery preferences: language, format, era, rights state, source type.
 
 Acceptance: “Old World before Columbus” returns live source results with source provenance and no fake catalog rows. Explicit preferences can influence transparent ranking without bypassing neutral sorting.
@@ -35,28 +43,28 @@ Acceptance: “Old World before Columbus” returns live source results with sou
 
 Goal: an eligible result becomes a durable verified asset.
 
-- [ ] Rights evidence persistence and decision audit.
-- [ ] Acquisition jobs and retry state machine.
-- [ ] SSRF-safe downloader.
-- [ ] MIME sniffing, size limits, checksum, quarantine.
-- [ ] Storage abstraction.
-- [ ] Project Gutenberg permitted file acquisition.
-- [ ] Internet Archive eligible asset acquisition.
+- [x] Rights evidence persistence and decision audit.
+- [x] Acquisition jobs and retry state machine.
+- [x] SSRF-safe downloader.
+- [x] MIME sniffing, size limits, checksum, quarantine.
+- [x] Storage abstraction.
+- [x] Project Gutenberg permitted file acquisition.
+- [x] Internet Archive eligible asset acquisition.
 - [ ] Per-user acquisition preferences and approval policy.
 
 Acceptance: public-domain/open/otherwise-authorized assets download reproducibly; unknown/borrow/restricted assets cannot cross the acquisition gate; AI or personalization cannot override the gate.
 
 ## Phase 3 - Catalog + processing
 
-- [ ] PDF text extraction.
-- [ ] EPUB extraction.
-- [ ] TXT/HTML extraction.
-- [ ] DOCX extraction.
-- [ ] OCR for image-only scans.
+- [x] PDF text extraction.
+- [x] EPUB extraction.
+- [x] TXT/HTML extraction.
+- [x] DOCX extraction.
+- [x] OCR for image-only scans.
 - [ ] Metadata confidence/provenance.
 - [ ] Cover handling.
-- [ ] PostgreSQL full-text search.
-- [ ] Semantic interaction/outcome event writer in canonical product domains.
+- [x] PostgreSQL full-text search.
+- [x] Semantic interaction/outcome event writer in canonical product domains.
 
 ## Phase 4 - Consumer library + reader
 
@@ -69,8 +77,10 @@ Acceptance: public-domain/open/otherwise-authorized assets download reproducibly
 - [ ] Highlights, notes, bookmarks, progress.
 - [ ] Keyboard and accessibility pass.
 - [ ] Responsive/mobile behavior.
-- [ ] User goals and session continuity.
-- [ ] Explicit preference management.
+- [x] User goals and session continuity.
+- [x] Explicit preference management.
+
+Phase 4 remains deliberately conservative in this sheet until each consumer surface receives an explicit product-level acceptance pass. Backend capability existing is not sufficient to mark a consumer experience complete.
 
 ## Phase 5 - Adaptive research intelligence
 
@@ -78,47 +88,50 @@ Goal: introduce one bounded AI orchestration system that becomes more useful thr
 
 ### AI foundation
 
-- [ ] PostgreSQL persistence for `UserModel`, `PreferenceClaim`, `InteractionEvent`, `OutcomeEvent`, `Goal`, `Plan`, and `ActionDecision`.
-- [ ] Canonical `ModelGateway`; product domains cannot call model SDKs directly.
-- [ ] Deterministic context assembler with privacy minimization.
-- [ ] Typed capability/tool registry over canonical product services.
-- [ ] Planner structured-output validation.
-- [ ] Deterministic action policy and approval gate.
-- [ ] AI activity ledger.
+- [x] PostgreSQL persistence for `UserModel`, `PreferenceClaim`, `InteractionEvent`, `OutcomeEvent`, `Goal`, `Plan`, and `ActionDecision`.
+- [x] Canonical `ModelGateway`; product domains cannot call model SDKs directly.
+- [x] Deterministic context assembler with privacy minimization.
+- [x] Typed capability/tool registry over canonical product services.
+- [x] Planner structured-output validation.
+- [x] Deterministic action policy and approval gate.
+- [x] AI activity ledger.
+- [x] Local provider readiness contract distinguishing configuration from actual runtime/model readiness.
+- [ ] Consumer-facing local model setup/recovery flow.
+- [ ] Real local-runtime release proof using an installed model, not a mock transport.
 
 ### Learning
 
-- [ ] Explicit vs inferred preference authority.
-- [ ] Confidence/evidence/scoping model.
-- [ ] Contradiction resolution.
-- [ ] Preference decay for inferred claims.
-- [ ] Outcome-driven reinforcement and negative feedback.
-- [ ] User correction/forget flow.
-- [ ] Pause-learning control.
+- [x] Explicit vs inferred preference authority.
+- [x] Confidence/evidence/scoping model.
+- [x] Contradiction resolution.
+- [x] Preference decay for inferred claims.
+- [x] Outcome-driven reinforcement and negative feedback.
+- [x] User correction/forget flow.
+- [x] Pause-learning control.
 
 ### Research intelligence
 
-- [ ] Search within one book.
-- [ ] Cross-book lexical retrieval.
+- [x] Search within one book.
+- [x] Cross-book lexical retrieval.
 - [ ] Semantic retrieval with one canonical embedding-provider interface.
-- [ ] Grounded book Q&A with page/section citations.
+- [x] Grounded book Q&A with page/section citations.
 - [ ] Compare sources/editions.
 - [ ] Timeline/entity/concept views derived from canonical documents.
-- [ ] Reader-aware AI context.
-- [ ] Active research goals spanning sessions.
+- [x] Reader-aware AI context.
+- [x] Active research goals spanning sessions.
 - [ ] Explainable personalized discovery/recommendations.
 
 ### AI & Personalization control center
 
-- [ ] What Bukmatika knows about me.
-- [ ] Explicit preferences.
-- [ ] Inferred preferences with confidence/evidence.
-- [ ] Active goals.
+- [x] What Bukmatika knows about me.
+- [x] Explicit preferences.
+- [x] Inferred preferences with confidence/evidence.
+- [x] Active goals.
 - [ ] Delegated tasks.
-- [ ] Activity ledger.
+- [x] Activity ledger.
 - [ ] Per-feature autonomy controls.
-- [ ] Export/delete personalization data.
-- [ ] Disable AI while preserving normal library operation.
+- [x] Export/delete personalization data.
+- [x] Disable AI while preserving normal library operation.
 
 Acceptance:
 
@@ -128,6 +141,17 @@ Acceptance:
 - a corrected/deleted learned claim stops influencing behavior;
 - AI-disabled mode leaves discovery, acquisition, cataloging, library, and reading functional;
 - no independent agent memory or provider SDK appears outside the canonical orchestration/model boundary.
+
+### Phase 5 exit gate before Phase 6
+
+Phase 6 remains closed until all of the following are true:
+
+1. the local provider reports actual runtime/model readiness rather than configuration presence;
+2. a consumer can understand and recover from unconfigured, runtime-offline, invalid-runtime, and missing-model states;
+3. the reader falls back to ordinary evidence retrieval if readiness changes between status inspection and execution;
+4. one real installed Ollama model completes the grounded-answer path against canonical persisted evidence;
+5. citation validation, AI-off behavior, ownership isolation, privacy minimization, and activity-ledger proofs remain green on the exact release candidate;
+6. no new agent, memory, graph, embedding, or orchestration subsystem is introduced unless a remaining product requirement proves it necessary.
 
 ## Phase 6 - Bounded delegated autonomy
 

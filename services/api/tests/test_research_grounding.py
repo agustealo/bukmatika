@@ -23,6 +23,8 @@ from bukmatika.research import (
     GroundedResearchAnswer,
     ReaderResearchContextRequest,
     ResearchEvidenceBundleRequest,
+    ResearchEvidenceBundleResponse,
+    ResearchEvidenceItem,
     ResearchEvidenceReferenceInvalid,
     ResearchEvidenceSourceKind,
     ResearchReaderPositionInvalid,
@@ -153,11 +155,15 @@ async def test_evidence_bundle_binds_reader_selection_and_selected_owned_books(
         suffix="related",
         text="Navigation evidence from a second selected source describes Atlantic trade routes.",
     )
+    unselected_text = (
+        "Navigation evidence navigation evidence navigation evidence "
+        "from an unselected source."
+    )
     unselected, _, _, _ = await _seed_book(
         session,
         principal=principal,
         suffix="unselected",
-        text="Navigation evidence navigation evidence navigation evidence from an unselected source.",
+        text=unselected_text,
     )
 
     selection_start = 6
@@ -366,7 +372,6 @@ def test_grounded_answer_accepts_known_evidence_and_rejects_fabricated_ids() -> 
         "text": "Grounded text",
         "score": None,
     }
-    from bukmatika.research import ResearchEvidenceBundleResponse, ResearchEvidenceItem
 
     bundle = ResearchEvidenceBundleResponse(
         question="Question",

@@ -224,12 +224,13 @@ export function ReaderResearchPanel({
     setAnswer(null);
     setAnswerModel(null);
     try {
+      let usedSynthesis = canSynthesize;
       let response = await apiFetch(
-        canSynthesize ? "/v1/ai/research/answer" : "/v1/research/evidence",
+        usedSynthesis ? "/v1/ai/research/answer" : "/v1/research/evidence",
         requestInit,
       );
 
-      if (canSynthesize && !response.ok) {
+      if (usedSynthesis && !response.ok) {
         const fallbackState = await readinessFallbackState(response);
         if (fallbackState !== null) {
           setAIStatus((current) => ({
@@ -241,17 +242,18 @@ export function ReaderResearchPanel({
             model: fallbackState === "unconfigured" ? null : (current?.model ?? null),
             routing: fallbackState === "unconfigured" ? null : (current?.routing ?? null),
           }));
+          usedSynthesis = false;
           response = await apiFetch("/v1/research/evidence", requestInit);
         }
       }
 
       if (!response.ok) {
         throw new Error(
-          `${canSynthesize ? "Grounded answer" : "Evidence grounding"} failed with HTTP ${response.status}.`,
+          `${usedSynthesis ? "Grounded answer" : "Evidence grounding"} failed with HTTP ${response.status}.`,
         );
       }
 
-      if (canSynthesize && response.url.includes("/v1/ai/research/answer")) {
+      if (usedSynthesis) {
         const payload = (await response.json()) as GroundedResearchResponse;
         if (activeSectionRef.current === requestedSectionId) {
           setBundle(payload.evidence);

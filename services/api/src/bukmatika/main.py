@@ -43,6 +43,7 @@ from bukmatika.persistence.acquisition import AcquisitionStateConflict
 from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.search import CatalogSearchRepository
+from bukmatika.personalization import router as personalization_router
 from bukmatika.processing import (
     AssetNotStored,
     DocumentParseError,
@@ -156,6 +157,7 @@ app.include_router(identity_router)
 app.include_router(library_router)
 app.include_router(reader_router)
 app.include_router(research_router)
+app.include_router(personalization_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.web_origin],

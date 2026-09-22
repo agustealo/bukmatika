@@ -149,9 +149,10 @@ class _ReadableHtmlExtractor(HTMLParser):
         if self._ignored_depth:
             return
         if self._active_tag is not None:
-            self._active_depth += 1
             if tag == "br":
                 self._parts.append("\n")
+                return
+            self._active_depth += 1
             return
         if tag in self.block_tags:
             self._active_tag = tag

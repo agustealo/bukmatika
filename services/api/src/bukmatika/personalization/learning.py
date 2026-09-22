@@ -9,7 +9,11 @@ from pydantic import BaseModel, Field, JsonValue, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence import session_scope
-from bukmatika.persistence.learning import LearningRepository, OutcomeReferenceDenied
+from bukmatika.persistence.learning import (
+    FormatEvidence,
+    LearningRepository,
+    OutcomeReferenceDenied,
+)
 from bukmatika.personalization.domain import PreferenceKey, PreferenceScopeType
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
@@ -146,11 +150,11 @@ class LearningService:
                 principal_id=principal_id,
                 since=cutoff,
             )
-            latest_by_document = {}
+            latest_by_document: dict[UUID, FormatEvidence] = {}
             for item in evidence:
                 latest_by_document[item.document_id] = item
 
-            grouped = defaultdict(list)
+            grouped: defaultdict[str, list[FormatEvidence]] = defaultdict(list)
             for item in latest_by_document.values():
                 grouped[item.format.upper()].append(item)
             ranked = sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0]))

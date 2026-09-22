@@ -5,7 +5,6 @@ from contextlib import suppress
 from pathlib import Path
 
 import pypdfium2 as pdfium
-
 from bukmatika.config import Settings
 from bukmatika.processing.domain import ParsedDocument, ParsedSection
 

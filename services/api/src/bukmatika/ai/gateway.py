@@ -222,8 +222,8 @@ def _task_instructions(task: ModelTask) -> str:
         return (
             "Answer only from the supplied evidence packets. Return the requested JSON shape. "
             "Every substantive claim must include at least one supplied evidence_id. Never invent, "
-            "alter, or cite an evidence_id that is not present in the request. If the evidence does "
-            "not support a claim, omit that claim."
+            "alter or cite an evidence_id that is not present in the request. "
+            "If the evidence does not support a claim, omit that claim."
         )
     return (
         "Return only a bounded structured plan that satisfies the requested JSON schema. "

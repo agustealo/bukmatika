@@ -13,12 +13,14 @@ from bukmatika.ai.gateway import (
     ModelProviderRequestFailed,
     ModelProviderResponseInvalid,
     ModelProviderUnconfigured,
+    UnconfiguredModelGateway,
 )
 from bukmatika.ai.research_domain import GroundedResearchExecutionResponse
 from bukmatika.ai.research_service import GroundedResearchSynthesisService
 from bukmatika.ai.service import AIDisabled
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence.research import ResearchReaderPositionInvalid, ResearchSelectionDenied
+from bukmatika.personalization.service import PersonalizationService
 from bukmatika.research import ResearchEvidenceBundleRequest, ResearchEvidenceReferenceInvalid
 
 router = APIRouter(prefix="/v1/ai", tags=["ai"])
@@ -26,13 +28,16 @@ router = APIRouter(prefix="/v1/ai", tags=["ai"])
 
 class AIProviderStatusResponse(BaseModel):
     configured: bool
+    ai_enabled: bool
     provider: str | None
     model: str | None
     routing: str | None
 
 
 def model_gateway(request: Request) -> ModelGateway:
-    gateway = request.app.state.model_gateway
+    gateway = getattr(request.app.state, "model_gateway", None)
+    if gateway is None:
+        return UnconfiguredModelGateway()
     return gateway
 
 
@@ -47,10 +52,11 @@ async def ai_provider_status(
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     gateway: Annotated[ModelGateway, Depends(model_gateway)],
 ) -> AIProviderStatusResponse:
-    del identity
     provider = gateway.identity
+    profile = await PersonalizationService().profile(principal_id=identity.principal_id)
     return AIProviderStatusResponse(
         configured=provider is not None,
+        ai_enabled=profile.ai_enabled,
         provider=provider.provider if provider is not None else None,
         model=provider.model if provider is not None else None,
         routing=provider.routing if provider is not None else None,

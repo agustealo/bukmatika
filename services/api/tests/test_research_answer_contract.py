@@ -39,5 +39,5 @@ def test_research_answer_is_registered_but_not_advertised_or_executable() -> Non
     with pytest.raises(PlanCapabilityUnavailable, match="not available"):
         registry.validate_plan(proposal, context)
 
-    with pytest.raises(CapabilityExecutorUnavailable, match="research.answer"):
+    with pytest.raises(CapabilityExecutorUnavailable, match=r"research\.answer"):
         CapabilityExecutorRegistry().get(CapabilityName.RESEARCH_ANSWER)

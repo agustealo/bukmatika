@@ -21,6 +21,7 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("progress_fraction", sa.Float(), nullable=False),
         sa.Column("section_id", sa.Uuid(), nullable=True),
+        sa.Column("section_ordinal", sa.Integer(), nullable=True),
         sa.Column("char_offset", sa.Integer(), nullable=True),
         sa.Column("locator", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("last_read_at", sa.DateTime(timezone=True), nullable=True),
@@ -43,6 +44,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "progress_fraction >= 0 AND progress_fraction <= 1",
             name="ck_reading_state_progress_fraction",
+        ),
+        sa.CheckConstraint(
+            "section_ordinal IS NULL OR section_ordinal >= 0",
+            name="ck_reading_state_section_ordinal",
         ),
         sa.CheckConstraint(
             "char_offset IS NULL OR char_offset >= 0",

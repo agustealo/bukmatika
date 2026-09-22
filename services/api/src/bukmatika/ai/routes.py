@@ -19,6 +19,7 @@ from bukmatika.ai.research_domain import GroundedResearchExecutionResponse
 from bukmatika.ai.research_service import GroundedResearchSynthesisService
 from bukmatika.ai.service import AIDisabled
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
+from bukmatika.persistence.personalization import ContextSelectionDenied
 from bukmatika.persistence.research import ResearchReaderPositionInvalid, ResearchSelectionDenied
 from bukmatika.personalization.service import PersonalizationService
 from bukmatika.research import ResearchEvidenceBundleRequest, ResearchEvidenceReferenceInvalid
@@ -84,7 +85,7 @@ async def grounded_research_answer(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code},
         ) from exc
-    except ResearchSelectionDenied as exc:
+    except (ContextSelectionDenied, ResearchSelectionDenied) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "RESEARCH_SELECTION_UNAVAILABLE"},

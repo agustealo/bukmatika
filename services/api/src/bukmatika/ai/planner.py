@@ -55,6 +55,7 @@ class PlannerValidator:
                     "INVALID_CAPABILITY_ARGUMENTS",
                     f"Invalid arguments for {spec.name}: {exc.errors(include_url=False)}",
                 ) from exc
+            self._validate_context_bindings(spec.name, arguments, context=context)
             validated_steps.append(
                 ValidatedPlannerStep(
                     step_id=step.step_id,
@@ -66,3 +67,31 @@ class PlannerValidator:
             )
 
         return ValidatedPlan(summary=proposal.summary, steps=validated_steps)
+
+    @staticmethod
+    def _validate_context_bindings(
+        capability: str,
+        arguments: dict[str, object],
+        *,
+        context: ContextManifest,
+    ) -> None:
+        selected = {
+            str(entry.library_entry_id): {str(document_id) for document_id in entry.document_ids}
+            for entry in context.library_entries
+        }
+        if capability == "research.search":
+            requested = set(arguments.get("library_entry_ids", []))
+            if not requested.issubset(selected):
+                raise PlannerValidationError(
+                    "CONTEXT_ENTITY_UNAVAILABLE",
+                    "Research plan referenced a library entry outside the authorized context",
+                )
+        elif capability == "reader.open":
+            entry_id = str(arguments.get("library_entry_id", ""))
+            document_id = str(arguments.get("document_id", ""))
+            documents = selected.get(entry_id)
+            if documents is None or document_id not in documents:
+                raise PlannerValidationError(
+                    "CONTEXT_ENTITY_UNAVAILABLE",
+                    "Reader plan referenced an entry/document pair outside the authorized context",
+                )

@@ -7,7 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.models import InteractionEvent
-from bukmatika.persistence.personalization import PersonalizationRepository
+from bukmatika.persistence.personalization import (
+    PersonalizationRepository,
+    lock_personalization_state,
+)
 from bukmatika.persistence.personalization_models import (
     ActionDecision,
     Goal,
@@ -54,6 +57,7 @@ class PersonalizationPortabilityRepository:
         self._session = session
 
     async def export_records(self, principal_id: UUID) -> PersonalizationExportRecords:
+        await lock_personalization_state(self._session, principal_id)
         user_model = await PersonalizationRepository(self._session).get_or_create_user_model(
             principal_id
         )
@@ -173,6 +177,7 @@ class PersonalizationPortabilityRepository:
         )
 
     async def reset(self, principal_id: UUID) -> PersonalizationResetResult:
+        await lock_personalization_state(self._session, principal_id)
         personalization = PersonalizationRepository(self._session)
         await personalization.get_or_create_user_model(principal_id)
         current_model = await self._session.scalar(

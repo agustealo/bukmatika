@@ -72,9 +72,6 @@ class GroundedResearchSynthesisService:
         request: ResearchEvidenceBundleRequest,
     ) -> GroundedResearchExecutionResponse:
         identity = self._gateway.identity
-        if identity is None:
-            raise ModelProviderUnconfigured("No model provider is configured")
-
         context = await self._context.assemble(
             principal_id=principal_id,
             request=ContextRequest(
@@ -84,6 +81,8 @@ class GroundedResearchSynthesisService:
         )
         if not context.ai_enabled:
             raise AIDisabled("AI is disabled for this principal")
+        if identity is None:
+            raise ModelProviderUnconfigured("No model provider is configured")
 
         step = PlanStep(
             step_id="research-answer-1",

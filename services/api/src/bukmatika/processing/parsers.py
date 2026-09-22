@@ -440,7 +440,10 @@ def _epub_sections(
 
 
 def _docx_sections(document: ElementTree.Element) -> list[ParsedSection]:
-    body = next((element for element in document.iter() if _local_name(element.tag) == "body"), None)
+    body = next(
+        (element for element in document.iter() if _local_name(element.tag) == "body"),
+        None,
+    )
     if body is None:
         raise DocumentParseError("DOCX document.xml has no body")
 

@@ -11,6 +11,7 @@ from bukmatika.ai.domain import CapabilityName
 from bukmatika.ai.gateway import (
     ModelDataClassification,
     ModelGateway,
+    ModelProviderRequestFailed,
     ModelProviderResponseInvalid,
     ModelProviderUnconfigured,
     ModelRequest,
@@ -158,7 +159,11 @@ class ResearchAnswerExecutor:
                 GroundedResearchAnswer,
             )
             answer = self._research.validate_grounded_answer(bundle=bundle, answer=answer)
-        except (ModelProviderResponseInvalid, ResearchEvidenceReferenceInvalid) as exc:
+        except (
+            ModelProviderRequestFailed,
+            ModelProviderResponseInvalid,
+            ResearchEvidenceReferenceInvalid,
+        ) as exc:
             await self._record_model_event(
                 SemanticEventType.AI_MODEL_FAILED,
                 principal_id=principal_id,

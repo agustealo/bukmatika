@@ -16,6 +16,7 @@ from bukmatika.ai.service import AIContextUnavailable, AIDisabled
 from bukmatika.config import Settings, get_settings
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
+from bukmatika.persistence.personalization import ContextSelectionDenied
 from bukmatika.personalization.context import ContextAssembler
 from bukmatika.personalization.domain import ContextRequest, ContextTask
 from bukmatika.research.domain import (
@@ -28,7 +29,7 @@ from bukmatika.research.domain import (
     ResearchPassageResponse,
     ResearchSearchRequest,
 )
-from bukmatika.research.service import ResearchService
+from bukmatika.research.service import ResearchSelectionDenied, ResearchService
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -65,13 +66,19 @@ class GroundedResearchService:
         principal_id: UUID,
         request: GroundedResearchRequest,
     ) -> GroundedAnswerResponse:
-        context = await self._context.assemble(
-            principal_id=principal_id,
-            request=ContextRequest(
-                task=ContextTask.RESEARCH,
-                library_entry_ids=request.library_entry_ids,
-            ),
-        )
+        try:
+            context = await self._context.assemble(
+                principal_id=principal_id,
+                request=ContextRequest(
+                    task=ContextTask.RESEARCH,
+                    library_entry_ids=request.library_entry_ids,
+                ),
+            )
+        except ContextSelectionDenied as exc:
+            raise ResearchSelectionDenied(
+                "One or more selected library entries are unavailable"
+            ) from exc
+
         if not context.ai_enabled:
             raise AIDisabled("AI is disabled for this principal")
         if not context.model_context_ready:

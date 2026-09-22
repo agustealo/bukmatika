@@ -11,7 +11,6 @@ from bukmatika.ai.domain import CapabilityName
 from bukmatika.ai.policy import ActionDecisionValue, ActionPolicy
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.execution import ExecutionRepository, PlanIntegrityError
-from bukmatika.personalization.domain import ContextManifest
 from bukmatika.research import ResearchSearchRequest, ResearchService
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]

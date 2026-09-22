@@ -27,7 +27,7 @@ SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
 
 class ReaderService:
-    """Consumer reader authority over canonical documents and durable reading state."""
+    """Consumer reader authority over canonical documents and principal-owned reading state."""
 
     def __init__(
         self,
@@ -39,6 +39,7 @@ class ReaderService:
     async def open_reader(
         self,
         *,
+        principal_id: UUID,
         library_entry_id: UUID,
         document_id: UUID,
         after_ordinal: int | None,
@@ -46,7 +47,7 @@ class ReaderService:
     ) -> ReaderDocumentResponse:
         async with self._session_scope() as database_session:
             repository = ReaderRepository(database_session)
-            access = await repository.require_access(library_entry_id, document_id)
+            access = await repository.require_access(principal_id, library_entry_id, document_id)
             sections = await repository.sections(
                 document_id,
                 after_ordinal=after_ordinal,
@@ -97,13 +98,14 @@ class ReaderService:
     async def save_progress(
         self,
         *,
+        principal_id: UUID,
         library_entry_id: UUID,
         document_id: UUID,
         update: ReadingProgressUpdate,
     ) -> ReadingStateResponse:
         async with self._session_scope() as database_session:
             repository = ReaderRepository(database_session)
-            access = await repository.require_access(library_entry_id, document_id)
+            access = await repository.require_access(principal_id, library_entry_id, document_id)
             state = await repository.save_progress(
                 access=access,
                 section_id=update.section_id,
@@ -130,6 +132,7 @@ class ReaderService:
     async def add_bookmark(
         self,
         *,
+        principal_id: UUID,
         library_entry_id: UUID,
         document_id: UUID,
         create: BookmarkCreate,
@@ -139,7 +142,7 @@ class ReaderService:
             label = None
         async with self._session_scope() as database_session:
             repository = ReaderRepository(database_session)
-            access = await repository.require_access(library_entry_id, document_id)
+            access = await repository.require_access(principal_id, library_entry_id, document_id)
             bookmark = await repository.add_bookmark(
                 access=access,
                 section_id=create.section_id,
@@ -163,13 +166,14 @@ class ReaderService:
     async def remove_bookmark(
         self,
         *,
+        principal_id: UUID,
         library_entry_id: UUID,
         document_id: UUID,
         bookmark_id: UUID,
     ) -> None:
         async with self._session_scope() as database_session:
             repository = ReaderRepository(database_session)
-            access = await repository.require_access(library_entry_id, document_id)
+            access = await repository.require_access(principal_id, library_entry_id, document_id)
             await repository.remove_bookmark(access=access, bookmark_id=bookmark_id)
             await InteractionEventRepository(database_session).record(
                 SemanticEventType.BOOKMARK_REMOVED,

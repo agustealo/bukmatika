@@ -103,11 +103,13 @@ async def test_reader_paginates_sections_and_persists_progress(
     session: AsyncSession,
 ) -> None:
     entry, document, sections = await _seed_reader_document(session, suffix="page")
+    principal_id = entry.principal_id
     entry_id = entry.id
     document_id = document.id
     service = ReaderService(session_scope_factory=_scope(session))
 
     first_page = await service.open_reader(
+        principal_id=principal_id,
         library_entry_id=entry_id,
         document_id=document_id,
         after_ordinal=None,
@@ -118,6 +120,7 @@ async def test_reader_paginates_sections_and_persists_progress(
     assert first_page.reading_state is None
 
     saved = await service.save_progress(
+        principal_id=principal_id,
         library_entry_id=entry_id,
         document_id=document_id,
         update=ReadingProgressUpdate(
@@ -131,6 +134,7 @@ async def test_reader_paginates_sections_and_persists_progress(
 
     session.expire_all()
     reopened = await service.open_reader(
+        principal_id=principal_id,
         library_entry_id=entry_id,
         document_id=document_id,
         after_ordinal=1,
@@ -150,8 +154,24 @@ async def test_reader_rejects_document_outside_library_entry(session: AsyncSessi
 
     with pytest.raises(ReaderAccessDenied, match="does not own"):
         await service.open_reader(
+            principal_id=entry.principal_id,
             library_entry_id=entry.id,
             document_id=other_document.id,
+            after_ordinal=None,
+            limit=10,
+        )
+
+
+async def test_reader_rejects_another_principal_with_exact_ids(session: AsyncSession) -> None:
+    owned_entry, owned_document, _ = await _seed_reader_document(session, suffix="owner")
+    intruder_entry, _, _ = await _seed_reader_document(session, suffix="intruder")
+    service = ReaderService(session_scope_factory=_scope(session))
+
+    with pytest.raises(ReaderAccessDenied, match="does not own"):
+        await service.open_reader(
+            principal_id=intruder_entry.principal_id,
+            library_entry_id=owned_entry.id,
+            document_id=owned_document.id,
             after_ordinal=None,
             limit=10,
         )
@@ -168,6 +188,7 @@ async def test_work_level_library_entry_can_read_owned_work_edition(
     service = ReaderService(session_scope_factory=_scope(session))
 
     response = await service.open_reader(
+        principal_id=entry.principal_id,
         library_entry_id=entry.id,
         document_id=document.id,
         after_ordinal=None,
@@ -182,6 +203,7 @@ async def test_progress_rejects_offset_outside_section(session: AsyncSession) ->
 
     with pytest.raises(ValueError, match="outside the section text"):
         await service.save_progress(
+            principal_id=entry.principal_id,
             library_entry_id=entry.id,
             document_id=document.id,
             update=ReadingProgressUpdate(
@@ -198,11 +220,13 @@ async def test_bookmark_is_idempotent_and_removable(session: AsyncSession) -> No
     create = BookmarkCreate(section_id=sections[0].id, char_offset=3, label="Return here")
 
     first = await service.add_bookmark(
+        principal_id=entry.principal_id,
         library_entry_id=entry.id,
         document_id=document.id,
         create=create,
     )
     second = await service.add_bookmark(
+        principal_id=entry.principal_id,
         library_entry_id=entry.id,
         document_id=document.id,
         create=create,
@@ -216,12 +240,14 @@ async def test_bookmark_is_idempotent_and_removable(session: AsyncSession) -> No
     assert bookmark_count == 1
 
     await service.remove_bookmark(
+        principal_id=entry.principal_id,
         library_entry_id=entry.id,
         document_id=document.id,
         bookmark_id=first.bookmark_id,
     )
     with pytest.raises(ReaderBookmarkNotFound):
         await service.remove_bookmark(
+            principal_id=entry.principal_id,
             library_entry_id=entry.id,
             document_id=document.id,
             bookmark_id=first.bookmark_id,

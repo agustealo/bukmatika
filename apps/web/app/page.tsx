@@ -8,7 +8,10 @@ export default function Home() {
           <span className="brand-mark" aria-hidden="true">B</span>
           <span>Bukmatika</span>
         </a>
-        <span className="status-pill">Open-book discovery engine</span>
+        <nav className="top-nav" aria-label="Primary navigation">
+          <a href="/" aria-current="page">Discover</a>
+          <a href="/library">Library</a>
+        </nav>
       </header>
 
       <section className="hero">

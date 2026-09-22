@@ -19,6 +19,7 @@ class ReadingStateResponse(BaseModel):
     status: str
     progress_fraction: float = Field(ge=0, le=1)
     section_id: UUID | None
+    section_ordinal: int | None = Field(default=None, ge=0)
     char_offset: int | None = Field(default=None, ge=0)
     locator: dict[str, Any]
 

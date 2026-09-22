@@ -15,6 +15,7 @@ dependencies = [
   "psycopg[binary,pool]>=3.3.6,<4",
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.10,<3",
+  "pypdf>=6.19,<7",
   "sqlalchemy[asyncio]>=2.0.54,<2.1",
   "structlog>=25,<26",
   "tenacity>=9,<10",

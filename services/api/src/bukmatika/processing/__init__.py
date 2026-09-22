@@ -1,8 +1,11 @@
 from bukmatika.processing.domain import DocumentResponse, DocumentSearchResponse
 from bukmatika.processing.parsers import (
     DocumentParseError,
+    DocumentRequiresOCR,
+    EpubDocumentParser,
     HtmlDocumentParser,
     ParserRegistry,
+    PdfDocumentParser,
     TextDocumentParser,
     UnsupportedDocumentFormat,
 )
@@ -20,10 +23,13 @@ __all__ = [
     "AssetNotStored",
     "DocumentParseError",
     "DocumentProcessingService",
+    "DocumentRequiresOCR",
     "DocumentResponse",
     "DocumentSearchResponse",
+    "EpubDocumentParser",
     "HtmlDocumentParser",
     "ParserRegistry",
+    "PdfDocumentParser",
     "ProcessedDocumentNotFound",
     "ProcessingAssetNotFound",
     "ProcessingSourceChanged",

@@ -45,10 +45,13 @@ from bukmatika.processing import (
     AssetNotStored,
     DocumentParseError,
     DocumentProcessingService,
+    DocumentRequiresOCR,
     DocumentResponse,
     DocumentSearchResponse,
+    EpubDocumentParser,
     HtmlDocumentParser,
     ParserRegistry,
+    PdfDocumentParser,
     ProcessedDocumentNotFound,
     ProcessingAssetNotFound,
     ProcessingSourceChanged,
@@ -110,7 +113,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.acquisition_queue = AcquisitionQueueService(settings)
     app.state.document_processing = DocumentProcessingService(
-        ParserRegistry((TextDocumentParser(), HtmlDocumentParser())),
+        ParserRegistry(
+            (
+                TextDocumentParser(),
+                HtmlDocumentParser(),
+                PdfDocumentParser(),
+                EpubDocumentParser(),
+            )
+        ),
         object_store,
         settings,
     )
@@ -328,6 +338,11 @@ async def process_asset(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"code": "UNSUPPORTED_DOCUMENT_FORMAT"},
+        ) from exc
+    except DocumentRequiresOCR as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "DOCUMENT_REQUIRES_OCR"},
         ) from exc
     except DocumentParseError as exc:
         raise HTTPException(

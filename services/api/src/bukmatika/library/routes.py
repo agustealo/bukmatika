@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.library.domain import LibraryItemResponse, LibraryResponse, WorkDossierResponse
@@ -70,13 +70,10 @@ async def work_dossier(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work not found") from exc
 
 
-@router.get(
-    "/dossiers/source/{provider}/{provider_record_id:path}",
-    response_model=WorkDossierResponse,
-)
+@router.get("/dossiers/source", response_model=WorkDossierResponse)
 async def source_dossier(
-    provider: str,
-    provider_record_id: str,
+    provider: Annotated[str, Query(min_length=1, max_length=64)],
+    record_id: Annotated[str, Query(min_length=1, max_length=2048)],
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[LibraryService, Depends(library_service)],
 ) -> WorkDossierResponse:
@@ -84,7 +81,7 @@ async def source_dossier(
         return await service.dossier_for_source(
             principal_id=identity.principal_id,
             provider=provider,
-            provider_record_id=provider_record_id,
+            provider_record_id=record_id,
         )
     except DossierNotFound as exc:
         raise HTTPException(

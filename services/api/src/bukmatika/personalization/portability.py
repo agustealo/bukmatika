@@ -144,7 +144,8 @@ class PersonalizationPortabilityService:
 
     async def reset(self, *, principal_id: UUID) -> PersonalizationResetResponse:
         async with self._session_scope() as database_session:
-            result = await PersonalizationPortabilityRepository(database_session).reset(principal_id)
+            repository = PersonalizationPortabilityRepository(database_session)
+            result = await repository.reset(principal_id)
             return PersonalizationResetResponse(
                 reset_at=result.reset_at,
                 user_model_id=result.user_model.id,

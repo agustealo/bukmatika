@@ -16,6 +16,7 @@ from bukmatika.persistence.personalization_models import (
 )
 from bukmatika.persistence.personalization_read import (
     ActivityRow,
+    ModelActivityRow,
     PersonalizationReadRepository,
     PreferenceEvidenceRow,
 )
@@ -83,9 +84,14 @@ class PersonalizationControlService:
                 principal_id=principal_id,
                 limit=activity_limit,
             )
+            decision_ids = [row.decision.id for row in activity_rows]
             activity_outcomes = await reads.outcomes_for_decisions(
                 principal_id=principal_id,
-                decision_ids=[row.decision.id for row in activity_rows],
+                decision_ids=decision_ids,
+            )
+            model_activity = await reads.model_activity_for_decisions(
+                principal_id=principal_id,
+                decision_ids=decision_ids,
             )
             recent_outcomes = await reads.recent_outcomes(
                 principal_id=principal_id,
@@ -100,7 +106,11 @@ class PersonalizationControlService:
                 explicit_preferences=explicit,
                 inferred_preferences=inferred,
                 active_goals=[_goal_response(goal) for goal in goals],
-                recent_activity=_activity_items(activity_rows, activity_outcomes),
+                recent_activity=_activity_items(
+                    activity_rows,
+                    activity_outcomes,
+                    model_activity,
+                ),
                 recent_outcomes=[_outcome_response(outcome) for outcome in recent_outcomes],
             )
 
@@ -113,11 +123,18 @@ class PersonalizationControlService:
         async with self._session_scope() as database_session:
             reads = PersonalizationReadRepository(database_session)
             rows = await reads.recent_activity(principal_id=principal_id, limit=limit)
+            decision_ids = [row.decision.id for row in rows]
             outcomes = await reads.outcomes_for_decisions(
                 principal_id=principal_id,
-                decision_ids=[row.decision.id for row in rows],
+                decision_ids=decision_ids,
             )
-            return ActivityLedgerResponse(items=_activity_items(rows, outcomes))
+            model_activity = await reads.model_activity_for_decisions(
+                principal_id=principal_id,
+                decision_ids=decision_ids,
+            )
+            return ActivityLedgerResponse(
+                items=_activity_items(rows, outcomes, model_activity)
+            )
 
 
 def _evidence_by_claim(
@@ -190,17 +207,23 @@ def _outcome_response(outcome: OutcomeEvent) -> ActivityOutcomeResponse:
 def _activity_items(
     rows: list[ActivityRow],
     outcomes: list[OutcomeEvent],
+    model_activity: list[ModelActivityRow],
 ) -> list[ActivityLedgerItem]:
     outcomes_by_decision: dict[UUID, list[OutcomeEvent]] = defaultdict(list)
     for outcome in outcomes:
         if outcome.action_decision_id is not None:
             outcomes_by_decision[outcome.action_decision_id].append(outcome)
 
+    model_by_decision: dict[UUID, ModelActivityRow] = {}
+    for model_event in model_activity:
+        model_by_decision[model_event.decision_id] = model_event
+
     return [
         _activity_item(
             plan=row.plan,
             decision=row.decision,
             outcomes=outcomes_by_decision.get(row.decision.id, []),
+            model_activity=model_by_decision.get(row.decision.id),
         )
         for row in rows
     ]
@@ -211,6 +234,7 @@ def _activity_item(
     plan: Plan,
     decision: ActionDecision,
     outcomes: list[OutcomeEvent],
+    model_activity: ModelActivityRow | None,
 ) -> ActivityLedgerItem:
     rendered_outcomes = [_outcome_response(outcome) for outcome in outcomes]
     return ActivityLedgerItem(
@@ -229,8 +253,8 @@ def _activity_item(
         evaluated_at=decision.evaluated_at,
         outcomes=rendered_outcomes,
         latest_outcome=rendered_outcomes[-1].outcome if rendered_outcomes else None,
-        model_provider=None,
-        model_name=None,
+        model_provider=model_activity.provider if model_activity is not None else None,
+        model_name=model_activity.model if model_activity is not None else None,
     )
 
 

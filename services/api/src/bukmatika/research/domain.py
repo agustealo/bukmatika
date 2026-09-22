@@ -2,7 +2,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ResearchSearchRequest(BaseModel):
@@ -94,7 +94,16 @@ class GroundedClaimDraft(BaseModel):
 
 
 class GroundedAnswerDraft(BaseModel):
-    claims: list[GroundedClaimDraft] = Field(min_length=1, max_length=10)
+    claims: list[GroundedClaimDraft] = Field(default_factory=list, max_length=10)
+    insufficient_evidence: bool = False
+
+    @model_validator(mode="after")
+    def validate_evidence_state(self) -> "GroundedAnswerDraft":
+        if self.insufficient_evidence and self.claims:
+            raise ValueError("Insufficient-evidence responses cannot include claims")
+        if not self.insufficient_evidence and not self.claims:
+            raise ValueError("Grounded responses require at least one cited claim")
+        return self
 
 
 class GroundedCitationResponse(BaseModel):
@@ -122,6 +131,7 @@ class GroundedClaimResponse(BaseModel):
 class GroundedAnswerStatus(StrEnum):
     GROUNDED = "grounded"
     NO_EVIDENCE = "no_evidence"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
 
 
 class GroundedAnswerResponse(BaseModel):

@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from uuid import UUID
@@ -24,6 +25,38 @@ from bukmatika.research.domain import (
 )
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+
+_GROUNDING_STOP_WORDS = frozenset(
+    {
+        "about",
+        "book",
+        "chapter",
+        "could",
+        "discuss",
+        "discusses",
+        "does",
+        "explain",
+        "from",
+        "have",
+        "how",
+        "passage",
+        "said",
+        "says",
+        "show",
+        "shows",
+        "source",
+        "text",
+        "that",
+        "this",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "would",
+    }
+)
 
 
 class ResearchEvidenceReferenceInvalid(ValueError):
@@ -93,7 +126,7 @@ class ResearchService:
                 await repository.search_owned_passages(
                     principal_id=principal_id,
                     library_entry_ids=request.library_entry_ids,
-                    query=request.question,
+                    query=_grounding_search_query(request.question),
                     limit=request.related_limit,
                 )
                 if request.related_limit > 0
@@ -171,6 +204,22 @@ class ResearchService:
                     "Grounded answer references unknown evidence IDs: " + ", ".join(unknown)
                 )
         return answer
+
+
+def _grounding_search_query(question: str) -> str:
+    tokens = re.findall(r"[\w'-]{3,32}", question.casefold())
+    selected: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        if token in _GROUNDING_STOP_WORDS or token in seen:
+            continue
+        seen.add(token)
+        selected.append(token)
+        if len(selected) == 5:
+            break
+    if not selected:
+        return " ".join(question.split())
+    return " OR ".join(selected)
 
 
 def _passage_response(match: ResearchSearchMatch) -> ResearchPassageResponse:

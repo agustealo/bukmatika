@@ -24,7 +24,6 @@ from bukmatika.persistence.personalization_models import (
     Plan,
     PreferenceClaim,
     PreferenceClaimEvidence,
-    UserModel,
 )
 from bukmatika.persistence.reader_models import ReadingState
 from bukmatika.personalization.control import PersonalizationControlService

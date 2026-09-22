@@ -29,7 +29,7 @@ from bukmatika.persistence.models import Asset, Edition, LibraryEntry, Principal
 from bukmatika.persistence.personalization import PersonalizationRepository
 from bukmatika.persistence.personalization_models import ActionDecision, Plan
 from bukmatika.persistence.plans import PlanRepository
-from bukmatika.personalization.domain import ContextManifest, ContextTask
+from bukmatika.personalization.domain import ContextLibraryEntry, ContextManifest, ContextTask
 from bukmatika.research import ResearchService
 
 
@@ -146,7 +146,21 @@ async def _persist_plan(
     return plan
 
 
-def _context(*capabilities: CapabilityName) -> ContextManifest:
+def _library_context(entry: LibraryEntry, document: Document) -> ContextLibraryEntry:
+    return ContextLibraryEntry(
+        library_entry_id=entry.id,
+        work_id=entry.work_id,
+        edition_id=entry.edition_id,
+        title="Selected execution test book",
+        document_ids=[document.id],
+        inclusion_reason="Explicitly selected for this research context.",
+    )
+
+
+def _context(
+    *capabilities: CapabilityName,
+    library_entries: list[ContextLibraryEntry] | None = None,
+) -> ContextManifest:
     return ContextManifest(
         task=ContextTask.RESEARCH,
         ai_enabled=True,
@@ -155,7 +169,7 @@ def _context(*capabilities: CapabilityName) -> ContextManifest:
         model_context_ready=True,
         preferences=[],
         goal=None,
-        library_entries=[],
+        library_entries=library_entries or [],
         available_capabilities=[capability.value for capability in capabilities],
         exclusion_reasons=[],
     )
@@ -199,7 +213,10 @@ async def test_executes_real_research_service_with_exact_citation_and_is_repeata
     plan = await _persist_plan(
         session,
         principal_id=principal.id,
-        context=_context(CapabilityName.RESEARCH_SEARCH),
+        context=_context(
+            CapabilityName.RESEARCH_SEARCH,
+            library_entries=[_library_context(entry, document)],
+        ),
         proposal=PlanProposal(summary="Search owned books.", steps=[_research_step(entry.id)]),
     )
     coordinator = _coordinator(session)
@@ -227,6 +244,43 @@ async def test_executes_real_research_service_with_exact_citation_and_is_repeata
     assert passage["section_id"] == str(section.id)
     assert passage["chunk_id"] == str(chunk.id)
     assert passage["locator"] == {"page": 1, "section": "navigation"}
+
+
+async def test_research_cannot_widen_beyond_persisted_context_selection(
+    session: AsyncSession,
+) -> None:
+    principal = await _principal(session, "context-scope")
+    selected_entry, selected_document, _, _ = await _seed_research_book(
+        session,
+        principal=principal,
+        suffix="selected",
+        text="Selected maritime evidence is part of the model context.",
+    )
+    unselected_entry, _, _, _ = await _seed_research_book(
+        session,
+        principal=principal,
+        suffix="unselected",
+        text="Unselected maritime evidence is owned but outside the model context.",
+    )
+    plan = await _persist_plan(
+        session,
+        principal_id=principal.id,
+        context=_context(
+            CapabilityName.RESEARCH_SEARCH,
+            library_entries=[_library_context(selected_entry, selected_document)],
+        ),
+        proposal=PlanProposal(
+            summary="Attempt to widen the selected research corpus.",
+            steps=[_research_step(unselected_entry.id)],
+        ),
+    )
+
+    with pytest.raises(CapabilityArgumentsInvalid, match="persisted context"):
+        await _coordinator(session).execute(
+            principal_id=principal.id,
+            plan_id=plan.id,
+            step_id="research",
+        )
 
 
 async def test_cannot_execute_another_principals_plan(session: AsyncSession) -> None:

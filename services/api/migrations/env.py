@@ -4,7 +4,12 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from bukmatika.config import get_settings
-from bukmatika.persistence import document_models, identity_models, reader_models
+from bukmatika.persistence import (
+    document_models,
+    identity_models,
+    personalization_models,
+    reader_models,
+)
 
 config = context.config
 
@@ -15,6 +20,7 @@ config.set_main_option("sqlalchemy.url", get_settings().database_url)
 _registered_models = (
     document_models.Document,
     identity_models.PrincipalSession,
+    personalization_models.UserModel,
     reader_models.ReadingState,
 )
 target_metadata = _registered_models[0].metadata

@@ -4,12 +4,13 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 
 ## Current engineering checkpoint - 2026-09-22
 
-- Base entering the current slice: `main@67fe0d78b3dccd260bec69638961fccbd65f9a3d`.
-- Post-merge Quality #165 passed API Ruff, strict MyPy, Alembic migrations, the full PostgreSQL suite, web typecheck, and production web build.
-- Grounded reader research is live behind the canonical `ModelGateway` with a loopback-only Ollama provider, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, and a public real-model smoke command.
-- Active slice: add a rollback-only release-proof command that seeds canonical PostgreSQL research evidence, executes the real grounded synthesis path against the configured local model, verifies citations/plan/audit/ledger evidence, and proves the synthetic data was removed.
-- The proof command existing is not proof that an installed model passed it. Phase 5 stays open until the command is actually executed successfully against a real local model and that release-candidate result is recorded.
-- Do not advance to delegated autonomy merely because local synthesis works. Consumer-editable setup, a recorded real grounded-answer runtime proof, and the remaining Phase 5 research surfaces come first.
+- Base entering the current slice: `main@031d7528281cf7fa78c66b52f260d4347d878cc7` after merged PR #36.
+- PR #36 exact head `f3f9d0d606450b3d1208e10758b0c2300701050b` passed Quality #168 before merge, including API Ruff, strict MyPy, Alembic migrations, the full PostgreSQL suite, web typecheck, and production web build.
+- Grounded reader research is live behind the canonical `ModelGateway` with a loopback-only Ollama provider, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, a public real-model smoke command, and a rollback-only grounded-runtime proof command.
+- Active slice: make local model selection consumer-editable without turning provider routing into mutable browser state. Profile selection is principal-owned; Ollama address/timeouts remain installation-controlled and loopback-only.
+- Consumer setup can inherit the installation default, disable model use for one profile, or select an installed Ollama model without API restart. Installed-model discovery is metadata-only and AI-off mode performs zero runtime probes.
+- The grounded proof command existing is not proof that an installed model passed it. Phase 5 stays open until the command is actually executed successfully against a real local model and that exact release-candidate result is recorded.
+- Do not advance to delegated autonomy merely because local synthesis works. A recorded real grounded-answer runtime proof and the remaining Phase 5 research surfaces come first.
 
 ## Phase 0 - Foundation
 
@@ -98,7 +99,7 @@ Goal: introduce one bounded AI orchestration system that becomes more useful thr
 - [x] AI activity ledger.
 - [x] Local provider readiness contract distinguishing configuration from actual runtime/model readiness.
 - [x] Consumer-facing runtime status and recovery guidance.
-- [ ] Consumer-editable local model configuration/setup flow.
+- [x] Consumer-editable local model configuration/setup flow.
 - [x] Real-runtime smoke command requiring readiness plus actual structured model generation.
 - [x] Transactional grounded-runtime proof command over canonical persisted evidence, plan/audit/ledger verification, and rollback validation.
 - [ ] Recorded successful real local-runtime grounded-answer release proof against an installed model.
@@ -134,6 +135,7 @@ Goal: introduce one bounded AI orchestration system that becomes more useful thr
 - [ ] Delegated tasks.
 - [x] Activity ledger.
 - [x] Local provider/model readiness and recovery surface.
+- [x] Per-profile local model selection.
 - [ ] Per-feature autonomy controls.
 - [x] Export/delete personalization data.
 - [x] Disable AI while preserving normal library operation.
@@ -152,7 +154,7 @@ Acceptance:
 Phase 6 remains closed until all of the following are true:
 
 1. the local provider reports actual runtime/model readiness rather than configuration presence;
-2. a consumer can understand and recover from unconfigured, runtime-offline, invalid-runtime, and missing-model states;
+2. a consumer can understand, configure, and recover from unconfigured, runtime-offline, invalid-runtime, and missing-model states without gaining control over provider routing;
 3. the reader falls back to ordinary evidence retrieval if readiness changes between status inspection and execution;
 4. one real installed Ollama model completes the grounded-answer path against canonical persisted evidence, with the proof result recorded for the exact release candidate;
 5. citation validation, AI-off behavior, ownership isolation, privacy minimization, activity-ledger projection, and rollback-clean proof data remain green on the exact release candidate;

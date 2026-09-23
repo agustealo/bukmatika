@@ -37,6 +37,7 @@ class SemanticEventType(StrEnum):
     RESEARCH_EVIDENCE_BUILT = "research.evidence_built"
     AI_MODEL_COMPLETED = "ai.model_completed"
     AI_MODEL_FAILED = "ai.model_failed"
+    ACTION_APPROVAL_DECIDED = "ai.action_approval_decided"
     READER_OPENED = "reader.opened"
     READING_PROGRESS_UPDATED = "reader.progress_updated"
     BOOKMARK_ADDED = "reader.bookmark_added"

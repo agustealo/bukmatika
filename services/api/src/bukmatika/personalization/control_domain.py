@@ -49,6 +49,10 @@ class ActivityLedgerItem(BaseModel):
     decision_reason: str
     policy_version: str
     approval_required: bool
+    approval_status: str | None = None
+    approval_decided_at: datetime | None = None
+    execution_completed: bool = False
+    executed_at: datetime | None = None
     plan_created_at: datetime
     evaluated_at: datetime
     outcomes: list[ActivityOutcomeResponse]

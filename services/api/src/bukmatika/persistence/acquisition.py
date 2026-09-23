@@ -29,7 +29,12 @@ class AcquisitionRepository:
         self._session = session
 
     async def get_asset(self, asset_id: UUID) -> Asset | None:
-        return await self._session.get(Asset, asset_id)
+        # Asset-scoped acquisition/rights mutation must share one lock authority.
+        # Portable byte import also locks this row before canonical retention, so
+        # a newly-recorded rights decision cannot race that retention boundary.
+        return await self._session.scalar(
+            select(Asset).where(Asset.id == asset_id).with_for_update()
+        )
 
     async def get_acquisition(self, acquisition_id: UUID) -> Acquisition | None:
         return await self._session.get(Acquisition, acquisition_id)
@@ -175,6 +180,15 @@ class AcquisitionRepository:
         jurisdiction: str,
         policy_version: str,
     ) -> RightsDecision:
+        # Rights changes and byte retention serialize on the exact same Asset row.
+        # Re-locking is harmless when the caller already owns the lock and makes
+        # direct repository use fail closed instead of bypassing the authority.
+        asset = await self._session.scalar(
+            select(Asset).where(Asset.id == asset_id).with_for_update()
+        )
+        if asset is None:
+            raise ValueError(f"Asset {asset_id} does not exist")
+
         decision = RightsDecision(
             subject_type="asset",
             subject_id=asset_id,

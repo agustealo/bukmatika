@@ -475,7 +475,9 @@ class ExecutionCoordinator:
             }:
                 raise ActionExecutionDenied("Current action policy does not permit execution")
             if spec.risk is CapabilityRisk.CONSEQUENTIAL:
-                raise ActionExecutionDenied("Consequential actions are not executable in this slice")
+                raise ActionExecutionDenied(
+                    "Consequential actions are not executable in this slice"
+                )
             if state.step.capability is not CapabilityName.PREFERENCES_PROPOSE:
                 raise ActionExecutionDenied("Only reversible preference proposals are executable")
             if not spec.reversible:

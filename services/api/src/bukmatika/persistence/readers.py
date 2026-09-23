@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence.document_models import Document, DocumentSection
 from bukmatika.persistence.models import Asset, Edition, LibraryEntry
-from bukmatika.persistence.reader_models import Bookmark, ReadingState
+from bukmatika.persistence.reader_models import Bookmark, Highlight, ReadingState
 
 
 class ReaderAccessDenied(LookupError):
@@ -23,11 +23,21 @@ class ReaderBookmarkNotFound(LookupError):
     pass
 
 
+class ReaderHighlightNotFound(LookupError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class ReaderAccess:
     library_entry_id: UUID
     principal_id: UUID
     document: Document
+
+
+@dataclass(frozen=True, slots=True)
+class ReaderHighlightRecord:
+    highlight: Highlight
+    section: DocumentSection
 
 
 class ReaderRepository:
@@ -119,6 +129,27 @@ class ReaderRepository:
             ).all()
         )
 
+    async def highlights_for(
+        self,
+        library_entry_id: UUID,
+        document_id: UUID,
+    ) -> list[ReaderHighlightRecord]:
+        state = await self.state_for(library_entry_id, document_id)
+        if state is None:
+            return []
+        rows = (
+            await self._session.execute(
+                select(Highlight, DocumentSection)
+                .join(DocumentSection, DocumentSection.id == Highlight.section_id)
+                .where(Highlight.reading_state_id == state.id)
+                .order_by(Highlight.created_at, Highlight.id)
+            )
+        ).all()
+        return [
+            ReaderHighlightRecord(highlight=highlight, section=section)
+            for highlight, section in rows
+        ]
+
     async def save_progress(
         self,
         *,
@@ -177,14 +208,11 @@ class ReaderRepository:
             section_id=section_id,
             char_offset=char_offset,
         )
-        state = await self.state_for(access.library_entry_id, access.document.id)
-        if state is None:
-            state = await self.save_progress(
-                access=access,
-                section_id=section.id,
-                char_offset=char_offset,
-                progress_fraction=0.0,
-            )
+        state = await self._state_for_write(
+            access=access,
+            section=section,
+            char_offset=char_offset,
+        )
         statement = (
             insert(Bookmark)
             .values(
@@ -226,6 +254,123 @@ class ReaderRepository:
         if deleted_id is None:
             raise ReaderBookmarkNotFound("Bookmark does not exist")
 
+    async def add_highlight(
+        self,
+        *,
+        access: ReaderAccess,
+        section_id: UUID,
+        char_start: int,
+        char_end: int,
+        note: str | None,
+    ) -> ReaderHighlightRecord:
+        section = await self._validated_range(
+            document_id=access.document.id,
+            section_id=section_id,
+            char_start=char_start,
+            char_end=char_end,
+        )
+        state = await self._state_for_write(
+            access=access,
+            section=section,
+            char_offset=char_start,
+        )
+        statement = (
+            insert(Highlight)
+            .values(
+                reading_state_id=state.id,
+                section_id=section.id,
+                char_start=char_start,
+                char_end=char_end,
+                locator=section.locator,
+                note=note,
+            )
+            .on_conflict_do_update(
+                constraint="uq_highlight_range",
+                set_={
+                    "note": note,
+                    "locator": section.locator,
+                    "updated_at": datetime.now(UTC),
+                },
+            )
+            .returning(Highlight)
+        )
+        highlight = (await self._session.execute(statement)).scalar_one()
+        return ReaderHighlightRecord(highlight=highlight, section=section)
+
+    async def update_highlight_note(
+        self,
+        *,
+        access: ReaderAccess,
+        highlight_id: UUID,
+        note: str | None,
+    ) -> ReaderHighlightRecord:
+        record = await self._highlight_record(access=access, highlight_id=highlight_id)
+        record.highlight.note = note
+        record.highlight.updated_at = datetime.now(UTC)
+        await self._session.flush()
+        return record
+
+    async def remove_highlight(
+        self,
+        *,
+        access: ReaderAccess,
+        highlight_id: UUID,
+    ) -> None:
+        state = await self.state_for(access.library_entry_id, access.document.id)
+        if state is None:
+            raise ReaderHighlightNotFound("Highlight does not exist")
+        deleted_id = await self._session.scalar(
+            delete(Highlight)
+            .where(
+                Highlight.id == highlight_id,
+                Highlight.reading_state_id == state.id,
+            )
+            .returning(Highlight.id)
+        )
+        if deleted_id is None:
+            raise ReaderHighlightNotFound("Highlight does not exist")
+
+    async def _highlight_record(
+        self,
+        *,
+        access: ReaderAccess,
+        highlight_id: UUID,
+    ) -> ReaderHighlightRecord:
+        state = await self.state_for(access.library_entry_id, access.document.id)
+        if state is None:
+            raise ReaderHighlightNotFound("Highlight does not exist")
+        row = (
+            await self._session.execute(
+                select(Highlight, DocumentSection)
+                .join(DocumentSection, DocumentSection.id == Highlight.section_id)
+                .where(
+                    Highlight.id == highlight_id,
+                    Highlight.reading_state_id == state.id,
+                )
+            )
+        ).one_or_none()
+        if row is None:
+            raise ReaderHighlightNotFound("Highlight does not exist")
+        highlight, section = row
+        return ReaderHighlightRecord(highlight=highlight, section=section)
+
+    async def _state_for_write(
+        self,
+        *,
+        access: ReaderAccess,
+        section: DocumentSection,
+        char_offset: int,
+    ) -> ReadingState:
+        state = await self.state_for(access.library_entry_id, access.document.id)
+        if state is not None:
+            return state
+        return await self.save_progress(
+            access=access,
+            section_id=section.id,
+            char_offset=char_offset,
+            progress_fraction=0.0,
+        )
+
     async def _validated_section(
         self,
         *,
@@ -233,6 +378,25 @@ class ReaderRepository:
         section_id: UUID,
         char_offset: int,
     ) -> DocumentSection:
+        section = await self._section(document_id=document_id, section_id=section_id)
+        if char_offset < 0 or char_offset > len(section.text):
+            raise ReaderPositionInvalid("Reader character offset is outside the section text")
+        return section
+
+    async def _validated_range(
+        self,
+        *,
+        document_id: UUID,
+        section_id: UUID,
+        char_start: int,
+        char_end: int,
+    ) -> DocumentSection:
+        section = await self._section(document_id=document_id, section_id=section_id)
+        if char_start < 0 or char_end <= char_start or char_end > len(section.text):
+            raise ReaderPositionInvalid("Highlight range is outside the section text")
+        return section
+
+    async def _section(self, *, document_id: UUID, section_id: UUID) -> DocumentSection:
         section = await self._session.scalar(
             select(DocumentSection).where(
                 DocumentSection.id == section_id,
@@ -241,8 +405,6 @@ class ReaderRepository:
         )
         if section is None:
             raise ReaderPositionInvalid("Reader position references a section outside the document")
-        if char_offset < 0 or char_offset > len(section.text):
-            raise ReaderPositionInvalid("Reader character offset is outside the section text")
         return section
 
 

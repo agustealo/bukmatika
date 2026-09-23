@@ -134,50 +134,56 @@ class LibraryPortabilityImportApplier:
         summary = LibraryPortabilityImportApplySummary()
 
         collection_ids: dict[UUID, UUID] = {}
-        for portable, target in zip(manifest.collections, plan.collections, strict=True):
+        for portable_collection, target in zip(
+            manifest.collections,
+            plan.collections,
+            strict=True,
+        ):
             if target.action == "match":
-                collection_ids[portable.source_collection_id] = self._destination_id(target)
+                collection_ids[portable_collection.source_collection_id] = self._destination_id(
+                    target
+                )
                 continue
             created = await organization.create_collection(
                 principal_id=principal_id,
-                name=portable.name,
-                normalized_name=normalize_text(portable.name),
-                description=portable.description,
+                name=portable_collection.name,
+                normalized_name=normalize_text(portable_collection.name),
+                description=portable_collection.description,
             )
-            collection_ids[portable.source_collection_id] = created.id
+            collection_ids[portable_collection.source_collection_id] = created.id
             summary.collections_created += 1
 
         tag_ids: dict[UUID, UUID] = {}
-        for portable, target in zip(manifest.tags, plan.tags, strict=True):
+        for portable_tag, target in zip(manifest.tags, plan.tags, strict=True):
             if target.action == "match":
-                tag_ids[portable.source_tag_id] = self._destination_id(target)
+                tag_ids[portable_tag.source_tag_id] = self._destination_id(target)
                 continue
-            created = await apply_repository.create_tag(
+            created_tag = await apply_repository.create_tag(
                 principal_id=principal_id,
-                name=portable.name,
-                normalized_name=normalize_text(portable.name),
+                name=portable_tag.name,
+                normalized_name=normalize_text(portable_tag.name),
             )
-            tag_ids[portable.source_tag_id] = created.id
+            tag_ids[portable_tag.source_tag_id] = created_tag.id
             summary.tags_created += 1
 
         work_ids: dict[UUID, UUID] = {}
         edition_ids: dict[UUID, UUID] = {}
-        for portable, entry_plan in zip(manifest.entries, plan.entries, strict=True):
-            source_work_id = portable.work.source_work_id
+        for portable_entry, entry_plan in zip(manifest.entries, plan.entries, strict=True):
+            source_work_id = portable_entry.work.source_work_id
             work_id = work_ids.get(source_work_id)
             if work_id is None:
                 work_id = await self._resolve_work(
                     catalog,
                     apply_repository,
-                    portable=portable.work,
+                    portable=portable_entry.work,
                     target=entry_plan.work,
                     summary=summary,
                 )
                 work_ids[source_work_id] = work_id
 
             edition_id: UUID | None = None
-            if portable.edition is not None:
-                source_edition_id = portable.edition.source_edition_id
+            if portable_entry.edition is not None:
+                source_edition_id = portable_entry.edition.source_edition_id
                 edition_id = edition_ids.get(source_edition_id)
                 if edition_id is None:
                     if entry_plan.edition is None:
@@ -187,7 +193,7 @@ class LibraryPortabilityImportApplier:
                         catalog,
                         apply_repository,
                         work_id=work_id,
-                        portable=portable.edition,
+                        portable=portable_entry.edition,
                         target=entry_plan.edition,
                         summary=summary,
                     )
@@ -204,13 +210,13 @@ class LibraryPortabilityImportApplier:
                 if library_entry.id != expected:
                     raise RuntimeError("Planner/library entry resolution diverged during import")
 
-            for source_collection_id in portable.collection_ids:
+            for source_collection_id in portable_entry.collection_ids:
                 await organization.add_collection_entry(
                     principal_id=principal_id,
                     collection_id=collection_ids[source_collection_id],
                     library_entry_id=library_entry.id,
                 )
-            for source_tag_id in portable.tag_ids:
+            for source_tag_id in portable_entry.tag_ids:
                 await apply_repository.add_tag_entry(
                     library_entry_id=library_entry.id,
                     tag_id=tag_ids[source_tag_id],
@@ -221,26 +227,32 @@ class LibraryPortabilityImportApplier:
                 reader,
                 principal_id=principal_id,
                 library_entry_id=library_entry.id,
-                readings=portable.reading_states,
+                readings=portable_entry.reading_states,
                 entry_plan=entry_plan,
                 summary=summary,
             )
 
-        for portable, target in zip(manifest.smart_shelves, plan.smart_shelves, strict=True):
+        for portable_shelf, target in zip(
+            manifest.smart_shelves,
+            plan.smart_shelves,
+            strict=True,
+        ):
             if target.action == "match":
                 continue
             await organization.create_smart_shelf(
                 principal_id=principal_id,
-                name=portable.name,
-                normalized_name=normalize_text(portable.name),
-                description=portable.description,
-                reading_status=portable.reading_status,
+                name=portable_shelf.name,
+                normalized_name=normalize_text(portable_shelf.name),
+                description=portable_shelf.description,
+                reading_status=portable_shelf.reading_status,
                 collection_id=(
-                    collection_ids[portable.collection_id]
-                    if portable.collection_id is not None
+                    collection_ids[portable_shelf.collection_id]
+                    if portable_shelf.collection_id is not None
                     else None
                 ),
-                tag_id=tag_ids[portable.tag_id] if portable.tag_id is not None else None,
+                tag_id=(
+                    tag_ids[portable_shelf.tag_id] if portable_shelf.tag_id is not None else None
+                ),
             )
             summary.smart_shelves_created += 1
 

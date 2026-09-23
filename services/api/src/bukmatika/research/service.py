@@ -15,6 +15,7 @@ from bukmatika.persistence.research import (
     ResearchSelectionDenied,
 )
 from bukmatika.research.domain import (
+    MAX_RESEARCH_EVIDENCE_ITEMS,
     GroundedResearchAnswer,
     ResearchCompareRequest,
     ResearchCompareResponse,
@@ -191,28 +192,42 @@ class ResearchService:
                 selection_start=request.reader.selection_start,
                 selection_end=request.reader.selection_end,
             )
+            highlight_matches = await repository.highlight_passages(
+                principal_id=principal_id,
+                library_entry_ids=request.library_entry_ids,
+                highlight_ids=request.highlight_ids,
+            )
+            reserved_count = len(reader_matches) + len(highlight_matches)
+            if reserved_count > MAX_RESEARCH_EVIDENCE_ITEMS:
+                raise ResearchReaderPositionInvalid(
+                    "Reader and selected highlights exceed the evidence bundle budget"
+                )
+            related_limit = min(
+                request.related_limit,
+                MAX_RESEARCH_EVIDENCE_ITEMS - reserved_count,
+            )
             related_matches = (
                 await repository.search_owned_passages(
                     principal_id=principal_id,
                     library_entry_ids=request.library_entry_ids,
                     query=_grounding_search_query(request.question),
-                    limit=request.related_limit,
+                    limit=related_limit,
                 )
-                if request.related_limit > 0
+                if related_limit > 0
                 else []
             )
 
             evidence: list[ResearchEvidenceItem] = []
-            seen_chunks: set[UUID] = set()
+            covered_chunks: set[UUID] = set()
             reader_kind = (
                 ResearchEvidenceSourceKind.READER_SELECTION
                 if request.reader.selection_start is not None
                 else ResearchEvidenceSourceKind.READER_POSITION
             )
             for match in reader_matches:
-                if match.chunk_id in seen_chunks:
+                if match.chunk_id in covered_chunks:
                     continue
-                seen_chunks.add(match.chunk_id)
+                covered_chunks.add(match.chunk_id)
                 evidence.append(
                     _evidence_item(
                         match,
@@ -221,10 +236,20 @@ class ResearchService:
                         score=None,
                     )
                 )
+            for match in highlight_matches:
+                covered_chunks.add(match.chunk_id)
+                evidence.append(
+                    _evidence_item(
+                        match,
+                        evidence_id=f"E{len(evidence) + 1}",
+                        source_kind=ResearchEvidenceSourceKind.HIGHLIGHT_SELECTION,
+                        score=None,
+                    )
+                )
             for match in related_matches:
-                if match.chunk_id in seen_chunks:
+                if match.chunk_id in covered_chunks:
                     continue
-                seen_chunks.add(match.chunk_id)
+                covered_chunks.add(match.chunk_id)
                 evidence.append(
                     _evidence_item(
                         match,
@@ -248,7 +273,11 @@ class ResearchService:
                     "selected_library_entry_ids": [
                         str(entry_id) for entry_id in request.library_entry_ids
                     ],
+                    "selected_highlight_ids": [
+                        str(highlight_id) for highlight_id in request.highlight_ids
+                    ],
                     "reader_evidence_count": len(reader_matches),
+                    "highlight_evidence_count": len(highlight_matches),
                     "evidence_count": len(evidence),
                 },
             )
@@ -341,6 +370,7 @@ def _evidence_item(
     return ResearchEvidenceItem(
         evidence_id=evidence_id,
         source_kind=source_kind,
+        highlight_id=match.highlight_id,
         library_entry_id=match.context.library_entry_id,
         work_id=match.context.work_id,
         work_title=match.context.work_title,

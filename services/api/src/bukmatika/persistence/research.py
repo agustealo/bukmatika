@@ -8,8 +8,10 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from bukmatika.persistence.document_models import Document, DocumentChunk, DocumentSection
 from bukmatika.persistence.models import Asset, Edition, LibraryEntry, Work
+from bukmatika.persistence.reader_models import Highlight, ReadingState
 
 MAX_READER_SELECTION_CHUNKS = 8
+MAX_HIGHLIGHT_EVIDENCE_CHUNKS = 16
 
 
 class ResearchSelectionDenied(LookupError):
@@ -44,6 +46,7 @@ class ResearchSearchMatch:
     char_end: int
     text: str
     score: float
+    highlight_id: UUID | None = None
 
 
 class ResearchRepository:
@@ -218,6 +221,115 @@ class ResearchRepository:
                     score=0.0,
                 )
             )
+        return matches
+
+    async def highlight_passages(
+        self,
+        *,
+        principal_id: UUID,
+        library_entry_ids: list[UUID],
+        highlight_ids: list[UUID],
+    ) -> list[ResearchSearchMatch]:
+        if not highlight_ids:
+            return []
+
+        requested = set(highlight_ids)
+        rows = (
+            await self._session.execute(
+                select(Highlight, ReadingState, DocumentSection)
+                .join(ReadingState, ReadingState.id == Highlight.reading_state_id)
+                .join(LibraryEntry, LibraryEntry.id == ReadingState.library_entry_id)
+                .join(DocumentSection, DocumentSection.id == Highlight.section_id)
+                .where(
+                    Highlight.id.in_(requested),
+                    LibraryEntry.principal_id == principal_id,
+                    ReadingState.library_entry_id.in_(library_entry_ids),
+                    DocumentSection.document_id == ReadingState.document_id,
+                )
+            )
+        ).all()
+        by_highlight = {highlight.id: (highlight, state, section) for highlight, state, section in rows}
+        if set(by_highlight) != requested:
+            raise ResearchSelectionDenied("One or more selected highlights are unavailable")
+
+        contexts = await self.document_contexts(
+            principal_id=principal_id,
+            library_entry_ids=library_entry_ids,
+        )
+        context_by_path = {
+            (context.library_entry_id, context.document_id): context for context in contexts
+        }
+
+        matches: list[ResearchSearchMatch] = []
+        for highlight_id in highlight_ids:
+            highlight, state, section = by_highlight[highlight_id]
+            context = context_by_path.get((state.library_entry_id, state.document_id))
+            if context is None:
+                raise ResearchSelectionDenied("Selected highlight is outside the research selection")
+            if (
+                highlight.char_start < 0
+                or highlight.char_end <= highlight.char_start
+                or highlight.char_end > len(section.text)
+            ):
+                raise ResearchReaderPositionInvalid(
+                    "Selected highlight coordinates no longer match canonical section text"
+                )
+
+            chunks = list(
+                (
+                    await self._session.scalars(
+                        select(DocumentChunk)
+                        .where(
+                            DocumentChunk.document_id == state.document_id,
+                            DocumentChunk.section_id == section.id,
+                            DocumentChunk.char_start < highlight.char_end,
+                            DocumentChunk.char_end > highlight.char_start,
+                        )
+                        .order_by(DocumentChunk.ordinal)
+                    )
+                ).all()
+            )
+            if not chunks:
+                raise ResearchReaderPositionInvalid(
+                    "Selected highlight has no canonical evidence chunk"
+                )
+            if len(matches) + len(chunks) > MAX_HIGHLIGHT_EVIDENCE_CHUNKS:
+                raise ResearchReaderPositionInvalid(
+                    "Selected highlights span too many evidence chunks"
+                )
+
+            for chunk in chunks:
+                if (
+                    chunk.char_start < 0
+                    or chunk.char_end <= chunk.char_start
+                    or chunk.char_end > len(section.text)
+                ):
+                    raise ResearchReaderPositionInvalid(
+                        "Selected highlight intersects invalid canonical chunk coordinates"
+                    )
+                start = max(chunk.char_start, highlight.char_start)
+                end = min(chunk.char_end, highlight.char_end)
+                text_value = section.text[start:end]
+                if not text_value:
+                    raise ResearchReaderPositionInvalid(
+                        "Selected highlight produced empty canonical evidence"
+                    )
+                matches.append(
+                    ResearchSearchMatch(
+                        context=context,
+                        chunk_id=chunk.id,
+                        section_id=section.id,
+                        section_ordinal=section.ordinal,
+                        chunk_ordinal=chunk.ordinal,
+                        heading=section.heading,
+                        locator=section.locator,
+                        char_start=start,
+                        char_end=end,
+                        text=text_value,
+                        score=0.0,
+                        highlight_id=highlight.id,
+                    )
+                )
         return matches
 
     async def document_contexts(

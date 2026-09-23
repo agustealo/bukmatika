@@ -2,6 +2,11 @@
 
 import { useEffect, useState } from "react";
 
+import {
+  MAX_SELECTED_RESEARCH_HIGHLIGHTS,
+  publishResearchHighlightSelection,
+} from "../lib/research-highlight-selection";
+
 export type ReaderLocator = Record<string, string | number>;
 
 export type ReaderHighlight = {
@@ -43,14 +48,34 @@ export function ReaderAnnotations({
   const [selectionNote, setSelectionNote] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingNote, setEditingNote] = useState("");
+  const [researchHighlightIds, setResearchHighlightIds] = useState<string[]>([]);
 
   useEffect(() => {
     setSelectionNote("");
   }, [selection?.sectionId, selection?.charStart, selection?.charEnd]);
 
+  useEffect(() => {
+    const available = new Set(highlights.map((highlight) => highlight.highlight_id));
+    setResearchHighlightIds((current) => {
+      const next = current.filter((highlightId) => available.has(highlightId));
+      if (next.length !== current.length) publishResearchHighlightSelection(next);
+      return next;
+    });
+  }, [highlights]);
+
   function beginEdit(highlight: ReaderHighlight) {
     setEditingId(highlight.highlight_id);
     setEditingNote(highlight.note ?? "");
+  }
+
+  function toggleResearchHighlight(highlightId: string) {
+    setResearchHighlightIds((current) => {
+      const next = current.includes(highlightId)
+        ? current.filter((candidate) => candidate !== highlightId)
+        : [...current, highlightId];
+      publishResearchHighlightSelection(next);
+      return next;
+    });
   }
 
   return (
@@ -60,6 +85,12 @@ export function ReaderAnnotations({
       <p className="reader-annotation-hint">
         Select text inside one section to save an exact coordinate-backed highlight.
       </p>
+      {researchHighlightIds.length > 0 ? (
+        <p className="reader-annotation-hint" aria-live="polite">
+          {researchHighlightIds.length} saved highlight
+          {researchHighlightIds.length === 1 ? "" : "s"} pinned to the next research request.
+        </p>
+      ) : null}
 
       {selection ? (
         <div className="reader-selection-card" aria-label="Selected text annotation">
@@ -90,6 +121,9 @@ export function ReaderAnnotations({
         {highlights.map((highlight) => {
           const editing = editingId === highlight.highlight_id;
           const busy = busyKey === highlight.highlight_id;
+          const selectedForResearch = researchHighlightIds.includes(highlight.highlight_id);
+          const researchSelectionFull =
+            researchHighlightIds.length >= MAX_SELECTED_RESEARCH_HIGHLIGHTS && !selectedForResearch;
           return (
             <article className="reader-highlight-item" key={highlight.highlight_id}>
               <a href={`#reader-section-${highlight.section_id}`}>Open passage</a>
@@ -105,6 +139,14 @@ export function ReaderAnnotations({
                 <p className="reader-highlight-note">{highlight.note}</p>
               ) : null}
               <div className="reader-annotation-actions">
+                <button
+                  type="button"
+                  aria-pressed={selectedForResearch}
+                  disabled={researchSelectionFull}
+                  onClick={() => toggleResearchHighlight(highlight.highlight_id)}
+                >
+                  {selectedForResearch ? "Remove from research" : "Use in research"}
+                </button>
                 {editing ? (
                   <>
                     <button

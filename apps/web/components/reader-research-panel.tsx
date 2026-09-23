@@ -3,6 +3,11 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import {
+  MAX_SELECTED_RESEARCH_HIGHLIGHTS,
+  RESEARCH_HIGHLIGHT_SELECTION_EVENT,
+  type ResearchHighlightSelectionDetail,
+} from "../lib/research-highlight-selection";
 import styles from "./reader-research-panel.module.css";
 
 type ReaderLocator = Record<string, string | number>;
@@ -17,7 +22,8 @@ type ReaderResearchPanelProps = {
 
 type EvidenceItem = {
   evidence_id: string;
-  source_kind: "reader_position" | "reader_selection" | "related_passage";
+  source_kind: "reader_position" | "reader_selection" | "highlight_selection" | "related_passage";
+  highlight_id: string | null;
   library_entry_id: string;
   work_title: string;
   edition_title: string;
@@ -162,9 +168,11 @@ export function ReaderResearchPanel({
   const [answer, setAnswer] = useState<GroundedAnswer | null>(null);
   const [answerModel, setAnswerModel] = useState<string | null>(null);
   const [aiStatus, setAIStatus] = useState<AIStatus | null>(null);
+  const [highlightIds, setHighlightIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const activeSectionRef = useRef(sectionId);
+  const highlightSelectionRef = useRef("");
 
   useEffect(() => {
     let cancelled = false;
@@ -187,6 +195,22 @@ export function ReaderResearchPanel({
   }, []);
 
   useEffect(() => {
+    function onHighlightSelection(rawEvent: Event) {
+      const event = rawEvent as CustomEvent<ResearchHighlightSelectionDetail>;
+      const unique = [...new Set(event.detail?.highlightIds ?? [])].slice(
+        0,
+        MAX_SELECTED_RESEARCH_HIGHLIGHTS,
+      );
+      setHighlightIds(unique);
+    }
+
+    window.addEventListener(RESEARCH_HIGHLIGHT_SELECTION_EVENT, onHighlightSelection);
+    return () => {
+      window.removeEventListener(RESEARCH_HIGHLIGHT_SELECTION_EVENT, onHighlightSelection);
+    };
+  }, []);
+
+  useEffect(() => {
     activeSectionRef.current = sectionId;
     setBundle(null);
     setAnswer(null);
@@ -194,12 +218,21 @@ export function ReaderResearchPanel({
     setError(null);
   }, [sectionId]);
 
+  useEffect(() => {
+    highlightSelectionRef.current = highlightIds.join(",");
+    setBundle(null);
+    setAnswer(null);
+    setAnswerModel(null);
+    setError(null);
+  }, [highlightIds]);
+
   const canSynthesize = aiStatus?.ready === true && aiStatus.ai_enabled === true;
 
   async function research(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalized = question.trim();
     const requestedSectionId = sectionId;
+    const requestedHighlightKey = highlightSelectionRef.current;
     if (!requestedSectionId || !normalized) return;
 
     const requestBody = {
@@ -211,6 +244,7 @@ export function ReaderResearchPanel({
         char_offset: 0,
       },
       library_entry_ids: [libraryEntryId],
+      highlight_ids: highlightIds,
       related_limit: 6,
     };
     const requestInit = {
@@ -255,7 +289,10 @@ export function ReaderResearchPanel({
 
       if (usedSynthesis) {
         const payload = (await response.json()) as GroundedResearchResponse;
-        if (activeSectionRef.current === requestedSectionId) {
+        if (
+          activeSectionRef.current === requestedSectionId &&
+          highlightSelectionRef.current === requestedHighlightKey
+        ) {
           setBundle(payload.evidence);
           setAnswer(payload.answer);
           setAnswerModel(
@@ -264,12 +301,18 @@ export function ReaderResearchPanel({
         }
       } else {
         const payload = (await response.json()) as EvidenceBundle;
-        if (activeSectionRef.current === requestedSectionId) {
+        if (
+          activeSectionRef.current === requestedSectionId &&
+          highlightSelectionRef.current === requestedHighlightKey
+        ) {
           setBundle(payload);
         }
       }
     } catch (caught) {
-      if (activeSectionRef.current === requestedSectionId) {
+      if (
+        activeSectionRef.current === requestedSectionId &&
+        highlightSelectionRef.current === requestedHighlightKey
+      ) {
         setBundle(null);
         setAnswer(null);
         setAnswerModel(null);
@@ -288,6 +331,12 @@ export function ReaderResearchPanel({
         {sectionLocator ? locatorLabel(sectionLocator) : "Canonical reader position"}
       </p>
       <p className={styles.explanation}>{statusExplanation(aiStatus)}</p>
+      {highlightIds.length > 0 ? (
+        <p className={styles.position} aria-live="polite">
+          {highlightIds.length} saved highlight{highlightIds.length === 1 ? "" : "s"} pinned to this
+          request. Notes stay annotations and are not source evidence.
+        </p>
+      ) : null}
 
       <form className={styles.form} onSubmit={(event) => void research(event)}>
         <label htmlFor="reader-research-question">Research question</label>

@@ -4,7 +4,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, JsonValue
 
-
 type ReadingStatus = Literal["unread", "reading", "finished"]
 
 

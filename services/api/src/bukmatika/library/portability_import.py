@@ -405,7 +405,10 @@ class LibraryPortabilityImportPlanner:
                     target="document",
                     source_id=source.source_document_id,
                     action="skip",
-                    reason="No compatible local canonical document exists for a planned new identity",
+                    reason=(
+                        "No compatible local canonical document exists "
+                        "for a planned new identity"
+                    ),
                 ),
                 None,
             )
@@ -420,7 +423,10 @@ class LibraryPortabilityImportPlanner:
                     target="document",
                     source_id=source.source_document_id,
                     action="skip",
-                    reason="Book bytes/document are not present locally; metadata import remains valid",
+                    reason=(
+                        "Book bytes/document are not present locally; "
+                        "metadata import remains valid"
+                    ),
                 ),
                 None,
             )
@@ -577,7 +583,9 @@ class LibraryPortabilityImportPlanner:
         conflicts: list[PortableImportConflict],
     ) -> PortableImportTargetPlan:
         collection_plan = (
-            collection_by_source.get(shelf.collection_id) if shelf.collection_id is not None else None
+            collection_by_source.get(shelf.collection_id)
+            if shelf.collection_id is not None
+            else None
         )
         tag_plan = tag_by_source.get(shelf.tag_id) if shelf.tag_id is not None else None
         if shelf.collection_id is not None and collection_plan is None:
@@ -609,7 +617,9 @@ class LibraryPortabilityImportPlanner:
                 reason="No principal-owned normalized-name match",
             )
 
-        expected_collection = collection_plan.destination_id if collection_plan is not None else None
+        expected_collection = (
+            collection_plan.destination_id if collection_plan is not None else None
+        )
         expected_tag = tag_plan.destination_id if tag_plan is not None else None
         unresolved_reference = (
             collection_plan is not None and collection_plan.action == "create"

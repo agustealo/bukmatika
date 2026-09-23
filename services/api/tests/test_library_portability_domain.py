@@ -25,17 +25,19 @@ def test_portable_reading_state_rejects_noncanonical_status() -> None:
     now = datetime.now(UTC)
 
     with pytest.raises(ValidationError):
-        PortableReadingState(
-            source_reading_state_id=uuid4(),
-            document=_document(),
-            status="paused",
-            progress_fraction=0.5,
-            position=None,
-            last_read_at=now,
-            created_at=now,
-            updated_at=now,
-            bookmarks=[],
-            highlights=[],
+        PortableReadingState.model_validate(
+            {
+                "source_reading_state_id": uuid4(),
+                "document": _document().model_dump(),
+                "status": "paused",
+                "progress_fraction": 0.5,
+                "position": None,
+                "last_read_at": now,
+                "created_at": now,
+                "updated_at": now,
+                "bookmarks": [],
+                "highlights": [],
+            }
         )
 
 
@@ -43,15 +45,17 @@ def test_portable_smart_shelf_rejects_noncanonical_reading_status() -> None:
     now = datetime.now(UTC)
 
     with pytest.raises(ValidationError):
-        PortableSmartShelf(
-            source_smart_shelf_id=uuid4(),
-            name="Paused books",
-            description=None,
-            reading_status="paused",
-            collection_id=None,
-            tag_id=None,
-            created_at=now,
-            updated_at=now,
+        PortableSmartShelf.model_validate(
+            {
+                "source_smart_shelf_id": uuid4(),
+                "name": "Paused books",
+                "description": None,
+                "reading_status": "paused",
+                "collection_id": None,
+                "tag_id": None,
+                "created_at": now,
+                "updated_at": now,
+            }
         )
 
 
@@ -59,13 +63,15 @@ def test_portable_smart_shelf_requires_at_least_one_rule() -> None:
     now = datetime.now(UTC)
 
     with pytest.raises(ValidationError):
-        PortableSmartShelf(
-            source_smart_shelf_id=uuid4(),
-            name="Ruleless",
-            description=None,
-            reading_status=None,
-            collection_id=None,
-            tag_id=None,
-            created_at=now,
-            updated_at=now,
+        PortableSmartShelf.model_validate(
+            {
+                "source_smart_shelf_id": uuid4(),
+                "name": "Ruleless",
+                "description": None,
+                "reading_status": None,
+                "collection_id": None,
+                "tag_id": None,
+                "created_at": now,
+                "updated_at": now,
+            }
         )

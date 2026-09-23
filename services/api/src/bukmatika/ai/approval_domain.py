@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
 from bukmatika.ai.domain import CapabilityName, PlanStep
 
@@ -28,6 +28,24 @@ class ActionApprovalResponse(BaseModel):
     decision: UserApprovalDecision
     step_fingerprint: str
     decided_at: datetime
+
+
+class PendingActionApproval(BaseModel):
+    plan_id: UUID
+    action_decision_id: UUID
+    step_id: str
+    capability: CapabilityName
+    arguments: dict[str, JsonValue]
+    rationale: str
+    user_request: str
+    policy_reason: str
+    policy_version: str
+    step_fingerprint: str
+    evaluated_at: datetime
+
+
+class PendingActionApprovalResponse(BaseModel):
+    items: list[PendingActionApproval]
 
 
 class ActionApprovalNotFound(LookupError):

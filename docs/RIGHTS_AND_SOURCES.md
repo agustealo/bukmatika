@@ -18,6 +18,19 @@ A URL ending in `.pdf` or `.epub`, a search result containing the word â€œfree,â
 | `unknown` | Evidence is insufficient | no |
 | `restricted` | Access/redistribution is restricted | no |
 
+## Byte permission semantics
+
+Rights permissions are operation-specific. One permission never implies another.
+
+- `download` permits acquisition through the canonical acquisition pipeline.
+- `retain` permits Bukmatika to keep the verified content-addressed object locally for offline reading and processing.
+- `export` permits a principal-owned verified object to leave Bukmatika's canonical object store for user-controlled portability or backup.
+- `share` permits redistribution beyond the user's own portability boundary. It is stricter than local retention and is not required merely to build a private portability copy when `export` is explicitly allowed.
+
+The latest destination-local canonical rights decision is authoritative for a byte handoff. Portable policy bits and source-side rights snapshots are provenance only and never authorize destination byte possession or export by themselves. Missing rights, a denied `export` permission, ownership mismatch, acquisition/storage disagreement, or SHA/size mismatch must fail closed before bytes leave the canonical object store.
+
+The current `rights-us-v1` policy allows `export` and `share` for `public_domain`. `open_license` and `authorized_download` currently allow download, retention, processing, and OCR but conservatively deny export/share until license-specific or authorization-specific policy can prove those operations are permitted.
+
 ## Evidence hierarchy
 
 Prefer, in order:

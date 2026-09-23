@@ -198,7 +198,7 @@ async def test_selected_highlight_becomes_exact_canonical_evidence(session: Asyn
         if item.source_kind is ResearchEvidenceSourceKind.HIGHLIGHT_SELECTION
     ]
     assert len(selected) == 2
-    assert [item.chunk_id for item in selected] == chunks
+    assert [item.chunk_id for item in selected] == [chunk.id for chunk in chunks]
     assert {item.highlight_id for item in selected} == {highlight.id}
     assert "".join(item.text for item in selected) == section.text[start:end]
     assert selected[0].char_start == start

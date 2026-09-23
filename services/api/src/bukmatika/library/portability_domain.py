@@ -2,7 +2,8 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, JsonValue, model_validator
+import pydantic
+from pydantic import BaseModel, Field, JsonValue
 
 
 type ReadingStatus = Literal["unread", "reading", "finished"]
@@ -165,7 +166,7 @@ class PortableSmartShelf(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def require_rule(self) -> "PortableSmartShelf":
         if self.reading_status is None and self.collection_id is None and self.tag_id is None:
             raise ValueError("smart shelf must define at least one rule")

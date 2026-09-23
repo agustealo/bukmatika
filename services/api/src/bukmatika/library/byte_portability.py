@@ -4,7 +4,7 @@ import os
 import shutil
 import tempfile
 from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
@@ -94,7 +94,10 @@ class LibraryBytePortabilityService:
         if candidate is None:
             raise BytePortabilityDenied(
                 "asset_unavailable",
-                "The requested asset is not an owned, verified stored asset for this library entry.",
+                (
+                    "The requested asset is not an owned, verified stored asset "
+                    "for this library entry."
+                ),
             )
         self._require_export_permission(candidate)
         self._require_consistent_metadata(candidate)
@@ -142,6 +145,11 @@ class LibraryBytePortabilityService:
         destination = root / authorized.sha256
 
         if await asyncio.to_thread(destination.exists):
+            if await asyncio.to_thread(destination.is_symlink):
+                raise BytePortabilityIntegrityError(
+                    "staging_object_unsafe",
+                    "Existing portability staging object must not be a symbolic link.",
+                )
             await self._verify_path(
                 destination,
                 expected_sha256=authorized.sha256,
@@ -161,10 +169,8 @@ class LibraryBytePortabilityService:
                 )
                 await asyncio.to_thread(os.replace, temp_path, destination)
             finally:
-                try:
+                with suppress(FileNotFoundError):
                     await asyncio.to_thread(temp_path.unlink)
-                except FileNotFoundError:
-                    pass
 
         return PortableByteCopy(
             asset_id=authorized.asset_id,
@@ -207,7 +213,13 @@ class LibraryBytePortabilityService:
         expected_sha256: str,
         expected_size: int,
     ) -> None:
-        actual_sha256, actual_size = await asyncio.to_thread(self._fingerprint, path)
+        try:
+            actual_sha256, actual_size = await asyncio.to_thread(self._fingerprint, path)
+        except OSError as exc:
+            raise BytePortabilityIntegrityError(
+                "stored_object_unavailable",
+                "Portable bytes could not be read as a regular file.",
+            ) from exc
         if actual_size != expected_size or actual_sha256.casefold() != expected_sha256.casefold():
             raise BytePortabilityIntegrityError(
                 "stored_object_integrity_failed",
@@ -236,10 +248,8 @@ class LibraryBytePortabilityService:
                 output_file.flush()
                 os.fsync(output_file.fileno())
         except BaseException:
-            try:
+            with suppress(FileNotFoundError):
                 temp_path.unlink()
-            except FileNotFoundError:
-                pass
             raise
         return temp_path
 

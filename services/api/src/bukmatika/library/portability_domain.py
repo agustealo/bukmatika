@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, JsonValue
 
+type ReadingStatus = Literal["unread", "reading", "finished"]
+
 
 class PortableIdentifier(BaseModel):
     scheme: str
@@ -114,7 +116,7 @@ class PortableHighlight(BaseModel):
 class PortableReadingState(BaseModel):
     source_reading_state_id: UUID
     document: PortableDocumentIdentity
-    status: str
+    status: ReadingStatus
     progress_fraction: float = Field(ge=0, le=1)
     position: PortableReadingPosition | None
     last_read_at: datetime | None
@@ -156,11 +158,15 @@ class PortableSmartShelf(BaseModel):
     source_smart_shelf_id: UUID
     name: str
     description: str | None
-    reading_status: str | None
+    reading_status: ReadingStatus | None
     collection_id: UUID | None
     tag_id: UUID | None
     created_at: datetime
     updated_at: datetime
+
+    def model_post_init(self, _context: object, /) -> None:
+        if self.reading_status is None and self.collection_id is None and self.tag_id is None:
+            raise ValueError("smart shelf must define at least one rule")
 
 
 class LibraryPortabilityExportResponse(BaseModel):
@@ -172,3 +178,53 @@ class LibraryPortabilityExportResponse(BaseModel):
     collections: list[PortableCollection]
     tags: list[PortableTag]
     smart_shelves: list[PortableSmartShelf]
+
+
+type ImportPlanAction = Literal["match", "create", "apply", "skip", "conflict"]
+type ImportPlanTarget = Literal[
+    "work",
+    "edition",
+    "library_entry",
+    "document",
+    "reading_state",
+    "collection",
+    "tag",
+    "smart_shelf",
+]
+
+
+class PortableImportTargetPlan(BaseModel):
+    target: ImportPlanTarget
+    source_id: UUID
+    action: ImportPlanAction
+    destination_id: UUID | None = None
+    reason: str
+
+
+class PortableImportConflict(BaseModel):
+    target: ImportPlanTarget
+    source_id: UUID
+    code: str
+    detail: str
+
+
+class PortableImportEntryPlan(BaseModel):
+    source_library_entry_id: UUID
+    work: PortableImportTargetPlan
+    edition: PortableImportTargetPlan | None
+    library_entry: PortableImportTargetPlan
+    documents: list[PortableImportTargetPlan]
+    reading_states: list[PortableImportTargetPlan]
+    collection_ids: list[UUID]
+    tag_ids: list[UUID]
+
+
+class LibraryPortabilityImportPlanResponse(BaseModel):
+    schema_version: Literal[1] = 1
+    mode: Literal["dry-run"] = "dry-run"
+    can_apply: bool
+    entries: list[PortableImportEntryPlan]
+    collections: list[PortableImportTargetPlan]
+    tags: list[PortableImportTargetPlan]
+    smart_shelves: list[PortableImportTargetPlan]
+    conflicts: list[PortableImportConflict]

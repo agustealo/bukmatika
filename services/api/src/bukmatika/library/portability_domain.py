@@ -1,28 +1,27 @@
-from datetime import datetime
-from typing import Literal
-from uuid import UUID
+import datetime
+import typing
+import uuid
 
 import pydantic
-from pydantic import BaseModel, Field, JsonValue
 
 
-type ReadingStatus = Literal["unread", "reading", "finished"]
+type ReadingStatus = typing.Literal["unread", "reading", "finished"]
 
 
-class PortableIdentifier(BaseModel):
+class PortableIdentifier(pydantic.BaseModel):
     scheme: str
     value: str
 
 
-class PortableSourceReference(BaseModel):
+class PortableSourceReference(pydantic.BaseModel):
     provider: str
     provider_record_id: str
     canonical_url: str
     relationship: str
 
 
-class PortableWorkIdentity(BaseModel):
-    source_work_id: UUID
+class PortableWorkIdentity(pydantic.BaseModel):
+    source_work_id: uuid.UUID
     canonical_title: str
     authors: list[str]
     subjects: list[str]
@@ -30,8 +29,8 @@ class PortableWorkIdentity(BaseModel):
     sources: list[PortableSourceReference]
 
 
-class PortableEditionIdentity(BaseModel):
-    source_edition_id: UUID
+class PortableEditionIdentity(pydantic.BaseModel):
+    source_edition_id: uuid.UUID
     title: str
     language: str | None
     publication_year: int | None
@@ -41,45 +40,45 @@ class PortableEditionIdentity(BaseModel):
     sources: list[PortableSourceReference]
 
 
-class PortableRightsEvidence(BaseModel):
+class PortableRightsEvidence(pydantic.BaseModel):
     state: str
     source: str
     basis: str
     evidence_url: str | None
     license_uri: str | None
-    confidence: float = Field(ge=0, le=1)
+    confidence: float = pydantic.Field(ge=0, le=1)
 
 
-class PortableRightsSnapshot(BaseModel):
+class PortableRightsSnapshot(pydantic.BaseModel):
     rights_state: str
     jurisdiction: str
     policy_version: str
     permissions: dict[str, bool]
     reason: str
-    evaluated_at: datetime
+    evaluated_at: datetime.datetime
     evidence: list[PortableRightsEvidence]
 
 
-class PortableDocumentIdentity(BaseModel):
-    source_document_id: UUID
+class PortableDocumentIdentity(pydantic.BaseModel):
+    source_document_id: uuid.UUID
     source_sha256: str
     format: str
     parser_name: str
     parser_version: str
 
 
-class PortableBytePolicy(BaseModel):
-    bytes_included: Literal[False] = False
+class PortableBytePolicy(pydantic.BaseModel):
+    bytes_included: typing.Literal[False] = False
     policy_export_allowed: bool
     policy_share_allowed: bool
 
 
-class PortableAssetManifest(BaseModel):
-    source_asset_id: UUID
+class PortableAssetManifest(pydantic.BaseModel):
+    source_asset_id: uuid.UUID
     edition: PortableEditionIdentity
     format: str
     media_type: str | None
-    byte_size: int | None = Field(default=None, ge=0)
+    byte_size: int | None = pydantic.Field(default=None, ge=0)
     content_sha256: str | None
     identifiers: list[PortableIdentifier]
     sources: list[PortableSourceReference]
@@ -88,83 +87,83 @@ class PortableAssetManifest(BaseModel):
     byte_policy: PortableBytePolicy
 
 
-class PortableReadingPosition(BaseModel):
-    section_ordinal: int = Field(ge=0)
-    char_offset: int | None = Field(default=None, ge=0)
-    locator: dict[str, JsonValue]
+class PortableReadingPosition(pydantic.BaseModel):
+    section_ordinal: int = pydantic.Field(ge=0)
+    char_offset: int | None = pydantic.Field(default=None, ge=0)
+    locator: dict[str, pydantic.JsonValue]
 
 
-class PortableBookmark(BaseModel):
-    source_bookmark_id: UUID
-    section_ordinal: int = Field(ge=0)
-    char_offset: int = Field(ge=0)
-    locator: dict[str, JsonValue]
+class PortableBookmark(pydantic.BaseModel):
+    source_bookmark_id: uuid.UUID
+    section_ordinal: int = pydantic.Field(ge=0)
+    char_offset: int = pydantic.Field(ge=0)
+    locator: dict[str, pydantic.JsonValue]
     label: str | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
 
 
-class PortableHighlight(BaseModel):
-    source_highlight_id: UUID
-    section_ordinal: int = Field(ge=0)
-    char_start: int = Field(ge=0)
-    char_end: int = Field(gt=0)
-    locator: dict[str, JsonValue]
+class PortableHighlight(pydantic.BaseModel):
+    source_highlight_id: uuid.UUID
+    section_ordinal: int = pydantic.Field(ge=0)
+    char_start: int = pydantic.Field(ge=0)
+    char_end: int = pydantic.Field(gt=0)
+    locator: dict[str, pydantic.JsonValue]
     note: str | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
 
 
-class PortableReadingState(BaseModel):
-    source_reading_state_id: UUID
+class PortableReadingState(pydantic.BaseModel):
+    source_reading_state_id: uuid.UUID
     document: PortableDocumentIdentity
     status: ReadingStatus
-    progress_fraction: float = Field(ge=0, le=1)
+    progress_fraction: float = pydantic.Field(ge=0, le=1)
     position: PortableReadingPosition | None
-    last_read_at: datetime | None
-    created_at: datetime
-    updated_at: datetime
+    last_read_at: datetime.datetime | None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
     bookmarks: list[PortableBookmark]
     highlights: list[PortableHighlight]
 
 
-class PortableLibraryEntry(BaseModel):
-    source_library_entry_id: UUID
+class PortableLibraryEntry(pydantic.BaseModel):
+    source_library_entry_id: uuid.UUID
     status: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
     work: PortableWorkIdentity
     edition: PortableEditionIdentity | None
     assets: list[PortableAssetManifest]
     reading_states: list[PortableReadingState]
-    collection_ids: list[UUID]
-    tag_ids: list[UUID]
+    collection_ids: list[uuid.UUID]
+    tag_ids: list[uuid.UUID]
 
 
-class PortableCollection(BaseModel):
-    source_collection_id: UUID
+class PortableCollection(pydantic.BaseModel):
+    source_collection_id: uuid.UUID
     name: str
     description: str | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
 
 
-class PortableTag(BaseModel):
-    source_tag_id: UUID
+class PortableTag(pydantic.BaseModel):
+    source_tag_id: uuid.UUID
     name: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
 
 
-class PortableSmartShelf(BaseModel):
-    source_smart_shelf_id: UUID
+class PortableSmartShelf(pydantic.BaseModel):
+    source_smart_shelf_id: uuid.UUID
     name: str
     description: str | None
     reading_status: ReadingStatus | None
-    collection_id: UUID | None
-    tag_id: UUID | None
-    created_at: datetime
-    updated_at: datetime
+    collection_id: uuid.UUID | None
+    tag_id: uuid.UUID | None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
 
     @pydantic.model_validator(mode="after")
     def require_rule(self) -> "PortableSmartShelf":
@@ -173,19 +172,19 @@ class PortableSmartShelf(BaseModel):
         return self
 
 
-class LibraryPortabilityExportResponse(BaseModel):
-    schema_version: Literal[1] = 1
-    export_kind: Literal["bukmatika-library-manifest"] = "bukmatika-library-manifest"
-    content_mode: Literal["metadata-and-state-only"] = "metadata-and-state-only"
-    exported_at: datetime
+class LibraryPortabilityExportResponse(pydantic.BaseModel):
+    schema_version: typing.Literal[1] = 1
+    export_kind: typing.Literal["bukmatika-library-manifest"] = "bukmatika-library-manifest"
+    content_mode: typing.Literal["metadata-and-state-only"] = "metadata-and-state-only"
+    exported_at: datetime.datetime
     entries: list[PortableLibraryEntry]
     collections: list[PortableCollection]
     tags: list[PortableTag]
     smart_shelves: list[PortableSmartShelf]
 
 
-type ImportPlanAction = Literal["match", "create", "apply", "skip", "conflict"]
-type ImportPlanTarget = Literal[
+type ImportPlanAction = typing.Literal["match", "create", "apply", "skip", "conflict"]
+type ImportPlanTarget = typing.Literal[
     "work",
     "edition",
     "library_entry",
@@ -197,35 +196,35 @@ type ImportPlanTarget = Literal[
 ]
 
 
-class PortableImportTargetPlan(BaseModel):
+class PortableImportTargetPlan(pydantic.BaseModel):
     target: ImportPlanTarget
-    source_id: UUID
+    source_id: uuid.UUID
     action: ImportPlanAction
-    destination_id: UUID | None = None
+    destination_id: uuid.UUID | None = None
     reason: str
 
 
-class PortableImportConflict(BaseModel):
+class PortableImportConflict(pydantic.BaseModel):
     target: ImportPlanTarget
-    source_id: UUID
+    source_id: uuid.UUID
     code: str
     detail: str
 
 
-class PortableImportEntryPlan(BaseModel):
-    source_library_entry_id: UUID
+class PortableImportEntryPlan(pydantic.BaseModel):
+    source_library_entry_id: uuid.UUID
     work: PortableImportTargetPlan
     edition: PortableImportTargetPlan | None
     library_entry: PortableImportTargetPlan
     documents: list[PortableImportTargetPlan]
     reading_states: list[PortableImportTargetPlan]
-    collection_ids: list[UUID]
-    tag_ids: list[UUID]
+    collection_ids: list[uuid.UUID]
+    tag_ids: list[uuid.UUID]
 
 
-class LibraryPortabilityImportPlanResponse(BaseModel):
-    schema_version: Literal[1] = 1
-    mode: Literal["dry-run"] = "dry-run"
+class LibraryPortabilityImportPlanResponse(pydantic.BaseModel):
+    schema_version: typing.Literal[1] = 1
+    mode: typing.Literal["dry-run"] = "dry-run"
     can_apply: bool
     entries: list[PortableImportEntryPlan]
     collections: list[PortableImportTargetPlan]

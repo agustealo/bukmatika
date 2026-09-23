@@ -357,8 +357,8 @@ def _validate_reading_states(
                     detail="Bookmark source ids must be unique within one manifest",
                 )
             bookmark_ids.add(bookmark.source_bookmark_id)
-            position = (bookmark.section_ordinal, bookmark.char_offset)
-            if position in bookmark_positions:
+            bookmark_position = (bookmark.section_ordinal, bookmark.char_offset)
+            if bookmark_position in bookmark_positions:
                 _append_conflict(
                     conflicts,
                     target="reading_state",
@@ -366,7 +366,7 @@ def _validate_reading_states(
                     code="manifest_duplicate_bookmark_position",
                     detail="One reader state contains multiple bookmarks at the same coordinate",
                 )
-            bookmark_positions.add(position)
+            bookmark_positions.add(bookmark_position)
 
         highlight_ranges: set[tuple[int, int, int]] = set()
         for highlight in reading.highlights:
@@ -379,8 +379,12 @@ def _validate_reading_states(
                     detail="Highlight source ids must be unique within one manifest",
                 )
             highlight_ids.add(highlight.source_highlight_id)
-            position = (highlight.section_ordinal, highlight.char_start, highlight.char_end)
-            if position in highlight_ranges:
+            highlight_range = (
+                highlight.section_ordinal,
+                highlight.char_start,
+                highlight.char_end,
+            )
+            if highlight_range in highlight_ranges:
                 _append_conflict(
                     conflicts,
                     target="reading_state",
@@ -388,7 +392,7 @@ def _validate_reading_states(
                     code="manifest_duplicate_highlight_range",
                     detail="One reader state contains multiple highlights at the same range",
                 )
-            highlight_ranges.add(position)
+            highlight_ranges.add(highlight_range)
 
 
 def _register_document(

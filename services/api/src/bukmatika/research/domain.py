@@ -9,6 +9,7 @@ MAX_READER_SELECTION_CHARS = 6_000
 MAX_SELECTED_HIGHLIGHTS = 8
 MAX_EVIDENCE_ITEMS = 38
 MAX_TIMELINE_ITEMS = 80
+MAX_MENTION_ITEMS = 80
 _EVIDENCE_ID_PATTERN = re.compile(r"^E[1-9][0-9]*$")
 
 
@@ -255,6 +256,54 @@ class ResearchTimelineResponse(BaseModel):
     evidence: ResearchEvidenceBundleResponse
     items: list[ResearchTimelineItem] = Field(max_length=MAX_TIMELINE_ITEMS)
     undated_evidence_ids: list[str] = Field(max_length=MAX_EVIDENCE_ITEMS)
+    truncated: bool = False
+
+
+class ResearchMentionKind(StrEnum):
+    PERSON = "person"
+    PLACE = "place"
+    CONCEPT = "concept"
+    AMBIGUOUS = "ambiguous"
+
+
+class ResearchMentionItem(BaseModel):
+    mention_id: str = Field(pattern=r"^M[1-9][0-9]*$")
+    text: str = Field(min_length=1, max_length=120)
+    normalized_text: str = Field(min_length=1, max_length=120)
+    kind: ResearchMentionKind
+    cue: str | None = Field(default=None, max_length=40)
+    evidence_ids: list[str] = Field(min_length=1, max_length=MAX_EVIDENCE_ITEMS)
+    document_id: UUID
+    section_id: UUID
+    source_char_start: int = Field(ge=0)
+    source_char_end: int = Field(ge=1)
+
+    @field_validator("evidence_ids")
+    @classmethod
+    def validate_evidence_ids(cls, values: list[str]) -> list[str]:
+        if len(set(values)) != len(values):
+            raise ValueError("Mention evidence IDs must be unique")
+        if any(_EVIDENCE_ID_PATTERN.fullmatch(value) is None for value in values):
+            raise ValueError("Mention evidence IDs must use the request-local E# format")
+        return values
+
+    @model_validator(mode="after")
+    def validate_mention(self) -> "ResearchMentionItem":
+        if self.source_char_end <= self.source_char_start:
+            raise ValueError("Mention source coordinates must have positive length")
+        if self.normalized_text != " ".join(self.text.casefold().split()):
+            raise ValueError("Mention normalized text must be derived from source text")
+        if self.kind is ResearchMentionKind.AMBIGUOUS:
+            if self.cue is not None:
+                raise ValueError("Ambiguous mentions must not carry a classification cue")
+        elif self.cue is None:
+            raise ValueError("Classified mentions require an explicit source cue")
+        return self
+
+
+class ResearchMentionsResponse(BaseModel):
+    evidence: ResearchEvidenceBundleResponse
+    items: list[ResearchMentionItem] = Field(max_length=MAX_MENTION_ITEMS)
     truncated: bool = False
 
 

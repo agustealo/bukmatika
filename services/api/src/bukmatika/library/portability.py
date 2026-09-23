@@ -24,6 +24,7 @@ from bukmatika.library.portability_domain import (
     PortableSourceReference,
     PortableTag,
     PortableWorkIdentity,
+    ReadingStatus,
 )
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.library_organization import LibraryOrganizationRepository
@@ -35,6 +36,20 @@ from bukmatika.persistence.library_portability import (
 from bukmatika.persistence.models import Edition, Work
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+
+
+def _reading_status(value: str) -> ReadingStatus:
+    if value == "unread":
+        return "unread"
+    if value == "reading":
+        return "reading"
+    if value == "finished":
+        return "finished"
+    raise ValueError(f"invalid persisted reading status: {value!r}")
+
+
+def _optional_reading_status(value: str | None) -> ReadingStatus | None:
+    return None if value is None else _reading_status(value)
 
 
 class LibraryPortabilityService:
@@ -128,7 +143,7 @@ class LibraryPortabilityService:
                         source_smart_shelf_id=shelf.id,
                         name=shelf.name,
                         description=shelf.description,
-                        reading_status=shelf.reading_status,
+                        reading_status=_optional_reading_status(shelf.reading_status),
                         collection_id=shelf.collection_id,
                         tag_id=shelf.tag_id,
                         created_at=shelf.created_at,
@@ -298,7 +313,7 @@ class LibraryPortabilityService:
                 parser_name=record.document.parser_name,
                 parser_version=record.document.parser_version,
             ),
-            status=state.status,
+            status=_reading_status(state.status),
             progress_fraction=state.progress_fraction,
             position=position,
             last_read_at=state.last_read_at,

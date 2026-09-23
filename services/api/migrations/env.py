@@ -8,6 +8,7 @@ from bukmatika.persistence import (
     action_models,
     document_models,
     identity_models,
+    library_organization_models,
     personalization_models,
     reader_models,
 )
@@ -22,6 +23,7 @@ _registered_models = (
     action_models.ActionExecutionReceipt,
     document_models.Document,
     identity_models.PrincipalSession,
+    library_organization_models.LibraryCollection,
     personalization_models.UserModel,
     reader_models.ReadingState,
 )

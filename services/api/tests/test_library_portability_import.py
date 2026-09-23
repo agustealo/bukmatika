@@ -23,7 +23,7 @@ from bukmatika.library.portability_domain import (
     PortableWorkIdentity,
 )
 from bukmatika.main import app
-from bukmatika.persistence.document_models import Document, DocumentSection
+from bukmatika.persistence.document_models import Document, DocumentChunk, DocumentSection
 from bukmatika.persistence.library_organization_models import LibraryCollection
 from bukmatika.persistence.models import (
     Asset,
@@ -168,18 +168,30 @@ async def _seed_destination(
         parser_name="epub",
         parser_version=parser_version,
         section_count=1,
-        chunk_count=0,
+        chunk_count=1,
     )
     session.add(document)
     await session.flush()
+    section_text = "Portable chapter text for coordinate validation."
     section = DocumentSection(
         document_id=document.id,
         ordinal=0,
         heading="Chapter one",
         locator={"spine_index": 0, "href": "chapter.xhtml"},
-        text="Portable chapter text for coordinate validation.",
+        text=section_text,
     )
     session.add(section)
+    await session.flush()
+    session.add(
+        DocumentChunk(
+            document_id=document.id,
+            section_id=section.id,
+            ordinal=0,
+            char_start=0,
+            char_end=len(section_text),
+            text=section_text,
+        )
+    )
     await session.flush()
     return principal, work, edition, entry, document, section
 

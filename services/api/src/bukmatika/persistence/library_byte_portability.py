@@ -18,7 +18,12 @@ from bukmatika.persistence.models import (
 class BytePortabilityCandidate:
     asset_id: UUID
     asset_format: str
+    asset_media_type: str | None
     asset_byte_size: int | None
+    acquisition_expected_format: str
+    acquisition_bytes_received: int | None
+    acquisition_sha256: str | None
+    acquisition_media_type: str | None
     stored_object_id: UUID
     storage_key: str
     sha256: str
@@ -44,7 +49,7 @@ class LibraryBytePortabilityRepository:
     ) -> BytePortabilityCandidate | None:
         row = (
             await self._session.execute(
-                select(Asset, StoredObject)
+                select(Asset, Acquisition, StoredObject)
                 .join(Edition, Edition.id == Asset.edition_id)
                 .join(
                     LibraryEntry,
@@ -80,7 +85,7 @@ class LibraryBytePortabilityRepository:
         if row is None:
             return None
 
-        asset, stored = row
+        asset, acquisition, stored = row
         rights = await self._session.scalar(
             select(RightsDecision)
             .where(
@@ -93,7 +98,12 @@ class LibraryBytePortabilityRepository:
         return BytePortabilityCandidate(
             asset_id=asset.id,
             asset_format=asset.format,
+            asset_media_type=asset.media_type,
             asset_byte_size=asset.byte_size,
+            acquisition_expected_format=acquisition.expected_format,
+            acquisition_bytes_received=acquisition.bytes_received,
+            acquisition_sha256=acquisition.sha256,
+            acquisition_media_type=acquisition.media_type,
             stored_object_id=stored.id,
             storage_key=stored.storage_key,
             sha256=stored.sha256,

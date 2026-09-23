@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.research.domain import (
+    ResearchCompareRequest,
+    ResearchCompareResponse,
     ResearchEvidenceBundleRequest,
     ResearchEvidenceBundleResponse,
     ResearchSearchRequest,
@@ -38,6 +40,24 @@ async def research_search(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="One or more selected library entries are unavailable",
+        ) from exc
+
+
+@router.post("/compare", response_model=ResearchCompareResponse)
+async def research_compare(
+    request: ResearchCompareRequest,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[ResearchService, Depends(research_service)],
+) -> ResearchCompareResponse:
+    try:
+        return await service.compare(
+            principal_id=identity.principal_id,
+            request=request,
+        )
+    except ResearchSelectionDenied as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or more comparison sources are unavailable",
         ) from exc
 
 

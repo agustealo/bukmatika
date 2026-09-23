@@ -56,6 +56,47 @@ class ResearchSearchResponse(BaseModel):
     passages: list[ResearchPassageResponse]
 
 
+class ResearchCompareRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=200)
+    library_entry_ids: list[UUID] = Field(min_length=2, max_length=6)
+    per_source_limit: int = Field(default=3, ge=1, le=5)
+
+    @field_validator("query")
+    @classmethod
+    def normalize_query(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("Comparison query cannot be blank")
+        return normalized
+
+    @field_validator("library_entry_ids")
+    @classmethod
+    def require_unique_entries(cls, value: list[UUID]) -> list[UUID]:
+        if len(set(value)) != len(value):
+            raise ValueError("Comparison sources must be unique")
+        return value
+
+
+class ResearchComparisonEdition(BaseModel):
+    edition_id: UUID
+    edition_title: str
+
+
+class ResearchComparisonSource(BaseModel):
+    library_entry_id: UUID
+    work_id: UUID
+    work_title: str
+    available_editions: list[ResearchComparisonEdition] = Field(min_length=1)
+    passages: list[ResearchPassageResponse]
+
+
+class ResearchCompareResponse(BaseModel):
+    query: str
+    selected_library_entry_ids: list[UUID]
+    per_source_limit: int
+    sources: list[ResearchComparisonSource] = Field(min_length=2, max_length=6)
+
+
 class ReaderResearchContextRequest(BaseModel):
     library_entry_id: UUID
     document_id: UUID

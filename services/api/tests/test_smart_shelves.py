@@ -100,8 +100,8 @@ async def _document(
         format="TXT",
         parser_name="text",
         parser_version="1",
-        section_count=0,
-        chunk_count=0,
+        section_count=1,
+        chunk_count=1,
     )
     session.add(document)
     await session.flush()

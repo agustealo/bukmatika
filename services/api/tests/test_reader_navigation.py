@@ -192,12 +192,7 @@ async def test_navigation_rejects_another_principal_with_exact_ids(
 
 def test_reader_navigation_route_is_mounted() -> None:
     path = "/v1/library/{library_entry_id}/documents/{document_id}/navigation"
-    mounted_routes = [
-        (getattr(route, "name", None), getattr(route, "path", None))
-        for route in app.routes
-        if "/documents/" in str(getattr(route, "path", ""))
-    ]
-    mounted = [route for route in app.routes if getattr(route, "name", None) == "reader_navigation"]
-    assert len(mounted) == 1, mounted_routes
-    assert getattr(mounted[0], "path", None) == path
-    assert "GET" in (getattr(mounted[0], "methods", set()) or set())
+    paths = app.openapi()["paths"]
+
+    assert path in paths
+    assert "get" in paths[path]

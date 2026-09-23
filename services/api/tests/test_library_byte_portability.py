@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.acquisition.storage import LocalObjectStore
@@ -346,6 +347,76 @@ async def test_edition_owned_entry_cannot_export_sibling_edition_asset(
         )
 
     assert denied.value.code == "asset_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("expected_format", "EPUB"),
+        ("bytes_received", 1),
+        ("sha256", "0" * 64),
+        ("media_type", "application/epub+zip"),
+    ],
+)
+async def test_contradictory_acquisition_metadata_fails_closed(
+    session: AsyncSession,
+    tmp_path: Path,
+    field: str,
+    bad_value: object,
+) -> None:
+    seeded = await _seed_asset(
+        session,
+        tmp_path,
+        permissions={"retain": True, "export": True, "share": True},
+    )
+    acquisition = await session.scalar(
+        select(Acquisition).where(Acquisition.asset_id == seeded.asset_id)
+    )
+    assert acquisition is not None
+    setattr(acquisition, field, bad_value)
+    await session.flush()
+
+    with pytest.raises(BytePortabilityIntegrityError) as failed:
+        await _service(session, seeded).authorize_export(
+            principal_id=seeded.principal_id,
+            library_entry_id=seeded.library_entry_id,
+            asset_id=seeded.asset_id,
+        )
+
+    assert failed.value.code == "acquisition_metadata_conflict"
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("byte_size", 1),
+        ("media_type", "application/epub+zip"),
+    ],
+)
+async def test_contradictory_asset_metadata_fails_closed(
+    session: AsyncSession,
+    tmp_path: Path,
+    field: str,
+    bad_value: object,
+) -> None:
+    seeded = await _seed_asset(
+        session,
+        tmp_path,
+        permissions={"retain": True, "export": True, "share": True},
+    )
+    asset = await session.scalar(select(Asset).where(Asset.id == seeded.asset_id))
+    assert asset is not None
+    setattr(asset, field, bad_value)
+    await session.flush()
+
+    with pytest.raises(BytePortabilityIntegrityError) as failed:
+        await _service(session, seeded).authorize_export(
+            principal_id=seeded.principal_id,
+            library_entry_id=seeded.library_entry_id,
+            asset_id=seeded.asset_id,
+        )
+
+    assert failed.value.code == "stored_object_metadata_conflict"
 
 
 async def test_tampered_canonical_object_fails_integrity_check(

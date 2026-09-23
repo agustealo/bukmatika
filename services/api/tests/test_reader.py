@@ -275,26 +275,32 @@ async def test_highlight_is_coordinate_derived_idempotent_and_restart_safe(
     entry, document, sections = await _seed_reader_document(session, suffix="highlight")
     service = ReaderService(session_scope_factory=_scope(session))
     section = sections[0]
+    principal_id = entry.principal_id
+    entry_id = entry.id
+    document_id = document.id
+    section_id = section.id
     char_start = 10
     char_end = 28
+    expected_text = section.text[char_start:char_end]
+    expected_locator = dict(section.locator)
 
     first = await service.add_highlight(
-        principal_id=entry.principal_id,
-        library_entry_id=entry.id,
-        document_id=document.id,
+        principal_id=principal_id,
+        library_entry_id=entry_id,
+        document_id=document_id,
         create=HighlightCreate(
-            section_id=section.id,
+            section_id=section_id,
             char_start=char_start,
             char_end=char_end,
             note="  Compare this claim later.  ",
         ),
     )
     second = await service.add_highlight(
-        principal_id=entry.principal_id,
-        library_entry_id=entry.id,
-        document_id=document.id,
+        principal_id=principal_id,
+        library_entry_id=entry_id,
+        document_id=document_id,
         create=HighlightCreate(
-            section_id=section.id,
+            section_id=section_id,
             char_start=char_start,
             char_end=char_end,
             note="Revised note",
@@ -302,29 +308,29 @@ async def test_highlight_is_coordinate_derived_idempotent_and_restart_safe(
     )
 
     assert second.highlight_id == first.highlight_id
-    assert second.text == section.text[char_start:char_end]
+    assert second.text == expected_text
     assert second.note == "Revised note"
-    assert second.locator == section.locator
+    assert second.locator == expected_locator
     assert "text" not in Highlight.__table__.columns
     assert len((await session.scalars(Highlight.__table__.select())).all()) == 1
 
     session.expire_all()
     reopened = await service.open_reader(
-        principal_id=entry.principal_id,
-        library_entry_id=entry.id,
-        document_id=document.id,
+        principal_id=principal_id,
+        library_entry_id=entry_id,
+        document_id=document_id,
         after_ordinal=None,
         limit=10,
     )
     assert len(reopened.highlights) == 1
     assert reopened.highlights[0].highlight_id == first.highlight_id
-    assert reopened.highlights[0].text == section.text[char_start:char_end]
+    assert reopened.highlights[0].text == expected_text
     assert reopened.highlights[0].note == "Revised note"
 
     event = await session.scalar(
         select(InteractionEvent)
         .where(
-            InteractionEvent.principal_id == entry.principal_id,
+            InteractionEvent.principal_id == principal_id,
             InteractionEvent.event_type == SemanticEventType.HIGHLIGHT_ADDED.value,
         )
         .order_by(InteractionEvent.occurred_at.desc(), InteractionEvent.id.desc())

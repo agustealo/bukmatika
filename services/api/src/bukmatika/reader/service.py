@@ -11,12 +11,17 @@ from bukmatika.persistence.reader_models import Bookmark, ReadingState
 from bukmatika.persistence.readers import (
     ReaderAccessDenied,
     ReaderBookmarkNotFound,
+    ReaderHighlightNotFound,
+    ReaderHighlightRecord,
     ReaderPositionInvalid,
     ReaderRepository,
 )
 from bukmatika.reader.domain import (
     BookmarkCreate,
     BookmarkResponse,
+    HighlightCreate,
+    HighlightNoteUpdate,
+    HighlightResponse,
     ReaderDocumentResponse,
     ReaderSection,
     ReadingProgressUpdate,
@@ -55,6 +60,7 @@ class ReaderService:
             )
             reading_state = await repository.state_for(library_entry_id, document_id)
             bookmarks = await repository.bookmarks_for(library_entry_id, document_id)
+            highlights = await repository.highlights_for(library_entry_id, document_id)
             await InteractionEventRepository(database_session).record(
                 SemanticEventType.READER_OPENED,
                 principal_id=access.principal_id,
@@ -82,6 +88,7 @@ class ReaderService:
                 chunk_count=access.document.chunk_count,
                 reading_state=_state_response(reading_state),
                 bookmarks=[_bookmark_response(bookmark) for bookmark in bookmarks],
+                highlights=[_highlight_response(record) for record in highlights],
                 sections=[
                     ReaderSection(
                         section_id=section.id,
@@ -137,9 +144,7 @@ class ReaderService:
         document_id: UUID,
         create: BookmarkCreate,
     ) -> BookmarkResponse:
-        label = create.label.strip() if create.label is not None else None
-        if label == "":
-            label = None
+        label = _normalized_optional_text(create.label)
         async with self._session_scope() as database_session:
             repository = ReaderRepository(database_session)
             access = await repository.require_access(principal_id, library_entry_id, document_id)
@@ -186,6 +191,95 @@ class ReaderService:
                 },
             )
 
+    async def add_highlight(
+        self,
+        *,
+        principal_id: UUID,
+        library_entry_id: UUID,
+        document_id: UUID,
+        create: HighlightCreate,
+    ) -> HighlightResponse:
+        note = _normalized_optional_text(create.note)
+        async with self._session_scope() as database_session:
+            repository = ReaderRepository(database_session)
+            access = await repository.require_access(principal_id, library_entry_id, document_id)
+            record = await repository.add_highlight(
+                access=access,
+                section_id=create.section_id,
+                char_start=create.char_start,
+                char_end=create.char_end,
+                note=note,
+            )
+            await InteractionEventRepository(database_session).record(
+                SemanticEventType.HIGHLIGHT_ADDED,
+                principal_id=access.principal_id,
+                entity_type="document",
+                entity_id=document_id,
+                context={
+                    "library_entry_id": str(library_entry_id),
+                    "highlight_id": str(record.highlight.id),
+                    "section_id": str(record.highlight.section_id),
+                    "char_start": record.highlight.char_start,
+                    "char_end": record.highlight.char_end,
+                    "has_note": note is not None,
+                },
+            )
+            return _highlight_response(record)
+
+    async def update_highlight_note(
+        self,
+        *,
+        principal_id: UUID,
+        library_entry_id: UUID,
+        document_id: UUID,
+        highlight_id: UUID,
+        update: HighlightNoteUpdate,
+    ) -> HighlightResponse:
+        note = _normalized_optional_text(update.note)
+        async with self._session_scope() as database_session:
+            repository = ReaderRepository(database_session)
+            access = await repository.require_access(principal_id, library_entry_id, document_id)
+            record = await repository.update_highlight_note(
+                access=access,
+                highlight_id=highlight_id,
+                note=note,
+            )
+            await InteractionEventRepository(database_session).record(
+                SemanticEventType.HIGHLIGHT_NOTE_UPDATED,
+                principal_id=access.principal_id,
+                entity_type="document",
+                entity_id=document_id,
+                context={
+                    "library_entry_id": str(library_entry_id),
+                    "highlight_id": str(highlight_id),
+                    "has_note": note is not None,
+                },
+            )
+            return _highlight_response(record)
+
+    async def remove_highlight(
+        self,
+        *,
+        principal_id: UUID,
+        library_entry_id: UUID,
+        document_id: UUID,
+        highlight_id: UUID,
+    ) -> None:
+        async with self._session_scope() as database_session:
+            repository = ReaderRepository(database_session)
+            access = await repository.require_access(principal_id, library_entry_id, document_id)
+            await repository.remove_highlight(access=access, highlight_id=highlight_id)
+            await InteractionEventRepository(database_session).record(
+                SemanticEventType.HIGHLIGHT_REMOVED,
+                principal_id=access.principal_id,
+                entity_type="document",
+                entity_id=document_id,
+                context={
+                    "library_entry_id": str(library_entry_id),
+                    "highlight_id": str(highlight_id),
+                },
+            )
+
 
 def _state_response(state: ReadingState | None) -> ReadingStateResponse | None:
     if state is None:
@@ -213,6 +307,26 @@ def _bookmark_response(bookmark: Bookmark) -> BookmarkResponse:
     )
 
 
+def _highlight_response(record: ReaderHighlightRecord) -> HighlightResponse:
+    highlight = record.highlight
+    return HighlightResponse(
+        highlight_id=highlight.id,
+        section_id=highlight.section_id,
+        char_start=highlight.char_start,
+        char_end=highlight.char_end,
+        locator=highlight.locator,
+        text=record.section.text[highlight.char_start : highlight.char_end],
+        note=highlight.note,
+    )
+
+
+def _normalized_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
 def _next_after_ordinal(
     *,
     sections: list[DocumentSection],
@@ -230,6 +344,7 @@ def _next_after_ordinal(
 __all__ = [
     "ReaderAccessDenied",
     "ReaderBookmarkNotFound",
+    "ReaderHighlightNotFound",
     "ReaderPositionInvalid",
     "ReaderService",
 ]

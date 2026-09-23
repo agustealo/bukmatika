@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ReaderSection(BaseModel):
@@ -32,6 +32,16 @@ class BookmarkResponse(BaseModel):
     label: str | None
 
 
+class HighlightResponse(BaseModel):
+    highlight_id: UUID
+    section_id: UUID
+    char_start: int = Field(ge=0)
+    char_end: int = Field(ge=1)
+    locator: dict[str, Any]
+    text: str
+    note: str | None
+
+
 class ReaderDocumentResponse(BaseModel):
     library_entry_id: UUID
     document_id: UUID
@@ -43,6 +53,7 @@ class ReaderDocumentResponse(BaseModel):
     chunk_count: int = Field(ge=1)
     reading_state: ReadingStateResponse | None
     bookmarks: list[BookmarkResponse]
+    highlights: list[HighlightResponse]
     sections: list[ReaderSection]
     next_after_ordinal: int | None = Field(default=None, ge=0)
 
@@ -57,3 +68,20 @@ class BookmarkCreate(BaseModel):
     section_id: UUID
     char_offset: int = Field(ge=0)
     label: str | None = Field(default=None, max_length=200)
+
+
+class HighlightCreate(BaseModel):
+    section_id: UUID
+    char_start: int = Field(ge=0)
+    char_end: int = Field(ge=1)
+    note: str | None = Field(default=None, max_length=4_000)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "HighlightCreate":
+        if self.char_end <= self.char_start:
+            raise ValueError("Highlight end must be after its start")
+        return self
+
+
+class HighlightNoteUpdate(BaseModel):
+    note: str | None = Field(default=None, max_length=4_000)

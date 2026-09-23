@@ -16,8 +16,7 @@ _PERSON = re.compile(
     rf"\b(?P<cue>Mr|Mrs|Ms|Dr|Professor|Prof|Captain|Capt|King|Queen|President|Emperor|Empress|Pope)\.?(?:\s+)(?P<mention>{_WORD}(?:\s+{_WORD}){{0,3}})\b"
 )
 _PLACE_OF = re.compile(
-    rf"\b(?P<cue>city|island|islands|kingdom|province|river|lake|mount|mountain|bay|gulf|peninsula|strait|harbor|harbour|port|fort)\s+of\s+(?P<mention>{_WORD}(?:\s+{_WORD}){{0,3}})\b",
-    re.IGNORECASE,
+    rf"\b(?P<cue>(?i:city|island|islands|kingdom|province|river|lake|mount|mountain|bay|gulf|peninsula|strait|harbor|harbour|port|fort))\s+of\s+(?P<mention>{_WORD}(?:\s+{_WORD}){{0,3}})\b"
 )
 _PLACE_SUFFIX = re.compile(
     rf"\b(?P<mention>{_WORD}(?:\s+{_WORD}){{0,3}}\s+(?P<cue>River|Sea|Ocean|Island|Islands|Bay|Gulf|Lake|Mount|Mountain|Mountains|Valley|Peninsula|Strait|Straits|Harbor|Harbour|Port|Fort|Province|Kingdom|Republic|Empire|City))\b"
@@ -159,7 +158,7 @@ def _candidate(
     end: int | None = None,
 ) -> _MentionCandidate | None:
     mention = (text if text is not None else match.group("mention")).strip()
-    if not mention:
+    if not mention or len(mention) > 120:
         return None
     local_start = match.start("mention") if start is None else start
     local_end = match.end("mention") if end is None else end

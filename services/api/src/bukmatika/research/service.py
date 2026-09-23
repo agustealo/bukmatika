@@ -15,6 +15,7 @@ from bukmatika.persistence.research import (
     ResearchSelectionDenied,
 )
 from bukmatika.research.domain import (
+    MAX_EVIDENCE_ITEMS,
     GroundedResearchAnswer,
     ResearchCompareRequest,
     ResearchCompareResponse,
@@ -182,6 +183,10 @@ class ResearchService:
     ) -> ResearchEvidenceBundleResponse:
         async with self._session_scope() as database_session:
             repository = ResearchRepository(database_session)
+            await repository.document_contexts(
+                principal_id=principal_id,
+                library_entry_ids=request.library_entry_ids,
+            )
             reader_matches = await repository.reader_passages(
                 principal_id=principal_id,
                 library_entry_id=request.reader.library_entry_id,
@@ -191,14 +196,29 @@ class ResearchService:
                 selection_start=request.reader.selection_start,
                 selection_end=request.reader.selection_end,
             )
+            highlight_matches = await repository.selected_highlight_passages(
+                principal_id=principal_id,
+                library_entry_ids=request.library_entry_ids,
+                highlight_ids=request.selected_highlight_ids,
+            )
+            explicit_evidence_count = len(reader_matches) + len(highlight_matches)
+            if explicit_evidence_count > MAX_EVIDENCE_ITEMS:
+                raise ResearchReaderPositionInvalid(
+                    "Selected reader and highlight evidence exceeds the request evidence budget"
+                )
+
+            related_limit = min(
+                request.related_limit,
+                MAX_EVIDENCE_ITEMS - explicit_evidence_count,
+            )
             related_matches = (
                 await repository.search_owned_passages(
                     principal_id=principal_id,
                     library_entry_ids=request.library_entry_ids,
                     query=_grounding_search_query(request.question),
-                    limit=request.related_limit,
+                    limit=related_limit,
                 )
-                if request.related_limit > 0
+                if related_limit > 0
                 else []
             )
 
@@ -221,6 +241,18 @@ class ResearchService:
                         score=None,
                     )
                 )
+
+            for match in highlight_matches:
+                seen_chunks.add(match.chunk_id)
+                evidence.append(
+                    _evidence_item(
+                        match,
+                        evidence_id=f"E{len(evidence) + 1}",
+                        source_kind=ResearchEvidenceSourceKind.SELECTED_HIGHLIGHT,
+                        score=None,
+                    )
+                )
+
             for match in related_matches:
                 if match.chunk_id in seen_chunks:
                     continue
@@ -248,7 +280,12 @@ class ResearchService:
                     "selected_library_entry_ids": [
                         str(entry_id) for entry_id in request.library_entry_ids
                     ],
+                    "selected_highlight_ids": [
+                        str(highlight_id) for highlight_id in request.selected_highlight_ids
+                    ],
+                    "selected_highlight_count": len(request.selected_highlight_ids),
                     "reader_evidence_count": len(reader_matches),
+                    "highlight_evidence_count": len(highlight_matches),
                     "evidence_count": len(evidence),
                 },
             )
@@ -341,6 +378,7 @@ def _evidence_item(
     return ResearchEvidenceItem(
         evidence_id=evidence_id,
         source_kind=source_kind,
+        source_highlight_id=match.source_highlight_id,
         library_entry_id=match.context.library_entry_id,
         work_id=match.context.work_id,
         work_title=match.context.work_title,

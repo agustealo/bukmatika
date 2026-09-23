@@ -9,6 +9,7 @@ import {
   type CollectionSummary,
   type LibraryFilters,
   type LibraryOrganization,
+  type SmartShelfInput,
   type TagSummary,
 } from "./library-organization";
 import "./library-organization.module.css";
@@ -32,7 +33,16 @@ type LibraryResponse = {
   items: LibraryItem[];
 };
 
-const EMPTY_ORGANIZATION: LibraryOrganization = { collections: [], tags: [] };
+type SmartShelfContentsResponse = {
+  shelf: LibraryOrganization["smart_shelves"][number];
+  items: LibraryItem[];
+};
+
+const EMPTY_ORGANIZATION: LibraryOrganization = {
+  collections: [],
+  tags: [],
+  smart_shelves: [],
+};
 const INITIAL_FILTERS: LibraryFilters = { reading: "all", collectionId: "", tagId: "" };
 
 function libraryUrl(filters: LibraryFilters): string {
@@ -48,6 +58,7 @@ export function LibraryClient() {
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [organization, setOrganization] = useState<LibraryOrganization>(EMPTY_ORGANIZATION);
   const [filters, setFilters] = useState<LibraryFilters>(INITIAL_FILTERS);
+  const [activeSmartShelfId, setActiveSmartShelfId] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +67,15 @@ export function LibraryClient() {
     const response = await apiFetch(libraryUrl(activeFilters), { cache: "no-store" });
     if (!response.ok) throw new Error(`Library failed with HTTP ${response.status}.`);
     const body = (await response.json()) as LibraryResponse;
+    setItems(body.items);
+  }, []);
+
+  const loadSmartShelf = useCallback(async (smartShelfId: string) => {
+    const response = await apiFetch(`/v1/library/smart-shelves/${smartShelfId}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`Smart shelf failed with HTTP ${response.status}.`);
+    const body = (await response.json()) as SmartShelfContentsResponse;
     setItems(body.items);
   }, []);
 
@@ -68,10 +88,16 @@ export function LibraryClient() {
   }, []);
 
   const refresh = useCallback(
-    async (activeFilters: LibraryFilters = filters) => {
-      await Promise.all([loadLibrary(activeFilters), loadOrganization()]);
+    async (
+      activeFilters: LibraryFilters = filters,
+      smartShelfId: string = activeSmartShelfId,
+    ) => {
+      await Promise.all([
+        smartShelfId ? loadSmartShelf(smartShelfId) : loadLibrary(activeFilters),
+        loadOrganization(),
+      ]);
     },
-    [filters, loadLibrary, loadOrganization],
+    [activeSmartShelfId, filters, loadLibrary, loadOrganization, loadSmartShelf],
   );
 
   useEffect(() => {
@@ -80,20 +106,27 @@ export function LibraryClient() {
       setLoading(true);
       setError(null);
       try {
+        const libraryRequest = activeSmartShelfId
+          ? apiFetch(`/v1/library/smart-shelves/${activeSmartShelfId}`, { cache: "no-store" })
+          : apiFetch(libraryUrl(filters), { cache: "no-store" });
         const [libraryResponse, organizationResponse] = await Promise.all([
-          apiFetch(libraryUrl(filters), { cache: "no-store" }),
+          libraryRequest,
           apiFetch("/v1/library/organization", { cache: "no-store" }),
         ]);
         if (!libraryResponse.ok) {
-          throw new Error(`Library failed with HTTP ${libraryResponse.status}.`);
+          throw new Error(
+            activeSmartShelfId
+              ? `Smart shelf failed with HTTP ${libraryResponse.status}.`
+              : `Library failed with HTTP ${libraryResponse.status}.`,
+          );
         }
         if (!organizationResponse.ok) {
           throw new Error(`Library organization failed with HTTP ${organizationResponse.status}.`);
         }
-        const libraryBody = (await libraryResponse.json()) as LibraryResponse;
+        const libraryBody = (await libraryResponse.json()) as LibraryResponse | SmartShelfContentsResponse;
         const organizationBody = (await organizationResponse.json()) as LibraryOrganization;
         if (!cancelled) {
-          setItems(libraryBody.items);
+          setItems("items" in libraryBody ? libraryBody.items : []);
           setOrganization(organizationBody);
         }
       } catch (caught) {
@@ -108,13 +141,24 @@ export function LibraryClient() {
     return () => {
       cancelled = true;
     };
-  }, [filters]);
+  }, [activeSmartShelfId, filters]);
+
+  function changeFilters(nextFilters: LibraryFilters) {
+    setActiveSmartShelfId("");
+    setFilters(nextFilters);
+  }
+
+  function openSmartShelf(smartShelfId: string) {
+    setFilters(INITIAL_FILTERS);
+    setActiveSmartShelfId(smartShelfId);
+  }
 
   async function mutation(
     key: string,
     url: string,
     options: RequestInit = { method: "POST" },
     nextFilters: LibraryFilters = filters,
+    nextSmartShelfId: string = activeSmartShelfId,
   ): Promise<boolean> {
     if (busyKey !== null) return false;
     setBusyKey(key);
@@ -122,7 +166,7 @@ export function LibraryClient() {
     try {
       const response = await apiFetch(url, options);
       if (!response.ok) throw new Error(`Library update failed with HTTP ${response.status}.`);
-      await refresh(nextFilters);
+      await refresh(nextFilters, nextSmartShelfId);
       return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Library update failed.");
@@ -141,25 +185,75 @@ export function LibraryClient() {
   }
 
   async function deleteCollection(collectionId: string) {
+    const activeShelf = organization.smart_shelves.find(
+      (shelf) => shelf.smart_shelf_id === activeSmartShelfId,
+    );
+    const removesActiveShelf = activeShelf?.rule.collection_id === collectionId;
     const nextFilters =
       filters.collectionId === collectionId ? { ...filters, collectionId: "" } : filters;
+    const nextSmartShelfId = removesActiveShelf ? "" : activeSmartShelfId;
     if (nextFilters !== filters) setFilters(nextFilters);
+    if (removesActiveShelf) setActiveSmartShelfId("");
     await mutation(
       `collection:${collectionId}`,
       `/v1/library/collections/${collectionId}/remove`,
       { method: "POST" },
       nextFilters,
+      nextSmartShelfId,
     );
   }
 
   async function deleteTag(tagId: string) {
+    const activeShelf = organization.smart_shelves.find(
+      (shelf) => shelf.smart_shelf_id === activeSmartShelfId,
+    );
+    const removesActiveShelf = activeShelf?.rule.tag_id === tagId;
     const nextFilters = filters.tagId === tagId ? { ...filters, tagId: "" } : filters;
+    const nextSmartShelfId = removesActiveShelf ? "" : activeSmartShelfId;
     if (nextFilters !== filters) setFilters(nextFilters);
+    if (removesActiveShelf) setActiveSmartShelfId("");
     await mutation(
       `tag:${tagId}`,
       `/v1/library/tags/${tagId}/remove`,
       { method: "POST" },
       nextFilters,
+      nextSmartShelfId,
+    );
+  }
+
+  async function createSmartShelf(input: SmartShelfInput): Promise<boolean> {
+    return mutation("smart-shelf:create", "/v1/library/smart-shelves", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+
+  async function updateSmartShelf(
+    smartShelfId: string,
+    input: SmartShelfInput,
+  ): Promise<boolean> {
+    return mutation(
+      `smart-shelf:${smartShelfId}`,
+      `/v1/library/smart-shelves/${smartShelfId}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    );
+  }
+
+  async function deleteSmartShelf(smartShelfId: string) {
+    const removesActiveShelf = activeSmartShelfId === smartShelfId;
+    const nextSmartShelfId = removesActiveShelf ? "" : activeSmartShelfId;
+    if (removesActiveShelf) setActiveSmartShelfId("");
+    await mutation(
+      `smart-shelf:${smartShelfId}`,
+      `/v1/library/smart-shelves/${smartShelfId}/remove`,
+      { method: "POST" },
+      filters,
+      nextSmartShelfId,
     );
   }
 
@@ -191,17 +285,24 @@ export function LibraryClient() {
   }
 
   const filtersActive =
-    filters.reading !== "all" || Boolean(filters.collectionId) || Boolean(filters.tagId);
+    Boolean(activeSmartShelfId) ||
+    filters.reading !== "all" ||
+    Boolean(filters.collectionId) ||
+    Boolean(filters.tagId);
+  const activeSmartShelf = organization.smart_shelves.find(
+    (shelf) => shelf.smart_shelf_id === activeSmartShelfId,
+  );
 
   return (
     <section className="library-surface" aria-label="Personal library">
       <div className="surface-heading">
         <div>
           <p className="eyebrow">Your library</p>
-          <h1>Books you have chosen to keep.</h1>
+          <h1>{activeSmartShelf ? activeSmartShelf.name : "Books you have chosen to keep."}</h1>
           <p>
-            Reading state, collections, and tags organize canonical library entries without
-            copying the catalog into another shelf system.
+            {activeSmartShelf
+              ? "This smart shelf is recomputed live from canonical reading state, collections, and tags."
+              : "Reading state, collections, tags, and smart shelves organize canonical library entries without copying the catalog into another shelf system."}
           </p>
         </div>
         <button
@@ -221,26 +322,35 @@ export function LibraryClient() {
       <LibraryOrganizationToolbar
         organization={organization}
         filters={filters}
+        activeSmartShelfId={activeSmartShelfId}
         busyKey={busyKey}
-        onFiltersChange={setFilters}
+        onFiltersChange={changeFilters}
+        onOpenSmartShelf={openSmartShelf}
         onCreateCollection={createCollection}
         onDeleteCollection={deleteCollection}
         onDeleteTag={deleteTag}
+        onCreateSmartShelf={createSmartShelf}
+        onUpdateSmartShelf={updateSmartShelf}
+        onDeleteSmartShelf={deleteSmartShelf}
       />
 
       {error ? <div className="error-card" role="alert">{error}</div> : null}
 
       {items.length === 0 ? (
         <div className="empty-surface">
-          <strong>{filtersActive ? "No books match these filters." : "Your shelves are empty."}</strong>
+          <strong>{filtersActive ? "No books match this shelf." : "Your shelves are empty."}</strong>
           <p>
             {filtersActive
-              ? "Change the reading state, collection, or tag filter to widen this shelf."
+              ? "Change the smart shelf rule or manual filters to widen this live view."
               : "Discover a work, inspect its editions, then save the work or the exact edition you want."}
           </p>
           {filtersActive ? (
-            <button className="secondary-action" type="button" onClick={() => setFilters(INITIAL_FILTERS)}>
-              Clear filters
+            <button
+              className="secondary-action"
+              type="button"
+              onClick={() => changeFilters(INITIAL_FILTERS)}
+            >
+              Show all books
             </button>
           ) : (
             <a className="primary-action link-button" href="/">Discover books</a>

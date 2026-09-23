@@ -6,6 +6,8 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 MAX_READER_SELECTION_CHARS = 6_000
+MAX_SELECTED_HIGHLIGHTS = 8
+MAX_EVIDENCE_ITEMS = 38
 _EVIDENCE_ID_PATTERN = re.compile(r"^E[1-9][0-9]*$")
 
 
@@ -124,6 +126,7 @@ class ResearchEvidenceBundleRequest(BaseModel):
     question: str = Field(min_length=1, max_length=500)
     reader: ReaderResearchContextRequest
     library_entry_ids: list[UUID] = Field(min_length=1, max_length=20)
+    selected_highlight_ids: list[UUID] = Field(default_factory=list, max_length=MAX_SELECTED_HIGHLIGHTS)
     related_limit: int = Field(default=12, ge=0, le=30)
 
     @field_validator("question")
@@ -141,6 +144,13 @@ class ResearchEvidenceBundleRequest(BaseModel):
             raise ValueError("Selected library entries must be unique")
         return value
 
+    @field_validator("selected_highlight_ids")
+    @classmethod
+    def require_unique_highlights(cls, value: list[UUID]) -> list[UUID]:
+        if len(set(value)) != len(value):
+            raise ValueError("Selected highlights must be unique")
+        return value
+
     @model_validator(mode="after")
     def require_reader_entry_selected(self) -> "ResearchEvidenceBundleRequest":
         if self.reader.library_entry_id not in self.library_entry_ids:
@@ -151,12 +161,14 @@ class ResearchEvidenceBundleRequest(BaseModel):
 class ResearchEvidenceSourceKind(StrEnum):
     READER_POSITION = "reader_position"
     READER_SELECTION = "reader_selection"
+    SELECTED_HIGHLIGHT = "selected_highlight"
     RELATED_PASSAGE = "related_passage"
 
 
 class ResearchEvidenceItem(BaseModel):
     evidence_id: str = Field(pattern=r"^E[1-9][0-9]*$")
     source_kind: ResearchEvidenceSourceKind
+    source_highlight_id: UUID | None = None
     library_entry_id: UUID
     work_id: UUID
     work_title: str
@@ -175,12 +187,21 @@ class ResearchEvidenceItem(BaseModel):
     text: str = Field(min_length=1)
     score: float | None = None
 
+    @model_validator(mode="after")
+    def require_highlight_provenance(self) -> "ResearchEvidenceItem":
+        if self.source_kind is ResearchEvidenceSourceKind.SELECTED_HIGHLIGHT:
+            if self.source_highlight_id is None:
+                raise ValueError("Selected highlight evidence requires its source highlight ID")
+        elif self.source_highlight_id is not None:
+            raise ValueError("Only selected highlight evidence may carry a source highlight ID")
+        return self
+
 
 class ResearchEvidenceBundleResponse(BaseModel):
     question: str
     reader: ReaderResearchContextRequest
     selected_library_entry_ids: list[UUID]
-    evidence: list[ResearchEvidenceItem] = Field(min_length=1, max_length=38)
+    evidence: list[ResearchEvidenceItem] = Field(min_length=1, max_length=MAX_EVIDENCE_ITEMS)
 
 
 class GroundedAnswerClaim(BaseModel):

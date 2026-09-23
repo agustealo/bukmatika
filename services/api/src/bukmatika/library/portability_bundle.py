@@ -41,6 +41,7 @@ BUNDLE_MEDIA_TYPE = "application/vnd.bukmatika.library+zip"
 _MANIFEST_MEMBER = "manifest.json"
 _INDEX_MEMBER = "bundle.json"
 _BYTE_PREFIX = "bytes/"
+_SUPPORTED_COMPRESSION = {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}
 
 
 class PortabilityBundleError(ValueError):
@@ -148,6 +149,7 @@ class LibraryPortabilityBundleService:
         package_path = root / "library.bukmatika"
         included: list[PortableBundleByte] = []
         omissions: list[PortableBundleOmission] = []
+        staged_hashes: set[str] = set()
         staged_bytes = 0
         try:
             for entry in manifest.entries:
@@ -165,7 +167,14 @@ class LibraryPortabilityBundleService:
                             )
                         )
                         continue
-                    if staged_bytes + asset.byte_size > self._settings.archive_max_uncompressed_bytes:
+                    normalized_sha = asset.content_sha256.casefold()
+                    new_content = normalized_sha not in staged_hashes
+                    exceeds_limit = (
+                        new_content
+                        and staged_bytes + asset.byte_size
+                        > self._settings.archive_max_uncompressed_bytes
+                    )
+                    if exceeds_limit:
                         raise PortabilityBundleError(
                             "bundle_export_too_large",
                             "Rights-authorized library bytes exceed the configured archive limit.",
@@ -198,9 +207,20 @@ class LibraryPortabilityBundleService:
                             byte_size=copied.byte_size,
                         )
                     )
-                    staged_bytes += copied.byte_size
+                    copied_sha = copied.sha256.casefold()
+                    if copied_sha not in staged_hashes:
+                        staged_hashes.add(copied_sha)
+                        staged_bytes += copied.byte_size
 
             index = LibraryPortabilityBundleIndex(bytes=included, omissions=omissions)
+            metadata_bytes = len(manifest.model_dump_json().encode()) + len(
+                index.model_dump_json().encode()
+            )
+            if staged_bytes + metadata_bytes > self._settings.archive_max_uncompressed_bytes:
+                raise PortabilityBundleError(
+                    "bundle_export_too_large",
+                    "Portable metadata and bytes exceed the configured archive limit.",
+                )
             await asyncio.to_thread(
                 self._write_bundle,
                 package_path,
@@ -227,6 +247,15 @@ class LibraryPortabilityBundleService:
                 bundle_path,
                 extraction_root,
             )
+        except PortabilityBundleError:
+            shutil.rmtree(extraction_root, ignore_errors=True)
+            raise
+        except (zipfile.BadZipFile, RuntimeError, NotImplementedError, OSError) as exc:
+            shutil.rmtree(extraction_root, ignore_errors=True)
+            raise PortabilityBundleError(
+                "bundle_read_failed",
+                "Portability bundle could not be read safely.",
+            ) from exc
         except Exception:
             shutil.rmtree(extraction_root, ignore_errors=True)
             raise
@@ -610,6 +639,11 @@ class LibraryPortabilityBundleService:
                 "bundle_encrypted_member",
                 f"Encrypted portability bundle members are not supported: {name}",
             )
+        if info.compress_type not in _SUPPORTED_COMPRESSION:
+            raise PortabilityBundleError(
+                "bundle_compression_unsupported",
+                f"Unsupported portability bundle compression for member: {name}",
+            )
         mode = (info.external_attr >> 16) & 0o170000
         if mode == stat.S_IFLNK:
             raise PortabilityBundleError(
@@ -648,7 +682,8 @@ class LibraryPortabilityBundleService:
 
     @staticmethod
     def _valid_sha256(value: str) -> bool:
-        return len(value) == 64 and all(character in "0123456789abcdefABCDEF" for character in value)
+        hexadecimal = "0123456789abcdefABCDEF"
+        return len(value) == 64 and all(character in hexadecimal for character in value)
 
     @staticmethod
     def _media_type(value: str | None) -> str | None:

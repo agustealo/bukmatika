@@ -126,7 +126,10 @@ class ResearchEvidenceBundleRequest(BaseModel):
     question: str = Field(min_length=1, max_length=500)
     reader: ReaderResearchContextRequest
     library_entry_ids: list[UUID] = Field(min_length=1, max_length=20)
-    selected_highlight_ids: list[UUID] = Field(default_factory=list, max_length=MAX_SELECTED_HIGHLIGHTS)
+    selected_highlight_ids: list[UUID] = Field(
+        default_factory=list,
+        max_length=MAX_SELECTED_HIGHLIGHTS,
+    )
     related_limit: int = Field(default=12, ge=0, le=30)
 
     @field_validator("question")

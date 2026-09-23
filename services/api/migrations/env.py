@@ -5,6 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from bukmatika.config import get_settings
 from bukmatika.persistence import (
+    action_models,
     document_models,
     identity_models,
     personalization_models,
@@ -18,6 +19,7 @@ if config.config_file_name is not None:
 
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
 _registered_models = (
+    action_models.ActionExecutionReceipt,
     document_models.Document,
     identity_models.PrincipalSession,
     personalization_models.UserModel,

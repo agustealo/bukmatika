@@ -11,6 +11,7 @@ import {
   type ReaderLocator,
 } from "./reader-annotations";
 import "./reader-annotations.module.css";
+import { ReaderFormatNavigation } from "./reader-format-navigation";
 import { ReaderResearchPanel } from "./reader-research-panel";
 
 type ReaderSection = {
@@ -86,6 +87,13 @@ function locatorLabel(locator: ReaderLocator): string {
   return parts.length > 0 ? parts.join(" · ") : "Source coordinate";
 }
 
+function requestedSectionOrdinal(): number | null {
+  const raw = new URLSearchParams(window.location.search).get("section");
+  if (raw === null || raw.trim() === "") return null;
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 0 ? value : null;
+}
+
 export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) {
   const [document, setDocument] = useState<ReaderDocument | null>(null);
   const [sections, setSections] = useState<ReaderSection[]>([]);
@@ -125,21 +133,42 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
       setLoading(true);
       setError(null);
       try {
-        const initial = await fetchPage();
-        let visible = initial;
-        const resumeOrdinal = initial.reading_state?.section_ordinal;
-        const containsResume = initial.sections.some(
-          (section) => section.ordinal === resumeOrdinal,
+        const requestedOrdinal = requestedSectionOrdinal();
+        const initial = await fetchPage(
+          requestedOrdinal !== null && requestedOrdinal > 0 ? requestedOrdinal - 1 : undefined,
         );
-        if (
-          resumeOrdinal !== null &&
-          resumeOrdinal !== undefined &&
-          resumeOrdinal > 0 &&
-          !containsResume
-        ) {
-          visible = await fetchPage(resumeOrdinal - 1);
+        let visible = initial;
+        let requestedSectionId =
+          requestedOrdinal === null
+            ? null
+            : initial.sections.find((section) => section.ordinal === requestedOrdinal)?.section_id ??
+              null;
+
+        if (requestedOrdinal !== null && requestedSectionId === null) {
+          visible = await fetchPage();
         }
+
+        if (requestedSectionId === null) {
+          const resumeOrdinal = visible.reading_state?.section_ordinal;
+          const containsResume = visible.sections.some(
+            (section) => section.ordinal === resumeOrdinal,
+          );
+          if (
+            resumeOrdinal !== null &&
+            resumeOrdinal !== undefined &&
+            resumeOrdinal > 0 &&
+            !containsResume
+          ) {
+            visible = await fetchPage(resumeOrdinal - 1);
+          }
+        }
+
         if (cancelled) return;
+        if (requestedOrdinal !== null) {
+          requestedSectionId =
+            visible.sections.find((section) => section.ordinal === requestedOrdinal)?.section_id ??
+            requestedSectionId;
+        }
         setDocument(visible);
         setSections(visible.sections);
         setBookmarks(visible.bookmarks);
@@ -147,11 +176,12 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
         setReadingState(visible.reading_state);
         setNextAfter(visible.next_after_ordinal);
         const resumeId = visible.reading_state?.section_id;
-        setActiveSectionId(resumeId ?? visible.sections[0]?.section_id ?? null);
-        if (resumeId) {
+        const targetId = requestedSectionId ?? resumeId ?? visible.sections[0]?.section_id ?? null;
+        setActiveSectionId(targetId);
+        if (targetId) {
           requestAnimationFrame(() => {
-            documentElement(resumeId)?.focus({ preventScroll: true });
-            documentElement(resumeId)?.scrollIntoView({ block: "start" });
+            documentElement(targetId)?.focus({ preventScroll: true });
+            documentElement(targetId)?.scrollIntoView({ block: "start" });
           });
         }
       } catch (caught) {
@@ -417,6 +447,11 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
               {readingState ? locatorLabel(readingState.locator) : "Progress saves as you read."}
             </p>
           </div>
+          <ReaderFormatNavigation
+            libraryEntryId={libraryEntryId}
+            documentId={documentId}
+            activeLocator={activeSection?.locator ?? readingState?.locator ?? null}
+          />
           <div className="reader-sidebar-card">
             <span className="reader-meta-label">Bookmarks</span>
             <strong>{bookmarks.length}</strong>

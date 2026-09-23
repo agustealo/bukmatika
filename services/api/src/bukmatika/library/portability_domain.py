@@ -2,7 +2,10 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, Field, JsonValue, model_validator
+
+
+type ReadingStatus = Literal["unread", "reading", "finished"]
 
 
 class PortableIdentifier(BaseModel):
@@ -114,7 +117,7 @@ class PortableHighlight(BaseModel):
 class PortableReadingState(BaseModel):
     source_reading_state_id: UUID
     document: PortableDocumentIdentity
-    status: str
+    status: ReadingStatus
     progress_fraction: float = Field(ge=0, le=1)
     position: PortableReadingPosition | None
     last_read_at: datetime | None
@@ -156,11 +159,17 @@ class PortableSmartShelf(BaseModel):
     source_smart_shelf_id: UUID
     name: str
     description: str | None
-    reading_status: str | None
+    reading_status: ReadingStatus | None
     collection_id: UUID | None
     tag_id: UUID | None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def require_rule(self) -> "PortableSmartShelf":
+        if self.reading_status is None and self.collection_id is None and self.tag_id is None:
+            raise ValueError("smart shelf must define at least one rule")
+        return self
 
 
 class LibraryPortabilityExportResponse(BaseModel):

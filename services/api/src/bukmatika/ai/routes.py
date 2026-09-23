@@ -1,9 +1,21 @@
 from enum import StrEnum
 from typing import Annotated, cast
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
+from bukmatika.ai.approval_domain import (
+    ActionApprovalConflict,
+    ActionApprovalInvalid,
+    ActionApprovalNotFound,
+    ActionApprovalNotRequired,
+    ActionApprovalRejected,
+    ActionApprovalRequest,
+    ActionApprovalResponse,
+    PendingActionApprovalResponse,
+)
+from bukmatika.ai.approvals import ApprovalService
 from bukmatika.ai.configuration import (
     LocalModelConfigurationResponse,
     LocalModelConfigurationUpdate,
@@ -11,9 +23,13 @@ from bukmatika.ai.configuration import (
     PrincipalModelRuntimeResolver,
 )
 from bukmatika.ai.execution import (
+    ActionApprovalRequired,
     ActionExecutionDenied,
     AIExecutionDisabled,
     CapabilityArgumentsInvalid,
+    CapabilityExecutionResponse,
+    CapabilityExecutorUnavailable,
+    ExecutionCoordinator,
 )
 from bukmatika.ai.gateway import (
     ModelGateway,
@@ -28,6 +44,7 @@ from bukmatika.ai.research_service import GroundedResearchSynthesisService
 from bukmatika.ai.service import AIDisabled
 from bukmatika.config import get_settings
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
+from bukmatika.persistence.execution import ActionExecutionNotFound, PlanIntegrityError
 from bukmatika.persistence.personalization import ContextSelectionDenied
 from bukmatika.persistence.research import ResearchReaderPositionInvalid, ResearchSelectionDenied
 from bukmatika.personalization.service import PersonalizationService
@@ -35,6 +52,8 @@ from bukmatika.research import ResearchEvidenceBundleRequest, ResearchEvidenceRe
 
 router = APIRouter(prefix="/v1/ai", tags=["ai"])
 _personalization_service = PersonalizationService()
+_approval_service = ApprovalService()
+_execution_coordinator = ExecutionCoordinator()
 
 
 class AIAvailabilityState(StrEnum):
@@ -76,6 +95,14 @@ async def model_gateway(
 
 def personalization_service() -> PersonalizationService:
     return _personalization_service
+
+
+def approval_service() -> ApprovalService:
+    return _approval_service
+
+
+def execution_coordinator() -> ExecutionCoordinator:
+    return _execution_coordinator
 
 
 def grounded_research_service(
@@ -149,6 +176,84 @@ async def ai_provider_status(
         model=provider.model if provider is not None else None,
         routing=provider.routing if provider is not None else None,
     )
+
+
+@router.get("/approvals/pending", response_model=PendingActionApprovalResponse)
+async def pending_action_approvals(
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[ApprovalService, Depends(approval_service)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> PendingActionApprovalResponse:
+    return await service.pending(principal_id=identity.principal_id, limit=limit)
+
+
+@router.post(
+    "/actions/{action_decision_id}/approval",
+    response_model=ActionApprovalResponse,
+)
+async def decide_action_approval(
+    action_decision_id: UUID,
+    approval: ActionApprovalRequest,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[ApprovalService, Depends(approval_service)],
+) -> ActionApprovalResponse:
+    try:
+        return await service.decide(
+            principal_id=identity.principal_id,
+            action_decision_id=action_decision_id,
+            request=approval,
+        )
+    except ActionApprovalNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": exc.code},
+        ) from exc
+    except (ActionApprovalNotRequired, ActionApprovalConflict) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code},
+        ) from exc
+
+
+@router.post(
+    "/plans/{plan_id}/steps/{step_id}/execute",
+    response_model=CapabilityExecutionResponse,
+)
+async def execute_planned_action(
+    plan_id: UUID,
+    step_id: str,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    coordinator: Annotated[ExecutionCoordinator, Depends(execution_coordinator)],
+) -> CapabilityExecutionResponse:
+    try:
+        return await coordinator.execute(
+            principal_id=identity.principal_id,
+            plan_id=plan_id,
+            step_id=step_id,
+        )
+    except ActionExecutionNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": exc.code},
+        ) from exc
+    except CapabilityArgumentsInvalid as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": exc.code},
+        ) from exc
+    except (
+        AIExecutionDisabled,
+        ActionApprovalRequired,
+        ActionApprovalRejected,
+        ActionApprovalInvalid,
+        ActionExecutionDenied,
+        CapabilityExecutorUnavailable,
+        PlanIntegrityError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": getattr(exc, "code", "PLAN_INTEGRITY_ERROR")},
+        ) from exc
 
 
 @router.post("/research/answer", response_model=GroundedResearchExecutionResponse)

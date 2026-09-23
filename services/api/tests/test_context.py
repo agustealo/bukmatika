@@ -254,7 +254,15 @@ async def test_context_capabilities_are_task_bounded(session: AsyncSession) -> N
         request=ContextRequest(task=ContextTask.DISCOVERY),
     )
 
-    assert research.available_capabilities == ["research.search", "reader.open"]
-    assert discovery.available_capabilities == ["discovery.search", "catalog.search"]
+    assert research.available_capabilities == [
+        "research.search",
+        "reader.open",
+        "preferences.propose",
+    ]
+    assert discovery.available_capabilities == [
+        "discovery.search",
+        "catalog.search",
+        "preferences.propose",
+    ]
     assert research.model_context_ready is True
     assert discovery.model_context_ready is True

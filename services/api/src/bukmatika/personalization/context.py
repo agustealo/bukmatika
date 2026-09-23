@@ -25,10 +25,26 @@ SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 ResearchAnswerAvailability = Callable[[], Awaitable[bool]]
 
 _TASK_CAPABILITIES: dict[ContextTask, tuple[str, ...]] = {
-    ContextTask.DISCOVERY: ("discovery.search", "catalog.search"),
-    ContextTask.LIBRARY: ("library.list", "reader.open"),
-    ContextTask.RESEARCH: ("research.search", "reader.open"),
-    ContextTask.READER: ("reader.open", "research.search"),
+    ContextTask.DISCOVERY: (
+        "discovery.search",
+        "catalog.search",
+        "preferences.propose",
+    ),
+    ContextTask.LIBRARY: (
+        "library.list",
+        "reader.open",
+        "preferences.propose",
+    ),
+    ContextTask.RESEARCH: (
+        "research.search",
+        "reader.open",
+        "preferences.propose",
+    ),
+    ContextTask.READER: (
+        "reader.open",
+        "research.search",
+        "preferences.propose",
+    ),
 }
 
 _TASK_SCOPE: dict[ContextTask, PreferenceScopeType | None] = {
@@ -118,12 +134,12 @@ class ContextAssembler:
                 ai_enabled=True,
                 learning_enabled=user_model.learning_enabled,
                 autonomy_level=user_model.autonomy_level,
-                model_context_ready=True,
                 preferences=preferences,
                 goal=goal,
                 library_entries=library_entries,
                 available_capabilities=list(_TASK_CAPABILITIES[request.task]),
                 exclusion_reasons=[],
+                model_context_ready=True,
             )
 
         if request.task not in (ContextTask.RESEARCH, ContextTask.READER):

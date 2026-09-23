@@ -5,9 +5,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.persistence.action_models import ActionExecutionReceipt
 from bukmatika.persistence.events import SemanticEventType
 from bukmatika.persistence.models import InteractionEvent
 from bukmatika.persistence.personalization_models import (
+    ActionApproval,
     ActionDecision,
     Goal,
     OutcomeEvent,
@@ -40,6 +42,14 @@ class ModelActivityRow:
     model: str
     routing: str | None
     occurred_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalActivityRow:
+    decision_id: UUID
+    approval_status: str
+    approval_decided_at: datetime
+    executed_at: datetime | None
 
 
 class PersonalizationReadRepository:
@@ -131,6 +141,51 @@ class PersonalizationReadRepository:
             )
         ).all()
         return [ActivityRow(plan=plan, decision=decision) for plan, decision in rows]
+
+    async def approval_activity_for_decisions(
+        self,
+        *,
+        principal_id: UUID,
+        decision_ids: list[UUID],
+    ) -> list[ApprovalActivityRow]:
+        if not decision_ids:
+            return []
+
+        approval_rows = (
+            await self._session.execute(
+                select(
+                    ActionApproval.action_decision_id,
+                    ActionApproval.decision,
+                    ActionApproval.decided_at,
+                ).where(
+                    ActionApproval.principal_id == principal_id,
+                    ActionApproval.action_decision_id.in_(decision_ids),
+                )
+            )
+        ).all()
+        receipt_rows = (
+            await self._session.execute(
+                select(
+                    ActionExecutionReceipt.action_decision_id,
+                    ActionExecutionReceipt.executed_at,
+                ).where(
+                    ActionExecutionReceipt.principal_id == principal_id,
+                    ActionExecutionReceipt.action_decision_id.in_(decision_ids),
+                )
+            )
+        ).all()
+        executed_at_by_decision = {
+            decision_id: executed_at for decision_id, executed_at in receipt_rows
+        }
+        return [
+            ApprovalActivityRow(
+                decision_id=decision_id,
+                approval_status=approval_status,
+                approval_decided_at=decided_at,
+                executed_at=executed_at_by_decision.get(decision_id),
+            )
+            for decision_id, approval_status, decided_at in approval_rows
+        ]
 
     async def model_activity_for_decisions(
         self,

@@ -16,6 +16,7 @@ from bukmatika.persistence.personalization_models import (
 )
 from bukmatika.persistence.personalization_read import (
     ActivityRow,
+    ApprovalActivityRow,
     ModelActivityRow,
     PersonalizationReadRepository,
     PreferenceEvidenceRow,
@@ -93,6 +94,10 @@ class PersonalizationControlService:
                 principal_id=principal_id,
                 decision_ids=decision_ids,
             )
+            approval_activity = await reads.approval_activity_for_decisions(
+                principal_id=principal_id,
+                decision_ids=decision_ids,
+            )
             recent_outcomes = await reads.recent_outcomes(
                 principal_id=principal_id,
                 limit=outcome_limit,
@@ -110,6 +115,7 @@ class PersonalizationControlService:
                     activity_rows,
                     activity_outcomes,
                     model_activity,
+                    approval_activity,
                 ),
                 recent_outcomes=[_outcome_response(outcome) for outcome in recent_outcomes],
             )
@@ -132,8 +138,17 @@ class PersonalizationControlService:
                 principal_id=principal_id,
                 decision_ids=decision_ids,
             )
+            approval_activity = await reads.approval_activity_for_decisions(
+                principal_id=principal_id,
+                decision_ids=decision_ids,
+            )
             return ActivityLedgerResponse(
-                items=_activity_items(rows, outcomes, model_activity)
+                items=_activity_items(
+                    rows,
+                    outcomes,
+                    model_activity,
+                    approval_activity,
+                )
             )
 
 
@@ -208,6 +223,7 @@ def _activity_items(
     rows: list[ActivityRow],
     outcomes: list[OutcomeEvent],
     model_activity: list[ModelActivityRow],
+    approval_activity: list[ApprovalActivityRow],
 ) -> list[ActivityLedgerItem]:
     outcomes_by_decision: dict[UUID, list[OutcomeEvent]] = defaultdict(list)
     for outcome in outcomes:
@@ -218,12 +234,15 @@ def _activity_items(
     for model_event in model_activity:
         model_by_decision[model_event.decision_id] = model_event
 
+    approval_by_decision = {row.decision_id: row for row in approval_activity}
+
     return [
         _activity_item(
             plan=row.plan,
             decision=row.decision,
             outcomes=outcomes_by_decision.get(row.decision.id, []),
             model_activity=model_by_decision.get(row.decision.id),
+            approval_activity=approval_by_decision.get(row.decision.id),
         )
         for row in rows
     ]
@@ -235,6 +254,7 @@ def _activity_item(
     decision: ActionDecision,
     outcomes: list[OutcomeEvent],
     model_activity: ModelActivityRow | None,
+    approval_activity: ApprovalActivityRow | None,
 ) -> ActivityLedgerItem:
     rendered_outcomes = [_outcome_response(outcome) for outcome in outcomes]
     return ActivityLedgerItem(
@@ -249,6 +269,16 @@ def _activity_item(
         decision_reason=decision.reason,
         policy_version=decision.policy_version,
         approval_required=decision.decision == "require_approval",
+        approval_status=(
+            approval_activity.approval_status if approval_activity is not None else None
+        ),
+        approval_decided_at=(
+            approval_activity.approval_decided_at if approval_activity is not None else None
+        ),
+        execution_completed=(
+            approval_activity is not None and approval_activity.executed_at is not None
+        ),
+        executed_at=approval_activity.executed_at if approval_activity is not None else None,
         plan_created_at=plan.created_at,
         evaluated_at=decision.evaluated_at,
         outcomes=rendered_outcomes,

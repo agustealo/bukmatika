@@ -1,4 +1,5 @@
 import { LocalAIStatus } from "../../components/local-ai-status";
+import { PendingAIApprovals } from "../../components/pending-ai-approvals";
 import { PersonalizationClient } from "../../components/personalization-client";
 import { PersonalizationDataControls } from "../../components/personalization-data-controls";
 
@@ -20,6 +21,7 @@ export default function PersonalizationPage() {
 
       <PersonalizationClient />
       <LocalAIStatus />
+      <PendingAIApprovals />
       <PersonalizationDataControls />
     </main>
   );

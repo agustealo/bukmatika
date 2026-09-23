@@ -208,6 +208,39 @@ class ActionDecision(Base):
     )
 
 
+class ActionApproval(Base):
+    __tablename__ = "action_approvals"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved','rejected')",
+            name="ck_action_approval_decision",
+        ),
+        UniqueConstraint(
+            "action_decision_id",
+            name="uq_action_approval_action_decision",
+        ),
+        Index("ix_action_approvals_principal_time", "principal_id", "decided_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    principal_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("principals.id", ondelete="CASCADE"), nullable=False
+    )
+    plan_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("plans.id", ondelete="CASCADE"), nullable=False
+    )
+    action_decision_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("action_decisions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    step_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class OutcomeEvent(Base):
     __tablename__ = "outcome_events"
     __table_args__ = (

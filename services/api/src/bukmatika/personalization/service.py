@@ -48,24 +48,11 @@ class PersonalizationService:
         request: ExplicitPreferenceRequest,
     ) -> PreferenceClaimResponse:
         async with self._session_scope() as database_session:
-            repository = PersonalizationRepository(database_session)
-            claim = await repository.set_explicit_preference(
+            return await set_explicit_preference_in_session(
+                database_session,
                 principal_id=principal_id,
                 request=request,
             )
-            await InteractionEventRepository(database_session).record(
-                SemanticEventType.PREFERENCE_SET,
-                principal_id=principal_id,
-                entity_type="preference_claim",
-                entity_id=claim.id,
-                context={
-                    "key": claim.key,
-                    "scope_type": claim.scope_type,
-                    "scope_value": claim.scope_value,
-                    "source": claim.source,
-                },
-            )
-            return _claim_response(claim)
 
     async def forget_preference(
         self,
@@ -115,6 +102,33 @@ class PersonalizationService:
             return _profile_response(user_model, claims)
 
 
+async def set_explicit_preference_in_session(
+    database_session: AsyncSession,
+    *,
+    principal_id: UUID,
+    request: ExplicitPreferenceRequest,
+) -> PreferenceClaimResponse:
+    """Canonical explicit-preference mutation inside the caller's transaction."""
+    repository = PersonalizationRepository(database_session)
+    claim = await repository.set_explicit_preference(
+        principal_id=principal_id,
+        request=request,
+    )
+    await InteractionEventRepository(database_session).record(
+        SemanticEventType.PREFERENCE_SET,
+        principal_id=principal_id,
+        entity_type="preference_claim",
+        entity_id=claim.id,
+        context={
+            "key": claim.key,
+            "scope_type": claim.scope_type,
+            "scope_value": claim.scope_value,
+            "source": claim.source,
+        },
+    )
+    return _claim_response(claim)
+
+
 def _profile_response(
     user_model: UserModel,
     claims: list[PreferenceClaim],
@@ -147,4 +161,8 @@ def _claim_response(claim: PreferenceClaim) -> PreferenceClaimResponse:
     )
 
 
-__all__ = ["PersonalizationService", "PreferenceClaimNotFound"]
+__all__ = [
+    "PersonalizationService",
+    "PreferenceClaimNotFound",
+    "set_explicit_preference_in_session",
+]

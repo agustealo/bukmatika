@@ -1,6 +1,7 @@
+from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AssetStatusResponse(BaseModel):
@@ -40,6 +41,22 @@ class WorkDossierResponse(BaseModel):
     editions: list[EditionDossierResponse]
 
 
+class LibraryReadingStatus(StrEnum):
+    UNREAD = "unread"
+    READING = "reading"
+    FINISHED = "finished"
+
+
+class CollectionSummaryResponse(BaseModel):
+    collection_id: UUID
+    name: str
+
+
+class TagSummaryResponse(BaseModel):
+    tag_id: UUID
+    name: str
+
+
 class LibraryItemResponse(BaseModel):
     library_entry_id: UUID
     work_id: UUID
@@ -51,7 +68,68 @@ class LibraryItemResponse(BaseModel):
     readable_format: str | None
     progress_fraction: float | None = Field(default=None, ge=0, le=1)
     reading_status: str | None
+    collections: list[CollectionSummaryResponse] = Field(default_factory=list)
+    tags: list[TagSummaryResponse] = Field(default_factory=list)
 
 
 class LibraryResponse(BaseModel):
     items: list[LibraryItemResponse]
+
+
+class CollectionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("Collection name cannot be blank")
+        return normalized
+
+    @field_validator("description")
+    @classmethod
+    def normalize_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        return normalized or None
+
+
+class CollectionUpdate(CollectionCreate):
+    pass
+
+
+class CollectionResponse(BaseModel):
+    collection_id: UUID
+    name: str
+    description: str | None
+    item_count: int = Field(ge=0)
+
+
+class TagAssignRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("Tag name cannot be blank")
+        return normalized
+
+
+class TagUpdate(TagAssignRequest):
+    pass
+
+
+class TagResponse(BaseModel):
+    tag_id: UUID
+    name: str
+    item_count: int = Field(ge=0)
+
+
+class LibraryOrganizationResponse(BaseModel):
+    collections: list[CollectionResponse]
+    tags: list[TagResponse]

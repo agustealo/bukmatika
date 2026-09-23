@@ -205,6 +205,45 @@ class LibraryBytePortabilityService:
                 "stored_object_metadata_conflict",
                 "Asset byte size disagrees with the canonical stored object.",
             )
+        if candidate.acquisition_expected_format.casefold() != candidate.asset_format.casefold():
+            raise BytePortabilityIntegrityError(
+                "acquisition_metadata_conflict",
+                "Acquisition format disagrees with the canonical asset format.",
+            )
+        if (
+            candidate.acquisition_bytes_received is not None
+            and candidate.acquisition_bytes_received != candidate.byte_size
+        ):
+            raise BytePortabilityIntegrityError(
+                "acquisition_metadata_conflict",
+                "Acquisition byte count disagrees with the canonical stored object.",
+            )
+        if (
+            candidate.acquisition_sha256 is not None
+            and candidate.acquisition_sha256.casefold() != candidate.sha256.casefold()
+        ):
+            raise BytePortabilityIntegrityError(
+                "acquisition_metadata_conflict",
+                "Acquisition SHA-256 disagrees with the canonical stored object.",
+            )
+        if (
+            candidate.asset_media_type is not None
+            and candidate.media_type is not None
+            and candidate.asset_media_type.casefold() != candidate.media_type.casefold()
+        ):
+            raise BytePortabilityIntegrityError(
+                "stored_object_metadata_conflict",
+                "Asset media type disagrees with the canonical stored object.",
+            )
+        if (
+            candidate.acquisition_media_type is not None
+            and candidate.media_type is not None
+            and candidate.acquisition_media_type.casefold() != candidate.media_type.casefold()
+        ):
+            raise BytePortabilityIntegrityError(
+                "acquisition_metadata_conflict",
+                "Acquisition media type disagrees with the canonical stored object.",
+            )
 
     async def _verify_path(
         self,

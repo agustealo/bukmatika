@@ -17,6 +17,7 @@ from bukmatika.reader.domain import (
     HighlightNoteUpdate,
     HighlightResponse,
     ReaderDocumentResponse,
+    ReaderNavigationResponse,
     ReadingProgressUpdate,
     ReadingStateResponse,
 )
@@ -46,6 +47,26 @@ async def open_reader(
             document_id=document_id,
             after_ordinal=after,
             limit=limit,
+        )
+    except ReaderAccessDenied as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reader document not found",
+        ) from exc
+
+
+@router.get("/navigation", response_model=ReaderNavigationResponse)
+async def reader_navigation(
+    library_entry_id: UUID,
+    document_id: UUID,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[ReaderService, Depends(reader_service)],
+) -> ReaderNavigationResponse:
+    try:
+        return await service.navigation(
+            principal_id=identity.principal_id,
+            library_entry_id=library_entry_id,
+            document_id=document_id,
         )
     except ReaderAccessDenied as exc:
         raise HTTPException(

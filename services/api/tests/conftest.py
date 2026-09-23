@@ -1,5 +1,6 @@
 import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Generator
+from pathlib import Path
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -17,14 +18,25 @@ def _reader_route_snapshot() -> tuple[tuple[str | None, str | None], ...]:
     )
 
 
-@pytest.fixture(autouse=True)
-def reader_routes_are_not_polluted(request: pytest.FixtureRequest) -> Iterator[None]:
+_INITIAL_READER_ROUTES = _reader_route_snapshot()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_pycollect_makemodule(
+    module_path: Path,
+    parent: pytest.Collector,
+) -> Generator[None, None, None]:
+    del parent
     before = _reader_route_snapshot()
-    assert before, f"Reader routes missing before {request.node.nodeid}"
     yield
     after = _reader_route_snapshot()
     assert after == before, (
-        f"{request.node.nodeid} mutated shared reader routes: before={before!r}, after={after!r}"
+        f"Collecting {module_path} mutated shared reader routes: "
+        f"initial={_INITIAL_READER_ROUTES!r}, before={before!r}, after={after!r}"
+    )
+    assert after, (
+        f"Reader routes absent after collecting {module_path}: "
+        f"initial={_INITIAL_READER_ROUTES!r}"
     )
 
 

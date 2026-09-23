@@ -13,7 +13,7 @@ from bukmatika.research.domain import (
 
 _WORD = r"[A-Z][\w'’\-]+"
 _PERSON = re.compile(
-    rf"\b(?P<cue>Mr|Mrs|Ms|Dr|Professor|Prof|Captain|Capt|King|Queen|President|Emperor|Empress|Pope|Saint|St)\.?(?:\s+)(?P<mention>{_WORD}(?:\s+{_WORD}){{0,3}})\b"
+    rf"\b(?P<cue>Mr|Mrs|Ms|Dr|Professor|Prof|Captain|Capt|King|Queen|President|Emperor|Empress|Pope)\.?(?:\s+)(?P<mention>{_WORD}(?:\s+{_WORD}){{0,3}})\b"
 )
 _PLACE_OF = re.compile(
     rf"\b(?P<cue>city|island|islands|kingdom|province|river|lake|mount|mountain|bay|gulf|peninsula|strait|harbor|harbour|port|fort)\s+of\s+(?P<mention>{_WORD}(?:\s+{_WORD}){{0,3}})\b",
@@ -23,7 +23,7 @@ _PLACE_SUFFIX = re.compile(
     rf"\b(?P<mention>{_WORD}(?:\s+{_WORD}){{0,3}}\s+(?P<cue>River|Sea|Ocean|Island|Islands|Bay|Gulf|Lake|Mount|Mountain|Mountains|Valley|Peninsula|Strait|Straits|Harbor|Harbour|Port|Fort|Province|Kingdom|Republic|Empire|City))\b"
 )
 _CONCEPT_OF = re.compile(
-    r"\b(?P<cue>concept|principle|doctrine|theory|idea|practice|system|movement|method)\s+of\s+(?P<mention>[A-Za-z][A-Za-z'’\-]*(?:\s+[A-Za-z][A-Za-z'’\-]*){0,2})\b",
+    r"\b(?P<cue>concept|principle|doctrine|theory|idea|practice|system|movement|method)\s+of\s+(?P<mention>[A-Za-z][A-Za-z'’\-]*)\b",
     re.IGNORECASE,
 )
 _CONCEPT_QUOTED = re.compile(
@@ -31,29 +31,6 @@ _CONCEPT_QUOTED = re.compile(
     re.IGNORECASE,
 )
 _AMBIGUOUS_PROPER = re.compile(rf"\b(?P<mention>{_WORD}(?:\s+{_WORD}){{1,3}})\b")
-
-_CONCEPT_TRAILING_STOP = {
-    "a",
-    "an",
-    "and",
-    "as",
-    "at",
-    "by",
-    "for",
-    "from",
-    "in",
-    "into",
-    "of",
-    "on",
-    "or",
-    "that",
-    "the",
-    "to",
-    "was",
-    "were",
-    "which",
-    "with",
-}
 
 
 @dataclass(frozen=True)
@@ -213,11 +190,7 @@ def _parse_place(match: re.Match[str]) -> _MentionCandidate | None:
 
 
 def _parse_concept(match: re.Match[str]) -> _MentionCandidate | None:
-    mention = match.group("mention").strip()
-    words = mention.split()
-    while len(words) > 1 and words[-1].casefold() in _CONCEPT_TRAILING_STOP:
-        words.pop()
-    mention = " ".join(words).strip(" ,;:.")
+    mention = match.group("mention").strip(" ,;:.")
     if not mention:
         return None
     relative = match.group("mention").find(mention)

@@ -1,19 +1,45 @@
 from bukmatika.library.domain import (
     AssetStatusResponse,
+    CollectionCreate,
+    CollectionResponse,
+    CollectionSummaryResponse,
+    CollectionUpdate,
     EditionDossierResponse,
     LibraryItemResponse,
+    LibraryOrganizationResponse,
+    LibraryReadingStatus,
     LibraryResponse,
+    TagAssignRequest,
+    TagResponse,
+    TagSummaryResponse,
+    TagUpdate,
     WorkDossierResponse,
 )
 from bukmatika.library.routes import router
-from bukmatika.library.service import LibraryService
+from bukmatika.library.service import (
+    LibraryOrganizationConflict,
+    LibraryOrganizationNotFound,
+    LibraryService,
+)
 
 __all__ = [
     "AssetStatusResponse",
+    "CollectionCreate",
+    "CollectionResponse",
+    "CollectionSummaryResponse",
+    "CollectionUpdate",
     "EditionDossierResponse",
     "LibraryItemResponse",
+    "LibraryOrganizationConflict",
+    "LibraryOrganizationNotFound",
+    "LibraryOrganizationResponse",
+    "LibraryReadingStatus",
     "LibraryResponse",
     "LibraryService",
+    "TagAssignRequest",
+    "TagResponse",
+    "TagSummaryResponse",
+    "TagUpdate",
     "WorkDossierResponse",
     "router",
 ]

@@ -1,3 +1,4 @@
+import unicodedata
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from uuid import UUID
@@ -7,9 +8,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.domain import RightsEvidence
 from bukmatika.library.domain import (
     AssetStatusResponse,
+    CollectionCreate,
+    CollectionResponse,
+    CollectionSummaryResponse,
+    CollectionUpdate,
     EditionDossierResponse,
     LibraryItemResponse,
+    LibraryOrganizationResponse,
+    LibraryReadingStatus,
     LibraryResponse,
+    TagAssignRequest,
+    TagResponse,
+    TagSummaryResponse,
+    TagUpdate,
     WorkDossierResponse,
 )
 from bukmatika.persistence import session_scope
@@ -19,6 +30,12 @@ from bukmatika.persistence.library import (
     LibraryRepository,
     LibraryTargetNotFound,
 )
+from bukmatika.persistence.library_organization import (
+    LibraryOrganizationConflict,
+    LibraryOrganizationNotFound,
+    LibraryOrganizationRepository,
+)
+from bukmatika.persistence.library_resume import LibraryResumeRepository
 from bukmatika.persistence.models import Asset, LibraryEntry, RightsEvidenceRecord
 from bukmatika.rights import RightsEngine
 
@@ -26,7 +43,7 @@ SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
 
 class LibraryService:
-    """Principal-scoped consumer library and catalog dossier read model."""
+    """Principal-scoped consumer library, dossier, and organization authority."""
 
     def __init__(
         self,
@@ -58,18 +75,241 @@ class LibraryService:
             repository = LibraryRepository(database_session)
             return await self._dossier(repository, principal_id=principal_id, work_id=work_id)
 
-    async def list_library(self, *, principal_id: UUID) -> LibraryResponse:
+    async def list_library(
+        self,
+        *,
+        principal_id: UUID,
+        reading_status: LibraryReadingStatus | None = None,
+        collection_id: UUID | None = None,
+        tag_id: UUID | None = None,
+    ) -> LibraryResponse:
         async with self._session_scope() as database_session:
             repository = LibraryRepository(database_session)
+            organization = LibraryOrganizationRepository(database_session)
+            resume = LibraryResumeRepository(database_session)
             entries = await repository.library_entries(principal_id)
-            items = [await self._library_item(repository, entry) for entry in entries]
-            return LibraryResponse(items=items)
+
+            if collection_id is not None:
+                allowed = await organization.collection_entry_ids(
+                    principal_id=principal_id,
+                    collection_id=collection_id,
+                )
+                entries = [entry for entry in entries if entry.id in allowed]
+            if tag_id is not None:
+                allowed = await organization.tag_entry_ids(
+                    principal_id=principal_id,
+                    tag_id=tag_id,
+                )
+                entries = [entry for entry in entries if entry.id in allowed]
+
+            items = [
+                await self._library_item(repository, resume, entry)
+                for entry in entries
+            ]
+            if reading_status is not None:
+                items = [
+                    item
+                    for item in items
+                    if _effective_reading_status(item) == reading_status.value
+                ]
+
+            collection_map, tag_map = await organization.organization_for_entries(
+                principal_id=principal_id,
+                entry_ids=[item.library_entry_id for item in items],
+            )
+            return LibraryResponse(
+                items=[
+                    item.model_copy(
+                        update={
+                            "collections": [
+                                CollectionSummaryResponse(
+                                    collection_id=collection.id,
+                                    name=collection.name,
+                                )
+                                for collection in collection_map.get(item.library_entry_id, [])
+                            ],
+                            "tags": [
+                                TagSummaryResponse(tag_id=tag.id, name=tag.name)
+                                for tag in tag_map.get(item.library_entry_id, [])
+                            ],
+                        }
+                    )
+                    for item in items
+                ]
+            )
+
+    async def organization(self, *, principal_id: UUID) -> LibraryOrganizationResponse:
+        async with self._session_scope() as database_session:
+            repository = LibraryOrganizationRepository(database_session)
+            collections = await repository.collections(principal_id)
+            tags = await repository.tags(principal_id)
+            return LibraryOrganizationResponse(
+                collections=[
+                    CollectionResponse(
+                        collection_id=collection.id,
+                        name=collection.name,
+                        description=collection.description,
+                        item_count=count,
+                    )
+                    for collection, count in collections
+                ],
+                tags=[
+                    TagResponse(tag_id=tag.id, name=tag.name, item_count=count)
+                    for tag, count in tags
+                ],
+            )
+
+    async def create_collection(
+        self,
+        *,
+        principal_id: UUID,
+        create: CollectionCreate,
+    ) -> CollectionResponse:
+        async with self._session_scope() as database_session:
+            repository = LibraryOrganizationRepository(database_session)
+            collection = await repository.create_collection(
+                principal_id=principal_id,
+                name=create.name,
+                normalized_name=_normalized_key(create.name),
+                description=create.description,
+            )
+            counts = dict(
+                (item.id, count) for item, count in await repository.collections(principal_id)
+            )
+            return CollectionResponse(
+                collection_id=collection.id,
+                name=collection.name,
+                description=collection.description,
+                item_count=counts.get(collection.id, 0),
+            )
+
+    async def update_collection(
+        self,
+        *,
+        principal_id: UUID,
+        collection_id: UUID,
+        update: CollectionUpdate,
+    ) -> CollectionResponse:
+        async with self._session_scope() as database_session:
+            repository = LibraryOrganizationRepository(database_session)
+            collection = await repository.update_collection(
+                principal_id=principal_id,
+                collection_id=collection_id,
+                name=update.name,
+                normalized_name=_normalized_key(update.name),
+                description=update.description,
+            )
+            counts = dict(
+                (item.id, count) for item, count in await repository.collections(principal_id)
+            )
+            return CollectionResponse(
+                collection_id=collection.id,
+                name=collection.name,
+                description=collection.description,
+                item_count=counts.get(collection.id, 0),
+            )
+
+    async def delete_collection(self, *, principal_id: UUID, collection_id: UUID) -> None:
+        async with self._session_scope() as database_session:
+            await LibraryOrganizationRepository(database_session).delete_collection(
+                principal_id=principal_id,
+                collection_id=collection_id,
+            )
+
+    async def add_collection_entry(
+        self,
+        *,
+        principal_id: UUID,
+        collection_id: UUID,
+        library_entry_id: UUID,
+    ) -> None:
+        async with self._session_scope() as database_session:
+            await LibraryOrganizationRepository(database_session).add_collection_entry(
+                principal_id=principal_id,
+                collection_id=collection_id,
+                library_entry_id=library_entry_id,
+            )
+
+    async def remove_collection_entry(
+        self,
+        *,
+        principal_id: UUID,
+        collection_id: UUID,
+        library_entry_id: UUID,
+    ) -> None:
+        async with self._session_scope() as database_session:
+            await LibraryOrganizationRepository(database_session).remove_collection_entry(
+                principal_id=principal_id,
+                collection_id=collection_id,
+                library_entry_id=library_entry_id,
+            )
+
+    async def assign_tag(
+        self,
+        *,
+        principal_id: UUID,
+        library_entry_id: UUID,
+        request: TagAssignRequest,
+    ) -> TagResponse:
+        async with self._session_scope() as database_session:
+            repository = LibraryOrganizationRepository(database_session)
+            tag = await repository.assign_tag(
+                principal_id=principal_id,
+                library_entry_id=library_entry_id,
+                name=request.name,
+                normalized_name=_normalized_key(request.name),
+            )
+            counts = dict((item.id, count) for item, count in await repository.tags(principal_id))
+            return TagResponse(tag_id=tag.id, name=tag.name, item_count=counts.get(tag.id, 0))
+
+    async def update_tag(
+        self,
+        *,
+        principal_id: UUID,
+        tag_id: UUID,
+        update: TagUpdate,
+    ) -> TagResponse:
+        async with self._session_scope() as database_session:
+            repository = LibraryOrganizationRepository(database_session)
+            tag = await repository.update_tag(
+                principal_id=principal_id,
+                tag_id=tag_id,
+                name=update.name,
+                normalized_name=_normalized_key(update.name),
+            )
+            counts = dict((item.id, count) for item, count in await repository.tags(principal_id))
+            return TagResponse(tag_id=tag.id, name=tag.name, item_count=counts.get(tag.id, 0))
+
+    async def remove_entry_tag(
+        self,
+        *,
+        principal_id: UUID,
+        library_entry_id: UUID,
+        tag_id: UUID,
+    ) -> None:
+        async with self._session_scope() as database_session:
+            await LibraryOrganizationRepository(database_session).remove_entry_tag(
+                principal_id=principal_id,
+                library_entry_id=library_entry_id,
+                tag_id=tag_id,
+            )
+
+    async def delete_tag(self, *, principal_id: UUID, tag_id: UUID) -> None:
+        async with self._session_scope() as database_session:
+            await LibraryOrganizationRepository(database_session).delete_tag(
+                principal_id=principal_id,
+                tag_id=tag_id,
+            )
 
     async def save_work(self, *, principal_id: UUID, work_id: UUID) -> LibraryItemResponse:
         async with self._session_scope() as database_session:
             repository = LibraryRepository(database_session)
             entry = await repository.save_work(principal_id, work_id)
-            return await self._library_item(repository, entry)
+            return await self._library_item(
+                repository,
+                LibraryResumeRepository(database_session),
+                entry,
+            )
 
     async def save_edition(
         self,
@@ -80,7 +320,11 @@ class LibraryService:
         async with self._session_scope() as database_session:
             repository = LibraryRepository(database_session)
             entry = await repository.save_edition(principal_id, edition_id)
-            return await self._library_item(repository, entry)
+            return await self._library_item(
+                repository,
+                LibraryResumeRepository(database_session),
+                entry,
+            )
 
     async def _dossier(
         self,
@@ -166,24 +410,30 @@ class LibraryService:
     async def _library_item(
         self,
         repository: LibraryRepository,
+        resume_repository: LibraryResumeRepository,
         entry: LibraryEntry,
     ) -> LibraryItemResponse:
         work = await repository.get_work(entry.work_id)
         if work is None:
             raise RuntimeError(f"Library entry {entry.id} references missing work")
-        readable = await repository.readable_document_for_entry(entry)
+
         document_id = None
         readable_format = None
         progress_fraction = None
         reading_status = None
-        if readable is not None:
-            document, asset = readable
-            document_id = document.id
-            readable_format = asset.format
-            state = await repository.reading_state_for_entry(entry.id, document.id)
-            if state is not None:
-                progress_fraction = state.progress_fraction
-                reading_status = state.status
+        resume = await resume_repository.latest_for_entry(entry)
+        if resume is not None:
+            document_id = resume.document.id
+            readable_format = resume.asset.format
+            progress_fraction = resume.state.progress_fraction
+            reading_status = resume.state.status
+        else:
+            readable = await repository.readable_document_for_entry(entry)
+            if readable is not None:
+                document, asset = readable
+                document_id = document.id
+                readable_format = asset.format
+
         return LibraryItemResponse(
             library_entry_id=entry.id,
             work_id=entry.work_id,
@@ -196,6 +446,15 @@ class LibraryService:
             progress_fraction=progress_fraction,
             reading_status=reading_status,
         )
+
+
+def _normalized_key(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    return " ".join(normalized.split())
+
+
+def _effective_reading_status(item: LibraryItemResponse) -> str:
+    return item.reading_status or LibraryReadingStatus.UNREAD.value
 
 
 def _rights_evidence(record: RightsEvidenceRecord) -> RightsEvidence:
@@ -214,6 +473,8 @@ def _rights_evidence(record: RightsEvidenceRecord) -> RightsEvidence:
 __all__ = [
     "DossierIdentityConflict",
     "DossierNotFound",
+    "LibraryOrganizationConflict",
+    "LibraryOrganizationNotFound",
     "LibraryService",
     "LibraryTargetNotFound",
 ]

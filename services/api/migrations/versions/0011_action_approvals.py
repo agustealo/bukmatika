@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0011_action_approvals"
 down_revision: str | None = "0010_user_model_local_ai"
@@ -65,7 +66,7 @@ def upgrade() -> None:
         sa.Column("action_decision_id", sa.Uuid(), nullable=False),
         sa.Column("step_fingerprint", sa.String(length=64), nullable=False),
         sa.Column("capability", sa.String(length=128), nullable=False),
-        sa.Column("output", sa.JSON(), nullable=False),
+        sa.Column("output", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column(
             "executed_at",
             sa.DateTime(timezone=True),

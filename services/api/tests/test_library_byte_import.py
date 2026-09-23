@@ -231,7 +231,10 @@ async def _seed_target(
     )
 
 
-def _service(session: AsyncSession, seeded: _SeededPortableTarget) -> LibraryPortableByteImportService:
+def _service(
+    session: AsyncSession,
+    seeded: _SeededPortableTarget,
+) -> LibraryPortableByteImportService:
     return LibraryPortableByteImportService(
         storage=seeded.store,
         settings=Settings(),

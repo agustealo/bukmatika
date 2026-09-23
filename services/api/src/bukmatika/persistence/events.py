@@ -34,6 +34,7 @@ class SemanticEventType(StrEnum):
     DOCUMENT_SEARCH_SUBMITTED = "document.search_submitted"
     DOCUMENT_SEARCH_COMPLETED = "document.search_completed"
     RESEARCH_SEARCH_COMPLETED = "research.search_completed"
+    RESEARCH_COMPARISON_COMPLETED = "research.comparison_completed"
     RESEARCH_EVIDENCE_BUILT = "research.evidence_built"
     AI_MODEL_COMPLETED = "ai.model_completed"
     AI_MODEL_FAILED = "ai.model_failed"

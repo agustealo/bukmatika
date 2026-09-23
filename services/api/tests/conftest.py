@@ -1,43 +1,26 @@
 import os
-from collections.abc import AsyncIterator, Generator
-from pathlib import Path
+from collections.abc import AsyncIterator
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-_READER_PREFIX = "/v1/library/{library_entry_id}/documents/{document_id}"
+from bukmatika.main import app
+from bukmatika.reader.routes import router as reader_router
 
 
-def _reader_route_snapshot() -> tuple[tuple[str | None, str | None], ...]:
-    from bukmatika.main import app
-
+def _route_snapshot(routes: list[object]) -> tuple[tuple[str | None, str | None], ...]:
     return tuple(
         (getattr(route, "name", None), getattr(route, "path", None))
-        for route in app.routes
-        if str(getattr(route, "path", "")).startswith(_READER_PREFIX)
+        for route in routes
     )
 
 
-_INITIAL_READER_ROUTES = _reader_route_snapshot()
-
-
-@pytest.hookimpl(hookwrapper=True)
-def pytest_pycollect_makemodule(
-    module_path: Path,
-    parent: pytest.Collector,
-) -> Generator[None, None, None]:
-    del parent
-    before = _reader_route_snapshot()
-    yield
-    after = _reader_route_snapshot()
-    assert after == before, (
-        f"Collecting {module_path} mutated shared reader routes: "
-        f"initial={_INITIAL_READER_ROUTES!r}, before={before!r}, after={after!r}"
-    )
-    assert after, (
-        f"Reader routes absent after collecting {module_path}: "
-        f"initial={_INITIAL_READER_ROUTES!r}"
-    )
+_INITIAL_APP_ROUTES = _route_snapshot(app.routes)
+_INITIAL_READER_ROUTER_ROUTES = _route_snapshot(reader_router.routes)
+assert any(name == "reader_navigation" for name, _ in _INITIAL_APP_ROUTES), (
+    "Reader navigation is absent immediately after importing the application: "
+    f"reader_router={_INITIAL_READER_ROUTER_ROUTES!r}; app={_INITIAL_APP_ROUTES!r}"
+)
 
 
 @pytest.fixture

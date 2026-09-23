@@ -42,6 +42,7 @@ class PendingActionApproval(BaseModel):
     policy_version: str
     step_fingerprint: str
     evaluated_at: datetime
+    approval_status: UserApprovalDecision | None = None
 
 
 class PendingActionApprovalResponse(BaseModel):
@@ -70,6 +71,10 @@ class ActionApprovalRejected(RuntimeError):
 
 class ActionApprovalInvalid(RuntimeError):
     code = "ACTION_APPROVAL_INVALID"
+
+
+class ActionExecutionReceiptInvalid(RuntimeError):
+    code = "ACTION_EXECUTION_RECEIPT_INVALID"
 
 
 def action_step_fingerprint(

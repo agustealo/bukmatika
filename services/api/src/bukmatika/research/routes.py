@@ -8,6 +8,7 @@ from bukmatika.research.domain import (
     ResearchCompareResponse,
     ResearchEvidenceBundleRequest,
     ResearchEvidenceBundleResponse,
+    ResearchMentionsResponse,
     ResearchSearchRequest,
     ResearchSearchResponse,
     ResearchTimelineResponse,
@@ -93,6 +94,29 @@ async def research_timeline(
 ) -> ResearchTimelineResponse:
     try:
         return await service.timeline(
+            principal_id=identity.principal_id,
+            request=request,
+        )
+    except ResearchSelectionDenied as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reader or research selection is unavailable",
+        ) from exc
+    except ResearchReaderPositionInvalid as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/mentions", response_model=ResearchMentionsResponse)
+async def research_mentions(
+    request: ResearchEvidenceBundleRequest,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[ResearchService, Depends(research_service)],
+) -> ResearchMentionsResponse:
+    try:
+        return await service.mentions(
             principal_id=identity.principal_id,
             request=request,
         )

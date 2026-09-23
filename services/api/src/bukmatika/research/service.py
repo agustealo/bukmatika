@@ -25,11 +25,13 @@ from bukmatika.research.domain import (
     ResearchEvidenceBundleResponse,
     ResearchEvidenceItem,
     ResearchEvidenceSourceKind,
+    ResearchMentionsResponse,
     ResearchPassageResponse,
     ResearchSearchRequest,
     ResearchSearchResponse,
     ResearchTimelineResponse,
 )
+from bukmatika.research.mentions import build_mentions
 from bukmatika.research.timeline import build_timeline
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
@@ -306,6 +308,15 @@ class ResearchService:
     ) -> ResearchTimelineResponse:
         bundle = await self.evidence_bundle(principal_id=principal_id, request=request)
         return build_timeline(bundle)
+
+    async def mentions(
+        self,
+        *,
+        principal_id: UUID,
+        request: ResearchEvidenceBundleRequest,
+    ) -> ResearchMentionsResponse:
+        bundle = await self.evidence_bundle(principal_id=principal_id, request=request)
+        return build_mentions(bundle)
 
     @staticmethod
     def validate_grounded_answer(

@@ -89,6 +89,27 @@ type TimelineResponse = {
   truncated: boolean;
 };
 
+type MentionKind = "person" | "place" | "concept" | "ambiguous";
+
+type MentionItem = {
+  mention_id: string;
+  text: string;
+  normalized_text: string;
+  kind: MentionKind;
+  cue: string | null;
+  evidence_ids: string[];
+  document_id: string;
+  section_id: string;
+  source_char_start: number;
+  source_char_end: number;
+};
+
+type MentionsResponse = {
+  evidence: EvidenceBundle;
+  items: MentionItem[];
+  truncated: boolean;
+};
+
 type AIAvailabilityState =
   | "ai_disabled"
   | "unconfigured"
@@ -114,7 +135,7 @@ type AIErrorPayload = {
   };
 };
 
-type ActiveAction = "research" | "timeline" | null;
+type ActiveAction = "research" | "timeline" | "mentions" | null;
 
 const MAX_SELECTED_HIGHLIGHTS = 8;
 const AI_AVAILABILITY_STATES = new Set<AIAvailabilityState>([
@@ -169,21 +190,21 @@ async function readinessFallbackState(response: Response): Promise<AIAvailabilit
 
 function statusExplanation(status: AIStatus | null): string {
   if (status === null) {
-    return "Build canonical evidence and timelines while local AI readiness is being checked.";
+    return "Build canonical evidence, timelines, and evidence mentions while local AI readiness is being checked.";
   }
   switch (status.state) {
     case "ready":
-      return "Ask the ready local model, or build a deterministic timeline directly from canonical evidence.";
+      return "Ask the ready local model, or inspect deterministic timelines and evidence mentions directly from canonical evidence.";
     case "ai_disabled":
-      return "AI is disabled. Canonical evidence and deterministic timelines remain available.";
+      return "AI is disabled. Canonical evidence, timelines, and evidence mentions remain available.";
     case "unconfigured":
-      return "Local AI is not configured. Evidence and deterministic timelines remain available.";
+      return "Local AI is not configured. Evidence, timelines, and evidence mentions remain available.";
     case "provider_unreachable":
-      return "The local AI runtime is not reachable. Evidence and deterministic timelines remain available.";
+      return "The local AI runtime is not reachable. Evidence, timelines, and evidence mentions remain available.";
     case "provider_invalid":
-      return "The local AI runtime returned an unexpected readiness response. Evidence and timelines remain available.";
+      return "The local AI runtime returned an unexpected readiness response. Evidence, timelines, and evidence mentions remain available.";
     case "model_missing":
-      return "The configured local model is not installed. Evidence and deterministic timelines remain available.";
+      return "The configured local model is not installed. Evidence, timelines, and evidence mentions remain available.";
   }
 }
 
@@ -201,6 +222,7 @@ export function ReaderResearchPanel({
   const [answer, setAnswer] = useState<GroundedAnswer | null>(null);
   const [answerModel, setAnswerModel] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<TimelineResponse | null>(null);
+  const [mentions, setMentions] = useState<MentionsResponse | null>(null);
   const [aiStatus, setAIStatus] = useState<AIStatus | null>(null);
   const [activeAction, setActiveAction] = useState<ActiveAction>(null);
   const [error, setError] = useState<string | null>(null);
@@ -217,7 +239,7 @@ export function ReaderResearchPanel({
         const payload = (await response.json()) as AIStatus;
         if (!cancelled) setAIStatus(payload);
       } catch {
-        // Evidence and deterministic timeline building remain usable without AI status.
+        // Evidence, deterministic timelines, and evidence mentions remain usable without AI status.
       }
     }
 
@@ -233,6 +255,7 @@ export function ReaderResearchPanel({
     setAnswer(null);
     setAnswerModel(null);
     setTimeline(null);
+    setMentions(null);
     setError(null);
   }, [sectionId]);
 
@@ -246,6 +269,7 @@ export function ReaderResearchPanel({
     setAnswer(null);
     setAnswerModel(null);
     setTimeline(null);
+    setMentions(null);
     setError(null);
   }, [selectedHighlightIds]);
 
@@ -294,6 +318,7 @@ export function ReaderResearchPanel({
     setAnswer(null);
     setAnswerModel(null);
     setTimeline(null);
+    setMentions(null);
     try {
       let usedSynthesis = canSynthesize;
       let response = await apiFetch(
@@ -362,6 +387,7 @@ export function ReaderResearchPanel({
     setAnswer(null);
     setAnswerModel(null);
     setTimeline(null);
+    setMentions(null);
     try {
       const response = await apiFetch("/v1/research/timeline", {
         method: "POST",
@@ -381,6 +407,43 @@ export function ReaderResearchPanel({
         setTimeline(null);
         setBundle(null);
         setError(caught instanceof Error ? caught.message : "Could not build this timeline.");
+      }
+    } finally {
+      setActiveAction(null);
+    }
+  }
+
+  async function buildMentions() {
+    const normalized = question.trim();
+    const requestedSectionId = sectionId;
+    if (!requestedSectionId || !normalized || loading) return;
+
+    setActiveAction("mentions");
+    setError(null);
+    setBundle(null);
+    setAnswer(null);
+    setAnswerModel(null);
+    setTimeline(null);
+    setMentions(null);
+    try {
+      const response = await apiFetch("/v1/research/mentions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody(requestedSectionId, normalized)),
+      });
+      if (!response.ok) {
+        throw new Error(`Mention grounding failed with HTTP ${response.status}.`);
+      }
+      const payload = (await response.json()) as MentionsResponse;
+      if (activeSectionRef.current === requestedSectionId) {
+        setMentions(payload);
+        setBundle(payload.evidence);
+      }
+    } catch (caught) {
+      if (activeSectionRef.current === requestedSectionId) {
+        setMentions(null);
+        setBundle(null);
+        setError(caught instanceof Error ? caught.message : "Could not extract evidence mentions.");
       }
     } finally {
       setActiveAction(null);
@@ -437,7 +500,7 @@ export function ReaderResearchPanel({
           maxLength={500}
           rows={3}
           disabled={loading || sectionId === null}
-          placeholder="What happened, and when?"
+          placeholder="Who, where, what, and when?"
           onChange={(event) => setQuestion(event.target.value)}
         />
         <div className={styles.actions}>
@@ -455,6 +518,13 @@ export function ReaderResearchPanel({
           >
             {activeAction === "timeline" ? "Building timeline…" : "Build timeline"}
           </button>
+          <button
+            type="button"
+            disabled={loading || sectionId === null || !question.trim()}
+            onClick={() => void buildMentions()}
+          >
+            {activeAction === "mentions" ? "Finding mentions…" : "Find mentions"}
+          </button>
         </div>
       </form>
 
@@ -462,6 +532,56 @@ export function ReaderResearchPanel({
         <p className={styles.error} role="alert">
           {error}
         </p>
+      ) : null}
+
+      {mentions ? (
+        <section className={styles.mentions} aria-live="polite">
+          <div className={styles.answerHeading}>
+            <span>Evidence mentions</span>
+            <small>
+              Deterministic cue-based extraction. Ambiguous names stay unclassified instead of
+              being guessed.
+            </small>
+          </div>
+          {mentions.items.length === 0 ? (
+            <div className={styles.timelineNotice}>
+              <strong>No defensible mentions found.</strong>
+              <p>The canonical evidence stays visible below instead of inventing entities.</p>
+            </div>
+          ) : (
+            <ol className={styles.mentionList}>
+              {mentions.items.map((item) => (
+                <li className={styles.mentionItem} key={item.mention_id}>
+                  <div className={styles.mentionTopline}>
+                    <strong>{item.text}</strong>
+                    <span className={styles.mentionKind}>{item.kind}</span>
+                  </div>
+                  <p className={styles.mentionCue}>
+                    {item.cue
+                      ? `Classified from the source cue “${item.cue}”.`
+                      : "Ambiguous proper-name phrase: no safe type cue was found."}
+                  </p>
+                  <div className={styles.mentionMeta}>
+                    <span>
+                      Text offsets {item.source_char_start}–{item.source_char_end}
+                    </span>
+                    <div className={styles.citations} aria-label="Mention evidence citations">
+                      {item.evidence_ids.map((evidenceId) => (
+                        <code key={evidenceId}>{evidenceId}</code>
+                      ))}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+          {mentions.truncated ? (
+            <p className={styles.timelineFootnote}>
+              Mention output reached its bounded item limit. Narrow the question or evidence to
+              inspect the remaining source mentions.
+            </p>
+          ) : null}
+        </section>
       ) : null}
 
       {timeline ? (

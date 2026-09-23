@@ -72,7 +72,11 @@ async def test_reader_context_hides_research_answer_when_runtime_not_ready(
 
     assert calls == 1
     assert "research.answer" not in manifest.available_capabilities
-    assert manifest.available_capabilities == ["research.search", "reader.open"]
+    assert manifest.available_capabilities == [
+        "research.search",
+        "reader.open",
+        "preferences.propose",
+    ]
 
 
 async def test_ai_disabled_context_never_probes_runtime_readiness(

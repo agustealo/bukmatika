@@ -4,11 +4,13 @@ from typing import Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, JsonValue, ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.ai.approval_domain import (
     ActionApprovalInvalid,
     ActionApprovalRejected,
+    ActionExecutionReceiptInvalid,
     action_step_fingerprint,
 )
 from bukmatika.ai.capabilities import CapabilityRegistry, CapabilityRisk
@@ -29,11 +31,14 @@ from bukmatika.persistence import session_scope
 from bukmatika.persistence.approvals import ApprovalRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.execution import ExecutionRepository, PlanIntegrityError
+from bukmatika.persistence.personalization import lock_personalization_state
+from bukmatika.persistence.personalization_models import UserModel
 from bukmatika.personalization.domain import (
     ContextManifest,
     ExplicitPreferenceRequest,
+    PreferenceClaimResponse,
 )
-from bukmatika.personalization.service import PersonalizationService
+from bukmatika.personalization.service import set_explicit_preference_in_session
 from bukmatika.research import (
     GroundedResearchAnswer,
     ResearchEvidenceBundleRequest,
@@ -114,13 +119,10 @@ class PreferenceProposalExecutor:
 
     def __init__(
         self,
-        service: PersonalizationService | None = None,
         *,
         session_scope_factory: SessionScopeFactory = session_scope,
     ) -> None:
-        self._service = service or PersonalizationService(
-            session_scope_factory=session_scope_factory
-        )
+        self._session_scope = session_scope_factory
 
     async def execute(
         self,
@@ -130,15 +132,91 @@ class PreferenceProposalExecutor:
         arguments: dict[str, JsonValue],
         context: ContextManifest,
     ) -> BaseModel:
-        del action_decision_id, context
-        try:
-            request = ExplicitPreferenceRequest.model_validate(arguments)
-        except ValidationError as exc:
-            raise CapabilityArgumentsInvalid("Invalid preferences.propose arguments") from exc
-        return await self._service.set_explicit_preference(
-            principal_id=principal_id,
-            request=request,
-        )
+        del arguments, context
+        async with self._session_scope() as database_session:
+            repository = ApprovalRepository(database_session)
+            target = await repository.target(
+                principal_id=principal_id,
+                action_decision_id=action_decision_id,
+                lock=True,
+            )
+            if target.step.capability is not self.capability:
+                raise ActionApprovalInvalid("Approved step is not a preference proposal")
+
+            await lock_personalization_state(database_session, principal_id)
+            user_model = await database_session.scalar(
+                select(UserModel)
+                .where(UserModel.principal_id == principal_id)
+                .with_for_update()
+            )
+            if user_model is None or not user_model.ai_enabled:
+                raise AIExecutionDisabled("AI execution is disabled for this principal")
+
+            fingerprint = action_step_fingerprint(
+                plan_id=target.plan.id,
+                action_decision_id=target.decision.id,
+                step=target.step,
+            )
+            approval = await repository.approval_for_execution(
+                principal_id=principal_id,
+                action_decision_id=action_decision_id,
+            )
+            if approval is None:
+                raise ActionApprovalRequired("Action requires explicit user approval")
+            if approval.decision != "approved":
+                raise ActionApprovalRejected("User rejected this action")
+            if approval.step_fingerprint != fingerprint:
+                raise ActionApprovalInvalid("Approved action no longer matches the persisted step")
+
+            receipt = await repository.execution_receipt(
+                principal_id=principal_id,
+                action_decision_id=action_decision_id,
+            )
+            if receipt is not None:
+                if (
+                    receipt.step_fingerprint != fingerprint
+                    or receipt.capability != self.capability.value
+                ):
+                    raise ActionExecutionReceiptInvalid(
+                        "Execution receipt no longer matches the approved action"
+                    )
+                try:
+                    return PreferenceClaimResponse.model_validate(receipt.output)
+                except ValidationError as exc:
+                    raise ActionExecutionReceiptInvalid(
+                        "Stored execution receipt output is invalid"
+                    ) from exc
+
+            try:
+                request = ExplicitPreferenceRequest.model_validate(target.step.arguments)
+            except ValidationError as exc:
+                raise CapabilityArgumentsInvalid("Invalid preferences.propose arguments") from exc
+
+            response = await set_explicit_preference_in_session(
+                database_session,
+                principal_id=principal_id,
+                request=request,
+            )
+            output = response.model_dump(mode="json")
+            await repository.record_execution(
+                target=target,
+                principal_id=principal_id,
+                step_fingerprint=fingerprint,
+                output=output,
+            )
+            await InteractionEventRepository(database_session).record(
+                SemanticEventType.ACTION_EXECUTED,
+                principal_id=principal_id,
+                entity_type="action_decision",
+                entity_id=action_decision_id,
+                context={
+                    "plan_id": str(target.plan.id),
+                    "step_id": target.step.step_id,
+                    "capability": self.capability.value,
+                    "step_fingerprint": fingerprint,
+                },
+            )
+            return response
 
 
 class ResearchAnswerExecutor:
@@ -318,7 +396,12 @@ class ExecutionCoordinator:
         session_scope_factory: SessionScopeFactory = session_scope,
     ) -> None:
         self._capabilities = capability_registry or CapabilityRegistry()
-        self._executors = executor_registry or CapabilityExecutorRegistry()
+        self._executors = executor_registry or CapabilityExecutorRegistry(
+            (
+                ResearchSearchExecutor(),
+                PreferenceProposalExecutor(session_scope_factory=session_scope_factory),
+            )
+        )
         self._session_scope = session_scope_factory
         self._policy = ActionPolicy(self._capabilities)
 

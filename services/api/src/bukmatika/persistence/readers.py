@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, delete, or_, select
@@ -38,6 +39,14 @@ class ReaderAccess:
 class ReaderHighlightRecord:
     highlight: Highlight
     section: DocumentSection
+
+
+@dataclass(frozen=True, slots=True)
+class ReaderNavigationSource:
+    section_id: UUID
+    ordinal: int
+    heading: str | None
+    locator: dict[str, Any]
 
 
 class ReaderRepository:
@@ -98,6 +107,29 @@ class ReaderRepository:
                 )
             ).all()
         )
+
+    async def navigation_sources(self, document_id: UUID) -> list[ReaderNavigationSource]:
+        rows = (
+            await self._session.execute(
+                select(
+                    DocumentSection.id,
+                    DocumentSection.ordinal,
+                    DocumentSection.heading,
+                    DocumentSection.locator,
+                )
+                .where(DocumentSection.document_id == document_id)
+                .order_by(DocumentSection.ordinal)
+            )
+        ).tuples()
+        return [
+            ReaderNavigationSource(
+                section_id=section_id,
+                ordinal=ordinal,
+                heading=heading,
+                locator=locator,
+            )
+            for section_id, ordinal, heading, locator in rows
+        ]
 
     async def state_for(
         self,

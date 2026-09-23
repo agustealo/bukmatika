@@ -2,20 +2,34 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence.document_models import Document, DocumentSection
+from bukmatika.persistence.events import SemanticEventType
 from bukmatika.persistence.models import (
     Asset,
     Edition,
+    InteractionEvent,
     LibraryEntry,
     Principal,
     StoredObject,
     Work,
 )
-from bukmatika.persistence.reader_models import Bookmark, ReadingState
-from bukmatika.persistence.readers import ReaderAccessDenied, ReaderBookmarkNotFound
-from bukmatika.reader import BookmarkCreate, ReaderService, ReadingProgressUpdate
+from bukmatika.persistence.reader_models import Bookmark, Highlight, ReadingState
+from bukmatika.persistence.readers import (
+    ReaderAccessDenied,
+    ReaderBookmarkNotFound,
+    ReaderHighlightNotFound,
+    ReaderPositionInvalid,
+)
+from bukmatika.reader import (
+    BookmarkCreate,
+    HighlightCreate,
+    HighlightNoteUpdate,
+    ReaderService,
+    ReadingProgressUpdate,
+)
 
 
 def _scope(session: AsyncSession):  # type: ignore[no-untyped-def]
@@ -118,6 +132,7 @@ async def test_reader_paginates_sections_and_persists_progress(
     assert [item.ordinal for item in first_page.sections] == [0, 1]
     assert first_page.next_after_ordinal == 1
     assert first_page.reading_state is None
+    assert first_page.highlights == []
 
     saved = await service.save_progress(
         principal_id=principal_id,
@@ -251,4 +266,147 @@ async def test_bookmark_is_idempotent_and_removable(session: AsyncSession) -> No
             library_entry_id=entry.id,
             document_id=document.id,
             bookmark_id=first.bookmark_id,
+        )
+
+
+async def test_highlight_is_coordinate_derived_idempotent_and_restart_safe(
+    session: AsyncSession,
+) -> None:
+    entry, document, sections = await _seed_reader_document(session, suffix="highlight")
+    service = ReaderService(session_scope_factory=_scope(session))
+    section = sections[0]
+    char_start = 10
+    char_end = 28
+
+    first = await service.add_highlight(
+        principal_id=entry.principal_id,
+        library_entry_id=entry.id,
+        document_id=document.id,
+        create=HighlightCreate(
+            section_id=section.id,
+            char_start=char_start,
+            char_end=char_end,
+            note="  Compare this claim later.  ",
+        ),
+    )
+    second = await service.add_highlight(
+        principal_id=entry.principal_id,
+        library_entry_id=entry.id,
+        document_id=document.id,
+        create=HighlightCreate(
+            section_id=section.id,
+            char_start=char_start,
+            char_end=char_end,
+            note="Revised note",
+        ),
+    )
+
+    assert second.highlight_id == first.highlight_id
+    assert second.text == section.text[char_start:char_end]
+    assert second.note == "Revised note"
+    assert second.locator == section.locator
+    assert "text" not in Highlight.__table__.columns.keys()
+    assert len((await session.scalars(Highlight.__table__.select())).all()) == 1
+
+    session.expire_all()
+    reopened = await service.open_reader(
+        principal_id=entry.principal_id,
+        library_entry_id=entry.id,
+        document_id=document.id,
+        after_ordinal=None,
+        limit=10,
+    )
+    assert len(reopened.highlights) == 1
+    assert reopened.highlights[0].highlight_id == first.highlight_id
+    assert reopened.highlights[0].text == section.text[char_start:char_end]
+    assert reopened.highlights[0].note == "Revised note"
+
+    event = await session.scalar(
+        select(InteractionEvent)
+        .where(
+            InteractionEvent.principal_id == entry.principal_id,
+            InteractionEvent.event_type == SemanticEventType.HIGHLIGHT_ADDED.value,
+        )
+        .order_by(InteractionEvent.occurred_at.desc(), InteractionEvent.id.desc())
+        .limit(1)
+    )
+    assert event is not None
+    assert "text" not in event.context
+    assert "note" not in event.context
+    assert event.context["char_start"] == char_start
+    assert event.context["char_end"] == char_end
+
+
+async def test_highlight_note_can_be_cleared_and_highlight_removed(session: AsyncSession) -> None:
+    entry, document, sections = await _seed_reader_document(session, suffix="highlight-edit")
+    service = ReaderService(session_scope_factory=_scope(session))
+    created = await service.add_highlight(
+        principal_id=entry.principal_id,
+        library_entry_id=entry.id,
+        document_id=document.id,
+        create=HighlightCreate(
+            section_id=sections[1].id,
+            char_start=0,
+            char_end=12,
+            note="Initial note",
+        ),
+    )
+
+    updated = await service.update_highlight_note(
+        principal_id=entry.principal_id,
+        library_entry_id=entry.id,
+        document_id=document.id,
+        highlight_id=created.highlight_id,
+        update=HighlightNoteUpdate(note="   "),
+    )
+    assert updated.note is None
+    assert updated.text == sections[1].text[:12]
+
+    await service.remove_highlight(
+        principal_id=entry.principal_id,
+        library_entry_id=entry.id,
+        document_id=document.id,
+        highlight_id=created.highlight_id,
+    )
+    with pytest.raises(ReaderHighlightNotFound):
+        await service.remove_highlight(
+            principal_id=entry.principal_id,
+            library_entry_id=entry.id,
+            document_id=document.id,
+            highlight_id=created.highlight_id,
+        )
+
+
+async def test_highlight_rejects_invalid_range_and_cross_principal_write(
+    session: AsyncSession,
+) -> None:
+    owned_entry, owned_document, sections = await _seed_reader_document(
+        session,
+        suffix="highlight-owned",
+    )
+    intruder_entry, _, _ = await _seed_reader_document(session, suffix="highlight-intruder")
+    service = ReaderService(session_scope_factory=_scope(session))
+
+    with pytest.raises(ReaderPositionInvalid, match="outside the section text"):
+        await service.add_highlight(
+            principal_id=owned_entry.principal_id,
+            library_entry_id=owned_entry.id,
+            document_id=owned_document.id,
+            create=HighlightCreate(
+                section_id=sections[0].id,
+                char_start=1,
+                char_end=len(sections[0].text) + 1,
+            ),
+        )
+
+    with pytest.raises(ReaderAccessDenied, match="does not own"):
+        await service.add_highlight(
+            principal_id=intruder_entry.principal_id,
+            library_entry_id=owned_entry.id,
+            document_id=owned_document.id,
+            create=HighlightCreate(
+                section_id=sections[0].id,
+                char_start=1,
+                char_end=8,
+            ),
         )

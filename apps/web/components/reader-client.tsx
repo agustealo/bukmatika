@@ -1,11 +1,17 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import {
+  ReaderAnnotations,
+  type PendingReaderSelection,
+  type ReaderHighlight,
+  type ReaderLocator,
+} from "./reader-annotations";
+import "./reader-annotations.module.css";
 import { ReaderResearchPanel } from "./reader-research-panel";
-
-type ReaderLocator = Record<string, string | number>;
 
 type ReaderSection = {
   section_id: string;
@@ -46,6 +52,7 @@ type ReaderDocument = {
   chunk_count: number;
   reading_state: ReadingState | null;
   bookmarks: Bookmark[];
+  highlights: ReaderHighlight[];
   sections: ReaderSection[];
   next_after_ordinal: number | null;
 };
@@ -53,6 +60,13 @@ type ReaderDocument = {
 type ReaderClientProps = {
   libraryEntryId: string;
   documentId: string;
+};
+
+type ReaderParagraph = {
+  key: number;
+  text: string;
+  charStart: number;
+  charEnd: number;
 };
 
 const PAGE_SIZE = 12;
@@ -76,6 +90,9 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
   const [document, setDocument] = useState<ReaderDocument | null>(null);
   const [sections, setSections] = useState<ReaderSection[]>([]);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [highlights, setHighlights] = useState<ReaderHighlight[]>([]);
+  const [pendingSelection, setPendingSelection] = useState<PendingReaderSelection | null>(null);
+  const [annotationBusyKey, setAnnotationBusyKey] = useState<string | null>(null);
   const [readingState, setReadingState] = useState<ReadingState | null>(null);
   const [nextAfter, setNextAfter] = useState<number | null>(null);
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
@@ -126,6 +143,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
         setDocument(visible);
         setSections(visible.sections);
         setBookmarks(visible.bookmarks);
+        setHighlights(visible.highlights);
         setReadingState(visible.reading_state);
         setNextAfter(visible.next_after_ordinal);
         const resumeId = visible.reading_state?.section_id;
@@ -208,6 +226,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
         return [...current, ...page.sections.filter((section) => !existing.has(section.section_id))];
       });
       setBookmarks(page.bookmarks);
+      setHighlights(page.highlights);
       setReadingState(page.reading_state);
       setNextAfter(page.next_after_ordinal);
     } catch (caught) {
@@ -247,6 +266,105 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
       setBookmarks((current) => [created, ...current]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Bookmark update failed.");
+    }
+  }
+
+  function captureSelection() {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const startSection = closestElement(range.startContainer, "[data-reader-section-id]");
+    const endSection = closestElement(range.endContainer, "[data-reader-section-id]");
+    if (!startSection || !endSection || startSection !== endSection) {
+      setPendingSelection(null);
+      return;
+    }
+    const sectionId = startSection.getAttribute("data-reader-section-id");
+    if (!sectionId) return;
+    const section = sections.find((item) => item.section_id === sectionId);
+    if (!section) return;
+    const charStart = canonicalOffset(range.startContainer, range.startOffset, startSection);
+    const charEnd = canonicalOffset(range.endContainer, range.endOffset, startSection);
+    if (charStart === null || charEnd === null || charEnd <= charStart) {
+      setPendingSelection(null);
+      return;
+    }
+    const text = section.text.slice(charStart, charEnd);
+    if (!text.trim()) {
+      setPendingSelection(null);
+      return;
+    }
+    setPendingSelection({ sectionId, charStart, charEnd, text });
+  }
+
+  async function createHighlight(note: string | null) {
+    if (!pendingSelection || annotationBusyKey !== null) return;
+    setAnnotationBusyKey("create");
+    setError(null);
+    try {
+      const response = await apiFetch(`${basePath}/highlights`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          section_id: pendingSelection.sectionId,
+          char_start: pendingSelection.charStart,
+          char_end: pendingSelection.charEnd,
+          note,
+        }),
+      });
+      if (!response.ok) throw new Error(`Highlight failed with HTTP ${response.status}.`);
+      const created = (await response.json()) as ReaderHighlight;
+      setHighlights((current) => [
+        created,
+        ...current.filter((item) => item.highlight_id !== created.highlight_id),
+      ]);
+      setPendingSelection(null);
+      window.getSelection()?.removeAllRanges();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not save highlight.");
+    } finally {
+      setAnnotationBusyKey(null);
+    }
+  }
+
+  async function updateHighlightNote(highlightId: string, note: string | null) {
+    if (annotationBusyKey !== null) return;
+    setAnnotationBusyKey(highlightId);
+    setError(null);
+    try {
+      const response = await apiFetch(`${basePath}/highlights/${highlightId}/note`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note }),
+      });
+      if (!response.ok) throw new Error(`Note update failed with HTTP ${response.status}.`);
+      const updated = (await response.json()) as ReaderHighlight;
+      setHighlights((current) =>
+        current.map((item) => (item.highlight_id === updated.highlight_id ? updated : item)),
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update note.");
+    } finally {
+      setAnnotationBusyKey(null);
+    }
+  }
+
+  async function removeHighlight(highlightId: string) {
+    if (annotationBusyKey !== null) return;
+    setAnnotationBusyKey(highlightId);
+    setError(null);
+    try {
+      const response = await apiFetch(`${basePath}/highlights/${highlightId}/remove`, {
+        method: "POST",
+      });
+      if (!response.ok) throw new Error(`Highlight removal failed with HTTP ${response.status}.`);
+      setHighlights((current) =>
+        current.filter((item) => item.highlight_id !== highlightId),
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not remove highlight.");
+    } finally {
+      setAnnotationBusyKey(null);
     }
   }
 
@@ -311,6 +429,15 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
               ))}
             </nav>
           </div>
+          <ReaderAnnotations
+            highlights={highlights}
+            selection={pendingSelection}
+            busyKey={annotationBusyKey}
+            onCreate={createHighlight}
+            onUpdateNote={updateHighlightNote}
+            onRemove={removeHighlight}
+            onClearSelection={() => setPendingSelection(null)}
+          />
           <ReaderResearchPanel
             libraryEntryId={libraryEntryId}
             documentId={documentId}
@@ -320,11 +447,19 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
           />
         </aside>
 
-        <article className="reader-paper" aria-label="Book text">
+        <article
+          className="reader-paper"
+          aria-label="Book text"
+          onMouseUp={captureSelection}
+          onKeyUp={captureSelection}
+        >
           {sections.map((section) => {
             const bookmarked = bookmarks.some(
               (bookmark) =>
                 bookmark.section_id === section.section_id && bookmark.char_offset === 0,
+            );
+            const sectionHighlights = highlights.filter(
+              (highlight) => highlight.section_id === section.section_id,
             );
             return (
               <section
@@ -345,8 +480,14 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
                   </button>
                 </div>
                 {section.heading ? <h2>{section.heading}</h2> : null}
-                {section.text.split("\n").filter(Boolean).map((paragraph, index) => (
-                  <p key={`${section.section_id}:${index}`}>{paragraph}</p>
+                {paragraphsWithOffsets(section.text).map((paragraph) => (
+                  <p
+                    className="reader-paragraph"
+                    data-reader-char-start={paragraph.charStart}
+                    key={`${section.section_id}:${paragraph.key}`}
+                  >
+                    {renderParagraphHighlights(paragraph, sectionHighlights)}
+                  </p>
                 ))}
               </section>
             );
@@ -368,6 +509,88 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
       </div>
     </main>
   );
+}
+
+function paragraphsWithOffsets(text: string): ReaderParagraph[] {
+  const lines = text.split("\n");
+  const paragraphs: ReaderParagraph[] = [];
+  let cursor = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const charStart = cursor;
+    const charEnd = charStart + line.length;
+    if (line.length > 0) {
+      paragraphs.push({ key: index, text: line, charStart, charEnd });
+    }
+    cursor = charEnd + (index < lines.length - 1 ? 1 : 0);
+  }
+  return paragraphs;
+}
+
+function renderParagraphHighlights(
+  paragraph: ReaderParagraph,
+  highlights: ReaderHighlight[],
+): ReactNode[] {
+  const ranges = highlights
+    .map((highlight) => ({
+      start: Math.max(paragraph.charStart, highlight.char_start),
+      end: Math.min(paragraph.charEnd, highlight.char_end),
+    }))
+    .filter((range) => range.end > range.start)
+    .sort((left, right) => left.start - right.start || left.end - right.end);
+
+  const merged: Array<{ start: number; end: number }> = [];
+  for (const range of ranges) {
+    const previous = merged[merged.length - 1];
+    if (previous && range.start <= previous.end) {
+      previous.end = Math.max(previous.end, range.end);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+
+  const nodes: ReactNode[] = [];
+  let cursor = paragraph.charStart;
+  for (const range of merged) {
+    if (range.start > cursor) {
+      nodes.push(paragraph.text.slice(cursor - paragraph.charStart, range.start - paragraph.charStart));
+    }
+    nodes.push(
+      <mark className="reader-highlight-mark" key={`${range.start}:${range.end}`}>
+        {paragraph.text.slice(
+          range.start - paragraph.charStart,
+          range.end - paragraph.charStart,
+        )}
+      </mark>,
+    );
+    cursor = range.end;
+  }
+  if (cursor < paragraph.charEnd) {
+    nodes.push(paragraph.text.slice(cursor - paragraph.charStart));
+  }
+  return nodes;
+}
+
+function canonicalOffset(container: Node, offset: number, section: Element): number | null {
+  const paragraph = closestElement(container, "[data-reader-char-start]");
+  if (!paragraph || !section.contains(paragraph)) return null;
+  const startValue = paragraph.getAttribute("data-reader-char-start");
+  if (startValue === null) return null;
+  const paragraphStart = Number(startValue);
+  if (!Number.isFinite(paragraphStart)) return null;
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    range.setEnd(container, offset);
+    return paragraphStart + range.toString().length;
+  } catch {
+    return null;
+  }
+}
+
+function closestElement(node: Node, selector: string): Element | null {
+  const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+  return element?.closest(selector) ?? null;
 }
 
 function documentElement(sectionId: string): HTMLElement | null {

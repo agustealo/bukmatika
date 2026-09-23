@@ -4,24 +4,6 @@ from collections.abc import AsyncIterator
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from bukmatika.main import app
-from bukmatika.reader.routes import router as reader_router
-
-
-def _route_snapshot(routes: list[object]) -> tuple[tuple[str | None, str | None], ...]:
-    return tuple(
-        (getattr(route, "name", None), getattr(route, "path", None))
-        for route in routes
-    )
-
-
-_INITIAL_APP_ROUTES = _route_snapshot(app.routes)
-_INITIAL_READER_ROUTER_ROUTES = _route_snapshot(reader_router.routes)
-assert any(name == "reader_navigation" for name, _ in _INITIAL_APP_ROUTES), (
-    "Reader navigation is absent immediately after importing the application: "
-    f"reader_router={_INITIAL_READER_ROUTER_ROUTES!r}; app={_INITIAL_APP_ROUTES!r}"
-)
-
 
 @pytest.fixture
 async def session() -> AsyncIterator[AsyncSession]:

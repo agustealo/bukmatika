@@ -28,6 +28,11 @@ from bukmatika.library.domain import (
     WorkDossierResponse,
 )
 from bukmatika.library.portability import LibraryPortabilityService
+from bukmatika.library.portability_apply import (
+    LibraryPortabilityImportApplier,
+    LibraryPortabilityImportApplyResponse,
+    LibraryPortabilityImportApplySummary,
+)
 from bukmatika.library.portability_domain import (
     LibraryPortabilityExportResponse,
     LibraryPortabilityImportPlanResponse,
@@ -63,6 +68,9 @@ __all__ = [
     "LibraryOrganizationNotFound",
     "LibraryOrganizationResponse",
     "LibraryPortabilityExportResponse",
+    "LibraryPortabilityImportApplier",
+    "LibraryPortabilityImportApplyResponse",
+    "LibraryPortabilityImportApplySummary",
     "LibraryPortabilityImportPlanResponse",
     "LibraryPortabilityImportPlanner",
     "LibraryPortabilityService",

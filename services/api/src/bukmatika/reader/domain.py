@@ -1,3 +1,4 @@
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
@@ -10,6 +11,26 @@ class ReaderSection(BaseModel):
     heading: str | None
     locator: dict[str, Any]
     text: str
+
+
+class ReaderNavigationKind(StrEnum):
+    PDF_PAGES = "pdf_pages"
+    EPUB_SPINE = "epub_spine"
+
+
+class ReaderNavigationItem(BaseModel):
+    key: str
+    label: str
+    section_id: UUID
+    section_ordinal: int = Field(ge=0)
+    locator: dict[str, Any]
+    heading: str | None = None
+
+
+class ReaderNavigationResponse(BaseModel):
+    format: str
+    kind: ReaderNavigationKind | None
+    items: list[ReaderNavigationItem]
 
 
 class ReadingStateResponse(BaseModel):

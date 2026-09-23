@@ -150,6 +150,62 @@ def test_manifest_rejects_cross_source_durable_identity_collision() -> None:
     assert "manifest_work_identifier_collision" in codes
 
 
+def test_manifest_rejects_edition_reused_under_multiple_works() -> None:
+    edition = _edition(isbn="SHARED-EDITION")
+    first = _entry(
+        work=_work(title="First Work", lccn="PARENT-WORK-1"),
+        edition=edition,
+    )
+    second = _entry(
+        work=_work(title="Second Work", lccn="PARENT-WORK-2"),
+        edition=edition.model_copy(deep=True),
+    )
+
+    codes = _codes(_manifest([first, second]))
+
+    assert "manifest_edition_work_conflict" in codes
+
+
+def test_manifest_rejects_document_reused_under_multiple_assets() -> None:
+    edition = _edition(isbn="DOCUMENT-PARENT")
+    document = PortableDocumentIdentity(
+        source_document_id=uuid4(),
+        source_sha256="c" * 64,
+        format="EPUB",
+        parser_name="epub",
+        parser_version="1",
+    )
+    first_asset = PortableAssetManifest(
+        source_asset_id=uuid4(),
+        edition=edition.model_copy(deep=True),
+        format="EPUB",
+        media_type="application/epub+zip",
+        byte_size=20,
+        content_sha256="c" * 64,
+        identifiers=[],
+        sources=[],
+        document=document,
+        rights=None,
+        byte_policy=PortableBytePolicy(
+            policy_export_allowed=False,
+            policy_share_allowed=False,
+        ),
+    )
+    second_asset = first_asset.model_copy(
+        update={"source_asset_id": uuid4()},
+        deep=True,
+    )
+    entry = _entry(
+        work=_work(lccn="DOCUMENT-WORK"),
+        edition=edition,
+        assets=[first_asset, second_asset],
+    )
+
+    codes = _codes(_manifest([entry]))
+
+    assert "manifest_document_asset_conflict" in codes
+
+
 def test_manifest_rejects_destination_owned_name_collision() -> None:
     now = datetime.now(UTC)
     collections = [

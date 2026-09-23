@@ -12,6 +12,10 @@ from bukmatika.library.domain import (
     LibraryOrganizationResponse,
     LibraryReadingStatus,
     LibraryResponse,
+    SmartShelfContentsResponse,
+    SmartShelfCreate,
+    SmartShelfResponse,
+    SmartShelfUpdate,
     TagAssignRequest,
     TagResponse,
     TagUpdate,
@@ -253,6 +257,101 @@ async def delete_tag(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tag not found",
+        ) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/library/smart-shelves",
+    response_model=SmartShelfResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_smart_shelf(
+    create: SmartShelfCreate,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[LibraryService, Depends(library_service)],
+) -> SmartShelfResponse:
+    try:
+        return await service.create_smart_shelf(
+            principal_id=identity.principal_id,
+            create=create,
+        )
+    except LibraryOrganizationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Smart shelf rule reference not found",
+        ) from exc
+    except LibraryOrganizationConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "LIBRARY_SMART_SHELF_NAME_CONFLICT"},
+        ) from exc
+
+
+@router.post("/library/smart-shelves/{smart_shelf_id}", response_model=SmartShelfResponse)
+async def update_smart_shelf(
+    smart_shelf_id: UUID,
+    update: SmartShelfUpdate,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[LibraryService, Depends(library_service)],
+) -> SmartShelfResponse:
+    try:
+        return await service.update_smart_shelf(
+            principal_id=identity.principal_id,
+            smart_shelf_id=smart_shelf_id,
+            update=update,
+        )
+    except LibraryOrganizationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Smart shelf or rule reference not found",
+        ) from exc
+    except LibraryOrganizationConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "LIBRARY_SMART_SHELF_NAME_CONFLICT"},
+        ) from exc
+
+
+@router.get(
+    "/library/smart-shelves/{smart_shelf_id}",
+    response_model=SmartShelfContentsResponse,
+)
+async def smart_shelf_contents(
+    smart_shelf_id: UUID,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[LibraryService, Depends(library_service)],
+) -> SmartShelfContentsResponse:
+    try:
+        return await service.smart_shelf_contents(
+            principal_id=identity.principal_id,
+            smart_shelf_id=smart_shelf_id,
+        )
+    except LibraryOrganizationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Smart shelf not found",
+        ) from exc
+
+
+@router.post(
+    "/library/smart-shelves/{smart_shelf_id}/remove",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_smart_shelf(
+    smart_shelf_id: UUID,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[LibraryService, Depends(library_service)],
+) -> Response:
+    try:
+        await service.delete_smart_shelf(
+            principal_id=identity.principal_id,
+            smart_shelf_id=smart_shelf_id,
+        )
+    except LibraryOrganizationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Smart shelf not found",
         ) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

@@ -1,7 +1,8 @@
 from enum import StrEnum
+from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class AssetStatusResponse(BaseModel):
@@ -130,6 +131,58 @@ class TagResponse(BaseModel):
     item_count: int = Field(ge=0)
 
 
+class SmartShelfRule(BaseModel):
+    reading_status: LibraryReadingStatus | None = None
+    collection_id: UUID | None = None
+    tag_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def require_predicate(self) -> Self:
+        if self.reading_status is None and self.collection_id is None and self.tag_id is None:
+            raise ValueError("Smart shelf requires at least one rule predicate")
+        return self
+
+
+class SmartShelfCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+    rule: SmartShelfRule
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("Smart shelf name cannot be blank")
+        return normalized
+
+    @field_validator("description")
+    @classmethod
+    def normalize_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        return normalized or None
+
+
+class SmartShelfUpdate(SmartShelfCreate):
+    pass
+
+
+class SmartShelfResponse(BaseModel):
+    smart_shelf_id: UUID
+    name: str
+    description: str | None
+    rule: SmartShelfRule
+    item_count: int = Field(ge=0)
+
+
+class SmartShelfContentsResponse(BaseModel):
+    shelf: SmartShelfResponse
+    items: list[LibraryItemResponse]
+
+
 class LibraryOrganizationResponse(BaseModel):
     collections: list[CollectionResponse]
     tags: list[TagResponse]
+    smart_shelves: list[SmartShelfResponse] = Field(default_factory=list)

@@ -9,6 +9,7 @@ from bukmatika.persistence.library_organization_models import (
     LibraryCollection,
     LibraryCollectionEntry,
     LibraryEntryTag,
+    LibrarySmartShelf,
     LibraryTag,
 )
 from bukmatika.persistence.models import LibraryEntry
@@ -74,6 +75,36 @@ class LibraryOrganizationRepository:
         if tag is None:
             raise LibraryOrganizationNotFound("Tag is unavailable")
         return tag
+
+    async def require_smart_shelf(
+        self,
+        principal_id: UUID,
+        smart_shelf_id: UUID,
+        *,
+        lock: bool = False,
+    ) -> LibrarySmartShelf:
+        statement = select(LibrarySmartShelf).where(
+            LibrarySmartShelf.id == smart_shelf_id,
+            LibrarySmartShelf.principal_id == principal_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        shelf = await self._session.scalar(statement)
+        if shelf is None:
+            raise LibraryOrganizationNotFound("Smart shelf is unavailable")
+        return shelf
+
+    async def validate_rule_references(
+        self,
+        *,
+        principal_id: UUID,
+        collection_id: UUID | None,
+        tag_id: UUID | None,
+    ) -> None:
+        if collection_id is not None:
+            await self.require_collection(principal_id, collection_id)
+        if tag_id is not None:
+            await self.require_tag(principal_id, tag_id)
 
     async def create_collection(
         self,
@@ -262,6 +293,109 @@ class LibraryOrganizationRepository:
                 LibraryTag.principal_id == principal_id,
             )
         )
+
+    async def create_smart_shelf(
+        self,
+        *,
+        principal_id: UUID,
+        name: str,
+        normalized_name: str,
+        description: str | None,
+        reading_status: str | None,
+        collection_id: UUID | None,
+        tag_id: UUID | None,
+    ) -> LibrarySmartShelf:
+        await self.validate_rule_references(
+            principal_id=principal_id,
+            collection_id=collection_id,
+            tag_id=tag_id,
+        )
+        statement = (
+            insert(LibrarySmartShelf)
+            .values(
+                principal_id=principal_id,
+                name=name,
+                normalized_name=normalized_name,
+                description=description,
+                reading_status=reading_status,
+                collection_id=collection_id,
+                tag_id=tag_id,
+            )
+            .on_conflict_do_nothing(constraint="uq_library_smart_shelf_principal_name")
+            .returning(LibrarySmartShelf)
+        )
+        created = (await self._session.execute(statement)).scalar_one_or_none()
+        if created is not None:
+            return created
+        existing = await self._session.scalar(
+            select(LibrarySmartShelf).where(
+                LibrarySmartShelf.principal_id == principal_id,
+                LibrarySmartShelf.normalized_name == normalized_name,
+            )
+        )
+        if existing is None:
+            raise RuntimeError("Smart shelf upsert returned no row")
+        if (
+            existing.description != description
+            or existing.reading_status != reading_status
+            or existing.collection_id != collection_id
+            or existing.tag_id != tag_id
+        ):
+            raise LibraryOrganizationConflict("A smart shelf with this name already exists")
+        return existing
+
+    async def update_smart_shelf(
+        self,
+        *,
+        principal_id: UUID,
+        smart_shelf_id: UUID,
+        name: str,
+        normalized_name: str,
+        description: str | None,
+        reading_status: str | None,
+        collection_id: UUID | None,
+        tag_id: UUID | None,
+    ) -> LibrarySmartShelf:
+        await self.validate_rule_references(
+            principal_id=principal_id,
+            collection_id=collection_id,
+            tag_id=tag_id,
+        )
+        shelf = await self.require_smart_shelf(principal_id, smart_shelf_id, lock=True)
+        duplicate = await self._session.scalar(
+            select(LibrarySmartShelf.id).where(
+                LibrarySmartShelf.principal_id == principal_id,
+                LibrarySmartShelf.normalized_name == normalized_name,
+                LibrarySmartShelf.id != smart_shelf_id,
+            )
+        )
+        if duplicate is not None:
+            raise LibraryOrganizationConflict("A smart shelf with this name already exists")
+        shelf.name = name
+        shelf.normalized_name = normalized_name
+        shelf.description = description
+        shelf.reading_status = reading_status
+        shelf.collection_id = collection_id
+        shelf.tag_id = tag_id
+        await self._session.flush()
+        return shelf
+
+    async def delete_smart_shelf(self, *, principal_id: UUID, smart_shelf_id: UUID) -> None:
+        await self.require_smart_shelf(principal_id, smart_shelf_id)
+        await self._session.execute(
+            delete(LibrarySmartShelf).where(
+                LibrarySmartShelf.id == smart_shelf_id,
+                LibrarySmartShelf.principal_id == principal_id,
+            )
+        )
+
+    async def smart_shelves(self, principal_id: UUID) -> list[LibrarySmartShelf]:
+        values = await self._session.scalars(
+            select(LibrarySmartShelf)
+            .where(LibrarySmartShelf.principal_id == principal_id)
+            .order_by(LibrarySmartShelf.normalized_name, LibrarySmartShelf.id)
+        )
+        return list(values)
 
     async def collections(self, principal_id: UUID) -> list[tuple[LibraryCollection, int]]:
         rows = (

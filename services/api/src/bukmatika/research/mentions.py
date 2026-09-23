@@ -11,7 +11,7 @@ from bukmatika.research.domain import (
     ResearchMentionsResponse,
 )
 
-_WORD = r"[A-Z][\w'’\-]+"
+_WORD = r"[A-Z][\w'\u2019\-]+"
 _PERSON = re.compile(
     rf"\b(?P<cue>Mr|Mrs|Ms|Dr|Professor|Prof|Captain|Capt|King|Queen|President|Emperor|Empress|Pope)\.?(?:\s+)(?P<mention>{_WORD}(?:\s+{_WORD}){{0,3}})\b"
 )
@@ -22,7 +22,7 @@ _PLACE_SUFFIX = re.compile(
     rf"\b(?P<mention>{_WORD}(?:\s+{_WORD}){{0,3}}\s+(?P<cue>River|Sea|Ocean|Island|Islands|Bay|Gulf|Lake|Mount|Mountain|Mountains|Valley|Peninsula|Strait|Straits|Harbor|Harbour|Port|Fort|Province|Kingdom|Republic|Empire|City))\b"
 )
 _CONCEPT_OF = re.compile(
-    r"\b(?P<cue>concept|principle|doctrine|theory|idea|practice|system|movement|method)\s+of\s+(?P<mention>[A-Za-z][A-Za-z'’\-]*)\b",
+    r"\b(?P<cue>concept|principle|doctrine|theory|idea|practice|system|movement|method)\s+of\s+(?P<mention>[A-Za-z][A-Za-z'\u2019\-]*)\b",
     re.IGNORECASE,
 )
 _CONCEPT_QUOTED = re.compile(

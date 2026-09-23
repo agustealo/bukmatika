@@ -13,6 +13,9 @@ from bukmatika.research.domain import (
     ResearchPassageResponse,
     ResearchSearchRequest,
     ResearchSearchResponse,
+    ResearchTimelineItem,
+    ResearchTimelinePrecision,
+    ResearchTimelineResponse,
 )
 from bukmatika.research.routes import router
 from bukmatika.research.service import (
@@ -41,5 +44,8 @@ __all__ = [
     "ResearchSearchResponse",
     "ResearchSelectionDenied",
     "ResearchService",
+    "ResearchTimelineItem",
+    "ResearchTimelinePrecision",
+    "ResearchTimelineResponse",
     "router",
 ]

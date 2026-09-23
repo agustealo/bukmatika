@@ -64,6 +64,31 @@ type GroundedResearchResponse = {
   model_routing: string;
 };
 
+type TimelinePrecision = "day" | "month" | "year" | "ambiguous";
+
+type TimelineItem = {
+  timeline_id: string;
+  date_label: string;
+  year: number;
+  month: number | null;
+  day: number | null;
+  era: "BCE" | "CE" | null;
+  precision: TimelinePrecision;
+  event_text: string;
+  evidence_ids: string[];
+  document_id: string;
+  section_id: string;
+  source_char_start: number;
+  source_char_end: number;
+};
+
+type TimelineResponse = {
+  evidence: EvidenceBundle;
+  items: TimelineItem[];
+  undated_evidence_ids: string[];
+  truncated: boolean;
+};
+
 type AIAvailabilityState =
   | "ai_disabled"
   | "unconfigured"
@@ -88,6 +113,8 @@ type AIErrorPayload = {
     state?: string;
   };
 };
+
+type ActiveAction = "research" | "timeline" | null;
 
 const MAX_SELECTED_HIGHLIGHTS = 8;
 const AI_AVAILABILITY_STATES = new Set<AIAvailabilityState>([
@@ -142,21 +169,21 @@ async function readinessFallbackState(response: Response): Promise<AIAvailabilit
 
 function statusExplanation(status: AIStatus | null): string {
   if (status === null) {
-    return "Build a canonical source bundle while local AI readiness is being checked.";
+    return "Build canonical evidence and timelines while local AI readiness is being checked.";
   }
   switch (status.state) {
     case "ready":
-      return "Ask the ready local model. Every returned claim must cite the canonical evidence shown below.";
+      return "Ask the ready local model, or build a deterministic timeline directly from canonical evidence.";
     case "ai_disabled":
-      return "AI is disabled. Canonical evidence building remains available without model calls.";
+      return "AI is disabled. Canonical evidence and deterministic timelines remain available.";
     case "unconfigured":
-      return "Local AI is not configured. Canonical evidence building remains fully available.";
+      return "Local AI is not configured. Evidence and deterministic timelines remain available.";
     case "provider_unreachable":
-      return "The local AI runtime is not reachable right now. Evidence building remains available.";
+      return "The local AI runtime is not reachable. Evidence and deterministic timelines remain available.";
     case "provider_invalid":
-      return "The local AI runtime returned an unexpected readiness response. Evidence building remains available.";
+      return "The local AI runtime returned an unexpected readiness response. Evidence and timelines remain available.";
     case "model_missing":
-      return "The configured local model is not installed. Evidence building remains available.";
+      return "The configured local model is not installed. Evidence and deterministic timelines remain available.";
   }
 }
 
@@ -173,10 +200,12 @@ export function ReaderResearchPanel({
   const [bundle, setBundle] = useState<EvidenceBundle | null>(null);
   const [answer, setAnswer] = useState<GroundedAnswer | null>(null);
   const [answerModel, setAnswerModel] = useState<string | null>(null);
+  const [timeline, setTimeline] = useState<TimelineResponse | null>(null);
   const [aiStatus, setAIStatus] = useState<AIStatus | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [activeAction, setActiveAction] = useState<ActiveAction>(null);
   const [error, setError] = useState<string | null>(null);
   const activeSectionRef = useRef(sectionId);
+  const loading = activeAction !== null;
 
   useEffect(() => {
     let cancelled = false;
@@ -188,7 +217,7 @@ export function ReaderResearchPanel({
         const payload = (await response.json()) as AIStatus;
         if (!cancelled) setAIStatus(payload);
       } catch {
-        // Evidence building remains usable when local AI status cannot be loaded.
+        // Evidence and deterministic timeline building remain usable without AI status.
       }
     }
 
@@ -203,6 +232,7 @@ export function ReaderResearchPanel({
     setBundle(null);
     setAnswer(null);
     setAnswerModel(null);
+    setTimeline(null);
     setError(null);
   }, [sectionId]);
 
@@ -210,6 +240,14 @@ export function ReaderResearchPanel({
     const available = new Set(highlights.map((highlight) => highlight.highlight_id));
     setSelectedHighlightIds((current) => current.filter((id) => available.has(id)));
   }, [highlights]);
+
+  useEffect(() => {
+    setBundle(null);
+    setAnswer(null);
+    setAnswerModel(null);
+    setTimeline(null);
+    setError(null);
+  }, [selectedHighlightIds]);
 
   const canSynthesize = aiStatus?.ready === true && aiStatus.ai_enabled === true;
 
@@ -223,14 +261,9 @@ export function ReaderResearchPanel({
     });
   }
 
-  async function research(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const normalized = question.trim();
-    const requestedSectionId = sectionId;
-    if (!requestedSectionId || !normalized) return;
-
-    const requestBody = {
-      question: normalized,
+  function requestBody(requestedSectionId: string, normalizedQuestion: string) {
+    return {
+      question: normalizedQuestion,
       reader: {
         library_entry_id: libraryEntryId,
         document_id: documentId,
@@ -241,16 +274,26 @@ export function ReaderResearchPanel({
       selected_highlight_ids: selectedHighlightIds,
       related_limit: 6,
     };
+  }
+
+  async function research(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalized = question.trim();
+    const requestedSectionId = sectionId;
+    if (!requestedSectionId || !normalized || loading) return;
+
     const requestInit = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify(requestBody(requestedSectionId, normalized)),
     };
 
-    setLoading(true);
+    setActiveAction("research");
     setError(null);
+    setBundle(null);
     setAnswer(null);
     setAnswerModel(null);
+    setTimeline(null);
     try {
       let usedSynthesis = canSynthesize;
       let response = await apiFetch(
@@ -304,7 +347,43 @@ export function ReaderResearchPanel({
         setError(caught instanceof Error ? caught.message : "Could not research this passage.");
       }
     } finally {
-      setLoading(false);
+      setActiveAction(null);
+    }
+  }
+
+  async function buildTimeline() {
+    const normalized = question.trim();
+    const requestedSectionId = sectionId;
+    if (!requestedSectionId || !normalized || loading) return;
+
+    setActiveAction("timeline");
+    setError(null);
+    setBundle(null);
+    setAnswer(null);
+    setAnswerModel(null);
+    setTimeline(null);
+    try {
+      const response = await apiFetch("/v1/research/timeline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody(requestedSectionId, normalized)),
+      });
+      if (!response.ok) {
+        throw new Error(`Timeline grounding failed with HTTP ${response.status}.`);
+      }
+      const payload = (await response.json()) as TimelineResponse;
+      if (activeSectionRef.current === requestedSectionId) {
+        setTimeline(payload);
+        setBundle(payload.evidence);
+      }
+    } catch (caught) {
+      if (activeSectionRef.current === requestedSectionId) {
+        setTimeline(null);
+        setBundle(null);
+        setError(caught instanceof Error ? caught.message : "Could not build this timeline.");
+      }
+    } finally {
+      setActiveAction(null);
     }
   }
 
@@ -358,18 +437,85 @@ export function ReaderResearchPanel({
           maxLength={500}
           rows={3}
           disabled={loading || sectionId === null}
-          placeholder="What does this passage say about…?"
+          placeholder="What happened, and when?"
           onChange={(event) => setQuestion(event.target.value)}
         />
-        <button type="submit" disabled={loading || sectionId === null || !question.trim()}>
-          {loading ? "Researching…" : canSynthesize ? "Ask local AI" : "Build evidence"}
-        </button>
+        <div className={styles.actions}>
+          <button type="submit" disabled={loading || sectionId === null || !question.trim()}>
+            {activeAction === "research"
+              ? "Researching…"
+              : canSynthesize
+                ? "Ask local AI"
+                : "Build evidence"}
+          </button>
+          <button
+            type="button"
+            disabled={loading || sectionId === null || !question.trim()}
+            onClick={() => void buildTimeline()}
+          >
+            {activeAction === "timeline" ? "Building timeline…" : "Build timeline"}
+          </button>
+        </div>
       </form>
 
       {error ? (
         <p className={styles.error} role="alert">
           {error}
         </p>
+      ) : null}
+
+      {timeline ? (
+        <section className={styles.timeline} aria-live="polite">
+          <div className={styles.answerHeading}>
+            <span>Evidence timeline</span>
+            <small>Deterministic date extraction. No model call or timeline datastore.</small>
+          </div>
+          {timeline.items.length === 0 ? (
+            <div className={styles.timelineNotice}>
+              <strong>No supported explicit dates found.</strong>
+              <p>The evidence stays visible below instead of inventing chronology.</p>
+            </div>
+          ) : (
+            <ol className={styles.timelineList}>
+              {timeline.items.map((item) => (
+                <li className={styles.timelineItem} key={item.timeline_id}>
+                  <div className={styles.timelineDate}>
+                    <strong>{item.date_label}</strong>
+                    <span className={styles.timelinePrecision}>
+                      {item.precision === "ambiguous"
+                        ? "Ambiguous numeric date"
+                        : `${item.precision} precision`}
+                    </span>
+                  </div>
+                  <p>{item.event_text}</p>
+                  <div className={styles.timelineMeta}>
+                    <span>
+                      Text offsets {item.source_char_start}–{item.source_char_end}
+                    </span>
+                    <div className={styles.citations} aria-label="Timeline evidence citations">
+                      {item.evidence_ids.map((evidenceId) => (
+                        <code key={evidenceId}>{evidenceId}</code>
+                      ))}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+          {timeline.undated_evidence_ids.length > 0 ? (
+            <p className={styles.timelineFootnote}>
+              {timeline.undated_evidence_ids.length} evidence item
+              {timeline.undated_evidence_ids.length === 1 ? " has" : "s have"} no supported
+              explicit date.
+            </p>
+          ) : null}
+          {timeline.truncated ? (
+            <p className={styles.timelineFootnote}>
+              Timeline output reached its bounded item limit. Narrow the question or evidence to
+              inspect the remaining date mentions.
+            </p>
+          ) : null}
+        </section>
       ) : null}
 
       {answer ? (

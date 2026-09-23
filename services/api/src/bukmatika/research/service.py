@@ -28,7 +28,9 @@ from bukmatika.research.domain import (
     ResearchPassageResponse,
     ResearchSearchRequest,
     ResearchSearchResponse,
+    ResearchTimelineResponse,
 )
+from bukmatika.research.timeline import build_timeline
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -295,6 +297,15 @@ class ResearchService:
                 selected_library_entry_ids=request.library_entry_ids,
                 evidence=evidence,
             )
+
+    async def timeline(
+        self,
+        *,
+        principal_id: UUID,
+        request: ResearchEvidenceBundleRequest,
+    ) -> ResearchTimelineResponse:
+        bundle = await self.evidence_bundle(principal_id=principal_id, request=request)
+        return build_timeline(bundle)
 
     @staticmethod
     def validate_grounded_answer(

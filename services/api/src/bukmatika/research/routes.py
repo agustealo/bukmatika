@@ -10,6 +10,7 @@ from bukmatika.research.domain import (
     ResearchEvidenceBundleResponse,
     ResearchSearchRequest,
     ResearchSearchResponse,
+    ResearchTimelineResponse,
 )
 from bukmatika.research.service import (
     ResearchReaderPositionInvalid,
@@ -69,6 +70,29 @@ async def research_evidence(
 ) -> ResearchEvidenceBundleResponse:
     try:
         return await service.evidence_bundle(
+            principal_id=identity.principal_id,
+            request=request,
+        )
+    except ResearchSelectionDenied as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reader or research selection is unavailable",
+        ) from exc
+    except ResearchReaderPositionInvalid as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/timeline", response_model=ResearchTimelineResponse)
+async def research_timeline(
+    request: ResearchEvidenceBundleRequest,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[ResearchService, Depends(research_service)],
+) -> ResearchTimelineResponse:
+    try:
+        return await service.timeline(
             principal_id=identity.principal_id,
             request=request,
         )

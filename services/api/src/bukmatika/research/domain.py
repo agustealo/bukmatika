@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 MAX_READER_SELECTION_CHARS = 6_000
 MAX_SELECTED_HIGHLIGHTS = 8
 MAX_EVIDENCE_ITEMS = 38
+MAX_TIMELINE_ITEMS = 80
 _EVIDENCE_ID_PATTERN = re.compile(r"^E[1-9][0-9]*$")
 
 
@@ -205,6 +206,56 @@ class ResearchEvidenceBundleResponse(BaseModel):
     reader: ReaderResearchContextRequest
     selected_library_entry_ids: list[UUID]
     evidence: list[ResearchEvidenceItem] = Field(min_length=1, max_length=MAX_EVIDENCE_ITEMS)
+
+
+class ResearchTimelinePrecision(StrEnum):
+    DAY = "day"
+    MONTH = "month"
+    YEAR = "year"
+    AMBIGUOUS = "ambiguous"
+
+
+class ResearchTimelineItem(BaseModel):
+    timeline_id: str = Field(pattern=r"^T[1-9][0-9]*$")
+    date_label: str = Field(min_length=1, max_length=80)
+    year: int = Field(ge=1, le=9999)
+    month: int | None = Field(default=None, ge=1, le=12)
+    day: int | None = Field(default=None, ge=1, le=31)
+    era: str | None = Field(default=None, pattern=r"^(BCE|CE)$")
+    precision: ResearchTimelinePrecision
+    event_text: str = Field(min_length=1, max_length=500)
+    evidence_ids: list[str] = Field(min_length=1, max_length=MAX_EVIDENCE_ITEMS)
+    document_id: UUID
+    section_id: UUID
+    source_char_start: int = Field(ge=0)
+    source_char_end: int = Field(ge=1)
+
+    @field_validator("evidence_ids")
+    @classmethod
+    def validate_evidence_ids(cls, values: list[str]) -> list[str]:
+        if len(set(values)) != len(values):
+            raise ValueError("Timeline evidence IDs must be unique")
+        if any(_EVIDENCE_ID_PATTERN.fullmatch(value) is None for value in values):
+            raise ValueError("Timeline evidence IDs must use the request-local E# format")
+        return values
+
+    @model_validator(mode="after")
+    def validate_coordinates(self) -> "ResearchTimelineItem":
+        if self.source_char_end <= self.source_char_start:
+            raise ValueError("Timeline source coordinates must have positive length")
+        if (
+            self.precision is ResearchTimelinePrecision.AMBIGUOUS
+            and (self.month is not None or self.day is not None)
+        ):
+            raise ValueError("Ambiguous numeric dates must not guess month/day order")
+        return self
+
+
+class ResearchTimelineResponse(BaseModel):
+    evidence: ResearchEvidenceBundleResponse
+    items: list[ResearchTimelineItem] = Field(max_length=MAX_TIMELINE_ITEMS)
+    undated_evidence_ids: list[str] = Field(max_length=MAX_EVIDENCE_ITEMS)
+    truncated: bool = False
 
 
 class GroundedAnswerClaim(BaseModel):

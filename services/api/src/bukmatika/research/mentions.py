@@ -30,6 +30,28 @@ _CONCEPT_QUOTED = re.compile(
     re.IGNORECASE,
 )
 _AMBIGUOUS_PROPER = re.compile(rf"\b(?P<mention>{_WORD}(?:\s+{_WORD}){{1,3}})\b")
+_PERSON_NON_PERSON_SUFFIXES = frozenset(
+    {
+        "association",
+        "bible",
+        "book",
+        "cathedral",
+        "church",
+        "college",
+        "company",
+        "corporation",
+        "edition",
+        "hospital",
+        "institute",
+        "library",
+        "museum",
+        "school",
+        "society",
+        "translation",
+        "university",
+        "version",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -173,6 +195,9 @@ def _candidate(
 
 
 def _parse_person(match: re.Match[str]) -> _MentionCandidate | None:
+    mention = match.group("mention")
+    if mention.split()[-1].casefold() in _PERSON_NON_PERSON_SUFFIXES:
+        return None
     return _candidate(
         match,
         kind=ResearchMentionKind.PERSON,

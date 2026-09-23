@@ -154,7 +154,10 @@ async def _seed_timeline_book(
 ) -> tuple[LibraryEntry, Document, DocumentSection]:
     text = "On October 12, 1492, the canonical account records landfall."
     token = uuid4().hex
-    work = Work(canonical_title="Timeline Canonical Work", normalized_title="timeline canonical work")
+    work = Work(
+        canonical_title="Timeline Canonical Work",
+        normalized_title="timeline canonical work",
+    )
     stored = StoredObject(
         sha256=token + token,
         storage_key=f"objects/timeline/{token}",

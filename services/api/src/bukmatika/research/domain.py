@@ -243,9 +243,11 @@ class ResearchTimelineItem(BaseModel):
     def validate_coordinates(self) -> "ResearchTimelineItem":
         if self.source_char_end <= self.source_char_start:
             raise ValueError("Timeline source coordinates must have positive length")
-        if self.precision is ResearchTimelinePrecision.AMBIGUOUS:
-            if self.month is not None or self.day is not None:
-                raise ValueError("Ambiguous numeric dates must not guess month/day order")
+        if (
+            self.precision is ResearchTimelinePrecision.AMBIGUOUS
+            and (self.month is not None or self.day is not None)
+        ):
+            raise ValueError("Ambiguous numeric dates must not guess month/day order")
         return self
 
 

@@ -1,6 +1,6 @@
-import { LibraryClient } from "../../components/library-client";
+import { LibraryPortabilityClient } from "../../../components/library-portability-client";
 
-export default function LibraryPage() {
+export default function LibraryTransferPage() {
   return (
     <main className="app-shell">
       <header className="masthead">
@@ -10,15 +10,15 @@ export default function LibraryPage() {
         </a>
         <nav className="top-nav" aria-label="Primary navigation">
           <a href="/">Discover</a>
-          <a href="/library" aria-current="page">Library</a>
-          <a href="/library/transfer">Transfer</a>
+          <a href="/library">Library</a>
+          <a href="/library/transfer" aria-current="page">Transfer</a>
           <a href="/status">Status</a>
           <a href="/research">Research</a>
           <a href="/personalization">AI</a>
         </nav>
       </header>
 
-      <LibraryClient />
+      <LibraryPortabilityClient />
     </main>
   );
 }

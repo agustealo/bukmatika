@@ -6,6 +6,11 @@ from uuid import UUID
 from pydantic import BaseModel, JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.ai.approval_domain import (
+    ActionApprovalInvalid,
+    ActionApprovalRejected,
+    action_step_fingerprint,
+)
 from bukmatika.ai.capabilities import CapabilityRegistry, CapabilityRisk
 from bukmatika.ai.domain import CapabilityName
 from bukmatika.ai.gateway import (
@@ -21,9 +26,14 @@ from bukmatika.ai.gateway import (
 from bukmatika.ai.policy import ActionDecisionValue, ActionPolicy
 from bukmatika.ai.research_domain import GroundedResearchCapabilityOutput
 from bukmatika.persistence import session_scope
+from bukmatika.persistence.approvals import ApprovalRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.execution import ExecutionRepository, PlanIntegrityError
-from bukmatika.personalization.domain import ContextManifest
+from bukmatika.personalization.domain import (
+    ContextManifest,
+    ExplicitPreferenceRequest,
+)
+from bukmatika.personalization.service import PersonalizationService
 from bukmatika.research import (
     GroundedResearchAnswer,
     ResearchEvidenceBundleRequest,
@@ -97,6 +107,38 @@ class ResearchSearchExecutor:
             )
 
         return await self._service.search(principal_id=principal_id, request=request)
+
+
+class PreferenceProposalExecutor:
+    capability = CapabilityName.PREFERENCES_PROPOSE
+
+    def __init__(
+        self,
+        service: PersonalizationService | None = None,
+        *,
+        session_scope_factory: SessionScopeFactory = session_scope,
+    ) -> None:
+        self._service = service or PersonalizationService(
+            session_scope_factory=session_scope_factory
+        )
+
+    async def execute(
+        self,
+        *,
+        principal_id: UUID,
+        action_decision_id: UUID,
+        arguments: dict[str, JsonValue],
+        context: ContextManifest,
+    ) -> BaseModel:
+        del action_decision_id, context
+        try:
+            request = ExplicitPreferenceRequest.model_validate(arguments)
+        except ValidationError as exc:
+            raise CapabilityArgumentsInvalid("Invalid preferences.propose arguments") from exc
+        return await self._service.set_explicit_preference(
+            principal_id=principal_id,
+            request=request,
+        )
 
 
 class ResearchAnswerExecutor:
@@ -241,7 +283,10 @@ class CapabilityExecutorRegistry:
     """Finite registry of actually executable AI capabilities."""
 
     def __init__(self, executors: tuple[CapabilityExecutor, ...] | None = None) -> None:
-        values = executors or (ResearchSearchExecutor(),)
+        values = executors or (
+            ResearchSearchExecutor(),
+            PreferenceProposalExecutor(),
+        )
         self._executors = {executor.capability: executor for executor in values}
         if len(self._executors) != len(values):
             raise ValueError("Capability executor names must be unique")
@@ -263,7 +308,7 @@ class CapabilityExecutionResponse(BaseModel):
 
 
 class ExecutionCoordinator:
-    """Executes only currently allowed, principal-owned read-only planned actions."""
+    """Executes only currently allowed principal-owned planned actions."""
 
     def __init__(
         self,
@@ -290,6 +335,10 @@ class ExecutionCoordinator:
                 plan_id=plan_id,
                 step_id=step_id,
             )
+            approval = await ApprovalRepository(database_session).approval_for_execution(
+                principal_id=principal_id,
+                action_decision_id=state.decision.id,
+            )
 
         if not state.ai_enabled:
             raise AIExecutionDisabled("AI execution is disabled for this principal")
@@ -304,23 +353,50 @@ class ExecutionCoordinator:
         spec = self._capabilities.get(state.step.capability)
         if state.step.capability.value not in context.available_capabilities:
             raise ActionExecutionDenied("Capability is unavailable in the persisted context")
-        if spec.risk is not CapabilityRisk.READ_ONLY:
-            raise ActionApprovalRequired("Only read-only capabilities execute at Levels 0-1")
 
         try:
             persisted_decision = ActionDecisionValue(state.decision.decision)
         except ValueError as exc:
             raise PlanIntegrityError("Persisted action decision value is invalid") from exc
-        if persisted_decision is ActionDecisionValue.REQUIRE_APPROVAL:
-            raise ActionApprovalRequired("Persisted action decision requires user approval")
-        if persisted_decision is not ActionDecisionValue.ALLOW:
-            raise ActionExecutionDenied("Persisted action decision does not allow execution")
 
         current_decision = self._policy.evaluate(state.step, context)
-        if current_decision.decision is ActionDecisionValue.REQUIRE_APPROVAL:
-            raise ActionApprovalRequired("Current action policy requires user approval")
-        if current_decision.decision is not ActionDecisionValue.ALLOW:
+        if current_decision.decision is ActionDecisionValue.DENY:
             raise ActionExecutionDenied("Current action policy denies execution")
+
+        if spec.risk is CapabilityRisk.READ_ONLY:
+            if persisted_decision is ActionDecisionValue.REQUIRE_APPROVAL:
+                raise ActionApprovalRequired("Persisted action decision requires user approval")
+            if persisted_decision is not ActionDecisionValue.ALLOW:
+                raise ActionExecutionDenied("Persisted action decision does not allow execution")
+            if current_decision.decision is ActionDecisionValue.REQUIRE_APPROVAL:
+                raise ActionApprovalRequired("Current action policy requires user approval")
+            if current_decision.decision is not ActionDecisionValue.ALLOW:
+                raise ActionExecutionDenied("Current action policy does not allow execution")
+        else:
+            if persisted_decision is not ActionDecisionValue.REQUIRE_APPROVAL:
+                raise ActionExecutionDenied("Durable action lacks the required approval gate")
+            if approval is None:
+                raise ActionApprovalRequired("Action requires explicit user approval")
+            if approval.decision != "approved":
+                raise ActionApprovalRejected("User rejected this action")
+            expected_fingerprint = action_step_fingerprint(
+                plan_id=state.plan_id,
+                action_decision_id=state.decision.id,
+                step=state.step,
+            )
+            if approval.step_fingerprint != expected_fingerprint:
+                raise ActionApprovalInvalid("Approved action no longer matches the persisted step")
+            if current_decision.decision not in {
+                ActionDecisionValue.ALLOW,
+                ActionDecisionValue.REQUIRE_APPROVAL,
+            }:
+                raise ActionExecutionDenied("Current action policy does not permit execution")
+            if spec.risk is CapabilityRisk.CONSEQUENTIAL:
+                raise ActionExecutionDenied("Consequential actions are not executable in this slice")
+            if state.step.capability is not CapabilityName.PREFERENCES_PROPOSE:
+                raise ActionExecutionDenied("Only reversible preference proposals are executable")
+            if not spec.reversible:
+                raise ActionExecutionDenied("Approved action is not reversible")
 
         executor = self._executors.get(state.step.capability)
         output = await executor.execute(

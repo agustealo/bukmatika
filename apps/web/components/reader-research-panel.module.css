@@ -44,7 +44,8 @@
   gap: 8px;
 }
 
-.form label {
+.form label,
+.highlightPicker legend {
   color: var(--muted);
   font-size: 0.68rem;
   font-weight: 700;
@@ -78,15 +79,91 @@
 }
 
 .form textarea:focus-visible,
-.form button:focus-visible {
+.form button:focus-visible,
+.highlightOptions input:focus-visible {
   outline: 3px solid rgba(216, 255, 102, 0.68);
   outline-offset: 3px;
 }
 
 .form textarea:disabled,
-.form button:disabled {
+.form button:disabled,
+.highlightOptions input:disabled {
   opacity: 0.48;
   cursor: not-allowed;
+}
+
+.highlightPicker {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 2px 0 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+
+.highlightPicker legend {
+  padding: 0 5px;
+}
+
+.highlightPicker > p,
+.highlightCount {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.64rem;
+  line-height: 1.45;
+}
+
+.highlightOptions {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.highlightOptions label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.highlightOptions label:has(input:checked) {
+  border-color: rgba(216, 255, 102, 0.24);
+  background: rgba(216, 255, 102, 0.045);
+}
+
+.highlightOptions input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
+.highlightOptions span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.highlightOptions strong {
+  color: var(--ink);
+  font-size: 0.64rem;
+  line-height: 1.35;
+}
+
+.highlightOptions small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.highlightCount {
+  text-align: right;
 }
 
 .answer {

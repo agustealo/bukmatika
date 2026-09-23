@@ -97,14 +97,18 @@ def test_mentions_classify_only_explicit_cues_and_preserve_ambiguity() -> None:
         assert item.evidence_ids == ["E1"]
 
 
-def test_mentions_do_not_promote_uncued_name_or_saint_prefix() -> None:
-    text = "Christopher Columbus met Saint Augustine near St Louis."
+def test_mentions_do_not_promote_uncued_name_saint_prefix_or_titled_work() -> None:
+    text = (
+        "Christopher Columbus met Saint Augustine near St Louis. "
+        "King James Bible appeared later."
+    )
 
     result = build_mentions(_bundle([_evidence(evidence_id="E1", text=text)]))
 
     assert all(item.kind is ResearchMentionKind.AMBIGUOUS for item in result.items)
     assert all(item.cue is None for item in result.items)
     assert any(item.text == "Christopher Columbus" for item in result.items)
+    assert any(item.text == "King James Bible" for item in result.items)
     assert not any(item.kind is ResearchMentionKind.PERSON for item in result.items)
 
 

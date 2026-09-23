@@ -27,10 +27,7 @@ def test_compare_request_requires_two_to_six_unique_sources() -> None:
     assert valid.per_source_limit == 5
 
 
-def test_compare_route_is_mounted() -> None:
-    methods_by_path = {
-        route.path: getattr(route, "methods", set())
-        for route in app.routes
-    }
-    assert "/v1/research/compare" in methods_by_path
-    assert "POST" in methods_by_path["/v1/research/compare"]
+def test_compare_route_is_mounted_in_openapi_contract() -> None:
+    paths = app.openapi()["paths"]
+    assert "/v1/research/compare" in paths
+    assert "post" in paths["/v1/research/compare"]

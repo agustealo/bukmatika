@@ -99,7 +99,10 @@ class ApprovalRepository:
             )
         )
         if existing is not None:
-            if existing.decision == decision_value.value and existing.step_fingerprint == fingerprint:
+            if (
+                existing.decision == decision_value.value
+                and existing.step_fingerprint == fingerprint
+            ):
                 return existing, target, False
             raise ActionApprovalConflict("Approval decision is final for this action")
 

@@ -66,6 +66,13 @@ async def export_library_file(
         artifact.path,
         media_type=BUNDLE_MEDIA_TYPE,
         filename=artifact.filename,
+        headers={
+            "X-Bukmatika-Bytes-Included": str(len(artifact.index.bytes)),
+            "X-Bukmatika-Bytes-Omitted": str(len(artifact.index.omissions)),
+            "Access-Control-Expose-Headers": (
+                "X-Bukmatika-Bytes-Included, X-Bukmatika-Bytes-Omitted"
+            ),
+        },
         background=BackgroundTask(artifact.cleanup),
     )
 

@@ -79,11 +79,23 @@ type ApiErrorBody = {
   detail?: string | { code?: string; detail?: string };
 };
 
+type ExportSummary = {
+  included: number;
+  omitted: number;
+};
+
 function byteSize(value: number): string {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function responseCount(response: Response, header: string): number | null {
+  const raw = response.headers.get(header);
+  if (raw === null) return null;
+  const value = Number.parseInt(raw, 10);
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
 async function responseError(response: Response, fallback: string): Promise<string> {
@@ -103,6 +115,7 @@ export function LibraryPortabilityClient() {
   const [file, setFile] = useState<File | null>(null);
   const [plan, setPlan] = useState<BundlePlan | null>(null);
   const [result, setResult] = useState<BundleApplyResult | null>(null);
+  const [exportSummary, setExportSummary] = useState<ExportSummary | null>(null);
   const [busy, setBusy] = useState<"export" | "plan" | "apply" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -117,9 +130,15 @@ export function LibraryPortabilityClient() {
     if (busy !== null) return;
     setBusy("export");
     setError(null);
+    setExportSummary(null);
     try {
       const response = await apiFetch("/v1/library/export/file", { cache: "no-store" });
       if (!response.ok) throw new Error(await responseError(response, "Export failed with"));
+      const included = responseCount(response, "X-Bukmatika-Bytes-Included");
+      const omitted = responseCount(response, "X-Bukmatika-Bytes-Omitted");
+      if (included !== null && omitted !== null) {
+        setExportSummary({ included, omitted });
+      }
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       try {
@@ -228,6 +247,15 @@ export function LibraryPortabilityClient() {
           >
             {busy === "export" ? "Building transfer…" : "Export library"}
           </button>
+          {exportSummary ? (
+            <p className={styles.fileMeta} role="status">
+              {exportSummary.included} byte payload{exportSummary.included === 1 ? "" : "s"} included ·{" "}
+              {exportSummary.omitted} omitted by current export policy.
+              {exportSummary.omitted > 0
+                ? " Omission reasons travel inside the transfer and are shown during import review."
+                : " No byte omissions were recorded."}
+            </p>
+          ) : null}
         </article>
 
         <article className={styles.card}>

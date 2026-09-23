@@ -1,9 +1,9 @@
-import { ResearchClient } from "../../components/research-client";
-import styles from "./research.module.css";
+import { LibraryStatusClient } from "../../components/library-status-client";
+import styles from "./status.module.css";
 
-export default function ResearchPage() {
+export default function StatusPage() {
   return (
-    <main className={`app-shell ${styles.researchRoot}`}>
+    <main className={`app-shell ${styles.statusRoot}`}>
       <header className="masthead">
         <a className="brand" href="/" aria-label="Bukmatika home">
           <span className="brand-mark" aria-hidden="true">B</span>
@@ -12,13 +12,13 @@ export default function ResearchPage() {
         <nav className="top-nav" aria-label="Primary navigation">
           <a href="/">Discover</a>
           <a href="/library">Library</a>
-          <a href="/status">Status</a>
-          <a href="/research" aria-current="page">Research</a>
+          <a href="/status" aria-current="page">Status</a>
+          <a href="/research">Research</a>
           <a href="/personalization">AI</a>
         </nav>
       </header>
 
-      <ResearchClient />
+      <LibraryStatusClient />
     </main>
   );
 }

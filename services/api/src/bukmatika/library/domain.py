@@ -48,6 +48,61 @@ class LibraryReadingStatus(StrEnum):
     FINISHED = "finished"
 
 
+class LibraryAssetAggregateStatus(StrEnum):
+    READY = "ready"
+    IN_PROGRESS = "in_progress"
+    NEEDS_ACTION = "needs_action"
+    FAILED = "failed"
+
+
+class LibraryAssetStage(StrEnum):
+    RIGHTS = "rights"
+    ACQUISITION = "acquisition"
+    PROCESSING = "processing"
+    OCR = "ocr"
+    READY = "ready"
+
+
+class LibraryAssetStatusItem(BaseModel):
+    library_entry_id: UUID
+    work_id: UUID
+    work_title: str
+    edition_id: UUID
+    edition_title: str
+    asset_id: UUID
+    format: str
+    media_type: str | None
+    aggregate_status: LibraryAssetAggregateStatus
+    stage: LibraryAssetStage
+    status_code: str
+    rights_state: str | None
+    acquisition_allowed: bool | None
+    acquisition_id: UUID | None
+    acquisition_status: str | None
+    acquisition_job_id: UUID | None
+    acquisition_job_status: str | None
+    acquisition_error_code: str | None
+    processing_status: str | None
+    processing_error_code: str | None
+    ocr_job_id: UUID | None
+    ocr_job_status: str | None
+    ocr_error_code: str | None
+    document_id: UUID | None
+
+
+class LibraryStatusSummary(BaseModel):
+    total: int = Field(ge=0)
+    ready: int = Field(ge=0)
+    in_progress: int = Field(ge=0)
+    needs_action: int = Field(ge=0)
+    failed: int = Field(ge=0)
+
+
+class LibraryStatusResponse(BaseModel):
+    summary: LibraryStatusSummary
+    items: list[LibraryAssetStatusItem]
+
+
 class CollectionSummaryResponse(BaseModel):
     collection_id: UUID
     name: str

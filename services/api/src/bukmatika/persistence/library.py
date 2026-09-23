@@ -226,16 +226,19 @@ class LibraryRepository:
     async def document_for_asset(self, asset_id: UUID) -> Document | None:
         return await self._session.scalar(select(Document).where(Document.asset_id == asset_id))
 
-    async def latest_ocr_job_for_asset(self, asset_id: UUID) -> Job | None:
+    async def latest_job_for_asset(self, *, job_type: str, asset_id: UUID) -> Job | None:
         return await self._session.scalar(
             select(Job)
             .where(
-                Job.job_type == "document_ocr",
+                Job.job_type == job_type,
                 Job.payload["asset_id"].as_string() == str(asset_id),
             )
             .order_by(Job.created_at.desc(), Job.id.desc())
             .limit(1)
         )
+
+    async def latest_ocr_job_for_asset(self, asset_id: UUID) -> Job | None:
+        return await self.latest_job_for_asset(job_type="document_ocr", asset_id=asset_id)
 
     async def latest_rights_decision_for_asset(self, asset_id: UUID) -> RightsDecision | None:
         return await self._session.scalar(

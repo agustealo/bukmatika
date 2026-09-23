@@ -1,8 +1,7 @@
 import asyncio
 import hashlib
 import os
-import shutil
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,7 +70,6 @@ class PortableByteImportResult:
 
 @dataclass(frozen=True, slots=True)
 class _Destination:
-    entry: PortableLibraryEntry
     asset: PortableAssetManifest
     work_id: UUID
     edition_id: UUID
@@ -80,12 +78,12 @@ class _Destination:
 
 
 class LibraryPortableByteImportService:
-    """Ingest portable bytes only through destination-local canonical authorities.
+    """Ingest portable bytes through destination-local canonical authorities.
 
-    Portable source rights are provenance only. The destination must already resolve
-    the portable Work/Edition/Asset identity, the principal must already own the
-    matching library entry, and the latest local RightsDecision must explicitly grant
-    retention before bytes can be associated with canonical storage.
+    Portable source rights remain provenance only. The destination must already
+    resolve the portable Work, Edition, and Asset identity, the principal must
+    already own the matching library entry, and the latest local RightsDecision
+    must explicitly grant retention before canonical association.
     """
 
     def __init__(
@@ -145,163 +143,202 @@ class LibraryPortableByteImportService:
                     "portable_content_identity_mismatch",
                     "Portable bytes do not match the manifest SHA-256 and byte size.",
                 )
-            try:
-                await asyncio.to_thread(
-                    verify_download,
-                    temp_path,
-                    expected_format=destination.asset.format,
-                    media_type=destination.asset.media_type,
-                    archive_max_members=self._settings.archive_max_members,
-                    archive_max_uncompressed_bytes=self._settings.archive_max_uncompressed_bytes,
-                    archive_max_compression_ratio=self._settings.archive_max_compression_ratio,
-                )
-            except FormatVerificationError as exc:
-                raise PortableByteImportIntegrityError(
-                    "portable_format_verification_failed",
-                    str(exc),
-                ) from exc
-
-            async with self._session_scope() as database_session:
-                current = await self._resolve_destination_in_session(
-                    database_session,
-                    principal_id=principal_id,
-                    manifest=manifest,
-                    source_library_entry_id=source_library_entry_id,
-                    source_asset_id=source_asset_id,
-                )
-                if self._destination_identity(current) != self._destination_identity(destination):
-                    raise PortableByteImportConflict(
-                        "portable_destination_changed",
-                        "Portable identity resolved to a different canonical destination before commit.",
-                    )
-
-                repository = LibraryPortableByteImportRepository(database_session)
-                owned = await repository.lock_owned_asset(
-                    principal_id=principal_id,
-                    library_entry_id=current.library_entry_id,
-                    work_id=current.work_id,
-                    edition_id=current.edition_id,
-                    asset_id=current.asset_id,
-                )
-                if owned is None:
-                    raise PortableByteImportDenied(
-                        "portable_destination_unowned",
-                        "The resolved destination asset is not owned through this library entry.",
-                    )
-                self._require_asset_metadata(owned.asset, current.asset)
-                rights = await repository.latest_rights_decision(owned.asset.id)
-                self._require_retain_permission(rights)
-                acquisition = await repository.acquisition_for_asset(owned.asset.id)
-                existing = await self._existing_result(
-                    destination=current,
-                    asset=owned.asset,
-                    acquisition=acquisition,
-                    rights=rights,
-                    expected_sha256=expected_sha256,
-                    expected_size=expected_size,
-                )
-                if existing is not None:
-                    return existing
-                self._require_ingestible_acquisition(owned.asset, acquisition)
-
-                stored_file = await self._storage.commit(
-                    temp_path,
-                    sha256=expected_sha256,
-                    format_name=current.asset.format,
-                )
-                await self._verify_canonical_path(
-                    stored_file.path,
-                    expected_sha256=expected_sha256,
-                    expected_size=expected_size,
-                )
-
-                # A portable snapshot never authorizes retention. Re-read destination
-                # rights after the physical content-addressed handoff and before any
-                # canonical database association is committed.
-                rights = await repository.latest_rights_decision(owned.asset.id)
-                self._require_retain_permission(rights)
-                if rights is None:
-                    raise RuntimeError("Retention permission passed without a rights decision")
-
-                acquisition_repository = AcquisitionRepository(database_session)
-                if acquisition is None:
-                    try:
-                        acquisition = await acquisition_repository.create_or_get_acquisition(
-                            owned.asset
-                        )
-                    except ValueError as exc:
-                        raise PortableByteImportConflict(
-                            "portable_acquisition_unrepresentable",
-                            (
-                                "The canonical asset has no acquisition locator, so the current "
-                                "acquisition authority cannot represent this import honestly."
-                            ),
-                        ) from exc
-
-                if acquisition.status == "stored":
-                    raise PortableByteImportConflict(
-                        "portable_acquisition_state_conflict",
-                        "Acquisition became stored with different canonical state before commit.",
-                    )
-                try:
-                    acquisition = await acquisition_repository.begin_attempt(acquisition.id)
-                    acquisition = await acquisition_repository.mark_downloading(
-                        acquisition.id,
-                        rights.id,
-                    )
-                    acquisition = await acquisition_repository.mark_verifying(
-                        acquisition.id,
-                        bytes_received=expected_size,
-                        sha256=expected_sha256,
-                        media_type=self._effective_media_type(owned.asset, current.asset),
-                        redirect_count=0,
-                    )
-                except AcquisitionStateConflict as exc:
-                    raise PortableByteImportConflict(
-                        "portable_acquisition_state_conflict",
-                        str(exc),
-                    ) from exc
-
-                stored_object = await acquisition_repository.upsert_stored_object(
-                    sha256=expected_sha256,
-                    storage_key=stored_file.storage_key,
-                    byte_size=expected_size,
-                    media_type=self._effective_media_type(owned.asset, current.asset),
-                )
-                self._require_stored_object_metadata(
-                    stored_object,
-                    storage_key=stored_file.storage_key,
-                    expected_sha256=expected_sha256,
-                    expected_size=expected_size,
-                    expected_media_type=self._effective_media_type(owned.asset, current.asset),
-                )
-                try:
-                    acquisition = await acquisition_repository.mark_stored(
-                        acquisition.id,
-                        asset_id=owned.asset.id,
-                        stored_object_id=stored_object.id,
-                        byte_size=expected_size,
-                    )
-                except AcquisitionStateConflict as exc:
-                    raise PortableByteImportConflict(
-                        "portable_acquisition_state_conflict",
-                        str(exc),
-                    ) from exc
-
-                return PortableByteImportResult(
-                    library_entry_id=current.library_entry_id,
-                    asset_id=owned.asset.id,
-                    acquisition_id=acquisition.id,
-                    stored_object_id=stored_object.id,
-                    rights_decision_id=rights.id,
-                    sha256=expected_sha256,
-                    byte_size=expected_size,
-                    storage_key=stored_object.storage_key,
-                    idempotent=False,
-                )
+            await self._verify_staged_format(temp_path, destination.asset)
+            return await self._commit_staged_bytes(
+                principal_id=principal_id,
+                manifest=manifest,
+                original_destination=destination,
+                source_library_entry_id=source_library_entry_id,
+                source_asset_id=source_asset_id,
+                temp_path=temp_path,
+                expected_sha256=expected_sha256,
+                expected_size=expected_size,
+            )
         finally:
             with suppress(FileNotFoundError):
                 await self._storage.discard(temp_path)
+
+    async def _verify_staged_format(
+        self,
+        path: Path,
+        asset: PortableAssetManifest,
+    ) -> None:
+        try:
+            await asyncio.to_thread(
+                verify_download,
+                path,
+                expected_format=asset.format,
+                media_type=asset.media_type,
+                archive_max_members=self._settings.archive_max_members,
+                archive_max_uncompressed_bytes=self._settings.archive_max_uncompressed_bytes,
+                archive_max_compression_ratio=self._settings.archive_max_compression_ratio,
+            )
+        except FormatVerificationError as exc:
+            raise PortableByteImportIntegrityError(
+                "portable_format_verification_failed",
+                str(exc),
+            ) from exc
+
+    async def _commit_staged_bytes(
+        self,
+        *,
+        principal_id: UUID,
+        manifest: LibraryPortabilityExportResponse,
+        original_destination: _Destination,
+        source_library_entry_id: UUID,
+        source_asset_id: UUID,
+        temp_path: Path,
+        expected_sha256: str,
+        expected_size: int,
+    ) -> PortableByteImportResult:
+        async with self._session_scope() as database_session:
+            current = await self._resolve_destination_in_session(
+                database_session,
+                principal_id=principal_id,
+                manifest=manifest,
+                source_library_entry_id=source_library_entry_id,
+                source_asset_id=source_asset_id,
+            )
+            if self._destination_identity(current) != self._destination_identity(
+                original_destination
+            ):
+                raise PortableByteImportConflict(
+                    "portable_destination_changed",
+                    (
+                        "Portable identity resolved to a different canonical "
+                        "destination before commit."
+                    ),
+                )
+
+            repository = LibraryPortableByteImportRepository(database_session)
+            owned = await repository.lock_owned_asset(
+                principal_id=principal_id,
+                library_entry_id=current.library_entry_id,
+                work_id=current.work_id,
+                edition_id=current.edition_id,
+                asset_id=current.asset_id,
+            )
+            if owned is None:
+                raise PortableByteImportDenied(
+                    "portable_destination_unowned",
+                    "The resolved destination asset is not owned through this library entry.",
+                )
+            self._require_asset_metadata(owned.asset, current.asset)
+            rights = self._require_retain_permission(
+                await repository.latest_rights_decision(owned.asset.id)
+            )
+            acquisition = await repository.acquisition_for_asset(owned.asset.id)
+            existing = await self._existing_result(
+                repository=repository,
+                destination=current,
+                asset=owned.asset,
+                acquisition=acquisition,
+                rights=rights,
+                expected_sha256=expected_sha256,
+                expected_size=expected_size,
+            )
+            if existing is not None:
+                return existing
+            self._require_ingestible_acquisition(owned.asset, acquisition)
+
+            stored_file = await self._storage.commit(
+                temp_path,
+                sha256=expected_sha256,
+                format_name=current.asset.format,
+            )
+            await self._verify_canonical_path(
+                stored_file.path,
+                expected_sha256=expected_sha256,
+                expected_size=expected_size,
+            )
+
+            # The portable snapshot never authorizes retention. Re-read the
+            # destination-local decision after the content-addressed handoff and
+            # before any canonical database association is committed.
+            rights = self._require_retain_permission(
+                await repository.latest_rights_decision(owned.asset.id)
+            )
+            acquisition_repository = AcquisitionRepository(database_session)
+            if acquisition is None:
+                try:
+                    acquisition = await acquisition_repository.create_or_get_acquisition(
+                        owned.asset
+                    )
+                except ValueError as exc:
+                    raise PortableByteImportConflict(
+                        "portable_acquisition_unrepresentable",
+                        (
+                            "The canonical asset has no acquisition locator, so the "
+                            "current acquisition authority cannot represent this import "
+                            "honestly."
+                        ),
+                    ) from exc
+
+            if acquisition.status == "stored":
+                raise PortableByteImportConflict(
+                    "portable_acquisition_state_conflict",
+                    (
+                        "Acquisition became stored with different canonical state "
+                        "before commit."
+                    ),
+                )
+            try:
+                acquisition = await acquisition_repository.begin_attempt(acquisition.id)
+                acquisition = await acquisition_repository.mark_downloading(
+                    acquisition.id,
+                    rights.id,
+                )
+                media_type = self._effective_media_type(owned.asset, current.asset)
+                acquisition = await acquisition_repository.mark_verifying(
+                    acquisition.id,
+                    bytes_received=expected_size,
+                    sha256=expected_sha256,
+                    media_type=media_type,
+                    redirect_count=0,
+                )
+            except AcquisitionStateConflict as exc:
+                raise PortableByteImportConflict(
+                    "portable_acquisition_state_conflict",
+                    str(exc),
+                ) from exc
+
+            stored_object = await acquisition_repository.upsert_stored_object(
+                sha256=expected_sha256,
+                storage_key=stored_file.storage_key,
+                byte_size=expected_size,
+                media_type=media_type,
+            )
+            self._require_stored_object_metadata(
+                stored_object,
+                storage_key=stored_file.storage_key,
+                expected_sha256=expected_sha256,
+                expected_size=expected_size,
+                expected_media_type=media_type,
+            )
+            try:
+                acquisition = await acquisition_repository.mark_stored(
+                    acquisition.id,
+                    asset_id=owned.asset.id,
+                    stored_object_id=stored_object.id,
+                    byte_size=expected_size,
+                )
+            except AcquisitionStateConflict as exc:
+                raise PortableByteImportConflict(
+                    "portable_acquisition_state_conflict",
+                    str(exc),
+                ) from exc
+
+            return PortableByteImportResult(
+                library_entry_id=current.library_entry_id,
+                asset_id=owned.asset.id,
+                acquisition_id=acquisition.id,
+                stored_object_id=stored_object.id,
+                rights_decision_id=rights.id,
+                sha256=expected_sha256,
+                byte_size=expected_size,
+                storage_key=stored_object.storage_key,
+                idempotent=False,
+            )
 
     async def _preflight_destination(
         self,
@@ -326,10 +363,12 @@ class LibraryPortableByteImportService:
                     "The resolved destination asset is not owned through this library entry.",
                 )
             self._require_asset_metadata(owned.asset, destination.asset)
-            rights = await repository.latest_rights_decision(owned.asset.id)
-            self._require_retain_permission(rights)
+            rights = self._require_retain_permission(
+                await repository.latest_rights_decision(owned.asset.id)
+            )
             acquisition = await repository.acquisition_for_asset(owned.asset.id)
             existing = await self._existing_result(
+                repository=repository,
                 destination=destination,
                 asset=owned.asset,
                 acquisition=acquisition,
@@ -406,7 +445,10 @@ class LibraryPortableByteImportService:
         ):
             raise PortableByteImportDenied(
                 "portable_destination_unowned",
-                "Portable bytes require an existing principal-owned destination library entry.",
+                (
+                    "Portable bytes require an existing principal-owned destination "
+                    "library entry."
+                ),
             )
 
         repository = LibraryPortableByteImportRepository(database_session)
@@ -416,7 +458,6 @@ class LibraryPortableByteImportService:
             edition_id=entry_plan.edition.destination_id,
         )
         return _Destination(
-            entry=entry,
             asset=asset,
             work_id=entry_plan.work.destination_id,
             edition_id=entry_plan.edition.destination_id,
@@ -447,7 +488,7 @@ class LibraryPortableByteImportService:
         if len(durable_candidates) > 1:
             raise PortableByteImportConflict(
                 "portable_asset_identity_conflict",
-                "Portable Asset evidence resolves to multiple canonical destination assets.",
+                "Portable Asset evidence resolves to multiple destination assets.",
             )
         if len(durable_candidates) == 1:
             destination_id = next(iter(durable_candidates))
@@ -467,7 +508,10 @@ class LibraryPortableByteImportService:
             if len(sha_candidates) > 1:
                 raise PortableByteImportConflict(
                     "portable_asset_sha_ambiguous",
-                    "Portable content SHA-256 matches multiple assets in the destination Edition.",
+                    (
+                        "Portable content SHA-256 matches multiple assets in the "
+                        "destination Edition."
+                    ),
                 )
             if len(sha_candidates) == 1:
                 return next(iter(sha_candidates))
@@ -492,10 +536,11 @@ class LibraryPortableByteImportService:
     async def _existing_result(
         self,
         *,
+        repository: LibraryPortableByteImportRepository,
         destination: _Destination,
         asset: Asset,
         acquisition: Acquisition | None,
-        rights: RightsDecision | None,
+        rights: RightsDecision,
         expected_sha256: str,
         expected_size: int,
     ) -> PortableByteImportResult | None:
@@ -503,11 +548,12 @@ class LibraryPortableByteImportService:
             if acquisition is not None and acquisition.status == "stored":
                 raise PortableByteImportConflict(
                     "portable_canonical_storage_conflict",
-                    "Stored acquisition is inconsistent with the destination Asset storage link.",
+                    (
+                        "Stored acquisition is inconsistent with the destination "
+                        "Asset storage link."
+                    ),
                 )
             return None
-        if rights is None:
-            raise RuntimeError("Retention permission passed without a rights decision")
         if acquisition is None or acquisition.status != "stored":
             raise PortableByteImportConflict(
                 "portable_canonical_storage_conflict",
@@ -519,10 +565,7 @@ class LibraryPortableByteImportService:
                 "Asset and acquisition disagree on the canonical stored object.",
             )
 
-        async with self._session_scope() as database_session:
-            stored = await LibraryPortableByteImportRepository(database_session).stored_object(
-                asset.stored_object_id
-            )
+        stored = await repository.stored_object(asset.stored_object_id)
         if stored is None:
             raise PortableByteImportConflict(
                 "portable_canonical_storage_conflict",
@@ -540,7 +583,10 @@ class LibraryPortableByteImportService:
         except (FileNotFoundError, ValueError) as exc:
             raise PortableByteImportIntegrityError(
                 "portable_canonical_object_unavailable",
-                "Existing canonical stored bytes are unavailable or outside the object namespace.",
+                (
+                    "Existing canonical stored bytes are unavailable or outside the "
+                    "object namespace."
+                ),
             ) from exc
         await self._verify_canonical_path(
             path,
@@ -633,7 +679,7 @@ class LibraryPortableByteImportService:
         )
 
     @staticmethod
-    def _require_retain_permission(rights: RightsDecision | None) -> None:
+    def _require_retain_permission(rights: RightsDecision | None) -> RightsDecision:
         if rights is None:
             raise PortableByteImportDenied(
                 "portable_rights_missing",
@@ -642,11 +688,18 @@ class LibraryPortableByteImportService:
         if rights.permissions.get("retain") is not True:
             raise PortableByteImportDenied(
                 "portable_rights_retain_denied",
-                "The latest destination-local canonical rights decision does not allow retention.",
+                (
+                    "The latest destination-local canonical rights decision does not "
+                    "allow retention."
+                ),
             )
+        return rights
 
     @staticmethod
-    def _require_ingestible_acquisition(asset: Asset, acquisition: Acquisition | None) -> None:
+    def _require_ingestible_acquisition(
+        asset: Asset,
+        acquisition: Acquisition | None,
+    ) -> None:
         if acquisition is None:
             if asset.remote_url is None:
                 raise PortableByteImportConflict(
@@ -665,12 +718,15 @@ class LibraryPortableByteImportService:
         if acquisition.status == "quarantined":
             raise PortableByteImportConflict(
                 "portable_acquisition_quarantined",
-                "A quarantined canonical acquisition must be resolved before portable ingestion.",
+                (
+                    "A quarantined canonical acquisition must be resolved before "
+                    "portable ingestion."
+                ),
             )
         if acquisition.status == "stored":
             raise PortableByteImportConflict(
                 "portable_canonical_storage_conflict",
-                "Stored acquisition is inconsistent with the destination Asset storage link.",
+                "Stored acquisition is inconsistent with the Asset storage link.",
             )
 
     @staticmethod
@@ -729,12 +785,18 @@ class LibraryPortableByteImportService:
         if stored.sha256.casefold() != expected_sha256 or stored.byte_size != expected_size:
             raise PortableByteImportIntegrityError(
                 "portable_stored_object_conflict",
-                "Canonical stored-object SHA-256 or byte size disagrees with portable content.",
+                (
+                    "Canonical stored-object SHA-256 or byte size disagrees with "
+                    "portable content."
+                ),
             )
         if stored.storage_key != storage_key:
             raise PortableByteImportIntegrityError(
                 "portable_stored_object_conflict",
-                "Canonical stored-object key disagrees with the content-addressed storage path.",
+                (
+                    "Canonical stored-object key disagrees with the content-addressed "
+                    "storage path."
+                ),
             )
         if (
             stored.media_type is not None
@@ -764,11 +826,18 @@ class LibraryPortableByteImportService:
         if actual_sha256 != expected_sha256 or actual_size != expected_size:
             raise PortableByteImportIntegrityError(
                 "portable_canonical_object_integrity_failed",
-                "Canonical stored bytes do not match the expected SHA-256 and byte size.",
+                (
+                    "Canonical stored bytes do not match the expected SHA-256 and "
+                    "byte size."
+                ),
             )
 
     @staticmethod
-    def _copy_and_fingerprint(source: Path, destination: Path, max_bytes: int) -> tuple[str, int]:
+    def _copy_and_fingerprint(
+        source: Path,
+        destination: Path,
+        max_bytes: int,
+    ) -> tuple[str, int]:
         if source.is_symlink():
             raise PortableByteImportIntegrityError(
                 "portable_source_unsafe",
@@ -819,7 +888,10 @@ class LibraryPortableByteImportService:
         return digest.hexdigest(), byte_size
 
     @staticmethod
-    def _effective_media_type(asset: Asset, portable: PortableAssetManifest) -> str | None:
+    def _effective_media_type(
+        asset: Asset,
+        portable: PortableAssetManifest,
+    ) -> str | None:
         return asset.media_type if asset.media_type is not None else portable.media_type
 
     @staticmethod
@@ -836,9 +908,11 @@ class LibraryPortableByteImportService:
         )
 
     @staticmethod
-    def _bound_scope(session: AsyncSession) -> Callable[[], AbstractAsyncContextManager[AsyncSession]]:
+    def _bound_scope(
+        session: AsyncSession,
+    ) -> Callable[[], AbstractAsyncContextManager[AsyncSession]]:
         @asynccontextmanager
-        async def scope() -> object:
+        async def scope() -> AsyncIterator[AsyncSession]:
             yield session
 
         return scope

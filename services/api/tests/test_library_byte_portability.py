@@ -248,6 +248,84 @@ async def test_latest_local_rights_decision_controls_export(
     assert denied.value.code == "rights_export_denied"
 
 
+async def test_export_commit_revalidation_observes_newer_rights_denial(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    seeded = await _seed_asset(
+        session,
+        tmp_path,
+        permissions={"retain": True, "export": True, "share": True},
+    )
+    service = _service(session, seeded)
+    authorized = await service.authorize_export(
+        principal_id=seeded.principal_id,
+        library_entry_id=seeded.library_entry_id,
+        asset_id=seeded.asset_id,
+    )
+    session.add(
+        RightsDecision(
+            subject_type="asset",
+            subject_id=seeded.asset_id,
+            rights_state="restricted",
+            jurisdiction="US",
+            policy_version="rights-us-v2",
+            permissions={"retain": False, "export": False, "share": False},
+            reason="Export revoked after initial authorization",
+            evaluated_at=datetime.now(UTC) + timedelta(seconds=1),
+        )
+    )
+    await session.flush()
+
+    with pytest.raises(BytePortabilityDenied) as denied:
+        await service._revalidate_export_commit(
+            principal_id=seeded.principal_id,
+            library_entry_id=seeded.library_entry_id,
+            authorized=authorized,
+        )
+
+    assert denied.value.code == "rights_export_denied"
+
+
+async def test_export_commit_revalidation_rejects_canonical_metadata_drift(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    seeded = await _seed_asset(
+        session,
+        tmp_path,
+        permissions={"retain": True, "export": True, "share": True},
+    )
+    service = _service(session, seeded)
+    authorized = await service.authorize_export(
+        principal_id=seeded.principal_id,
+        library_entry_id=seeded.library_entry_id,
+        asset_id=seeded.asset_id,
+    )
+    asset = await session.scalar(select(Asset).where(Asset.id == seeded.asset_id))
+    acquisition = await session.scalar(
+        select(Acquisition).where(Acquisition.asset_id == seeded.asset_id)
+    )
+    assert asset is not None
+    assert acquisition is not None
+    assert asset.stored_object_id is not None
+    stored = await session.get(StoredObject, asset.stored_object_id)
+    assert stored is not None
+    asset.media_type = "application/x-pdf"
+    acquisition.media_type = "application/x-pdf"
+    stored.media_type = "application/x-pdf"
+    await session.flush()
+
+    with pytest.raises(BytePortabilityIntegrityError) as failed:
+        await service._revalidate_export_commit(
+            principal_id=seeded.principal_id,
+            library_entry_id=seeded.library_entry_id,
+            authorized=authorized,
+        )
+
+    assert failed.value.code == "portable_source_changed"
+
+
 async def test_cross_principal_asset_export_is_not_resolvable(
     session: AsyncSession,
     tmp_path: Path,

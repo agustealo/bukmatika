@@ -305,7 +305,7 @@ async def test_highlight_is_coordinate_derived_idempotent_and_restart_safe(
     assert second.text == section.text[char_start:char_end]
     assert second.note == "Revised note"
     assert second.locator == section.locator
-    assert "text" not in Highlight.__table__.columns.keys()
+    assert "text" not in Highlight.__table__.columns
     assert len((await session.scalars(Highlight.__table__.select())).all()) == 1
 
     session.expire_all()

@@ -36,6 +36,8 @@ jobs:
           cache: pip
       - name: Install API
         run: python -m pip install -e "services/api[dev]"
+      - name: Ruff import diagnostic
+        run: ruff check services/api/src/bukmatika/library/portability_domain.py --fix --diff || true
       - name: Ruff
         run: ruff check services/api
       - name: MyPy

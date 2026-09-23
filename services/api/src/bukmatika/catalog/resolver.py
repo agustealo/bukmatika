@@ -1,9 +1,8 @@
-import re
-import unicodedata
 from uuid import UUID
 
 from bukmatika.discovery.base import DiscoveredRecord
 from bukmatika.domain import DiscoveredAsset, RightsEvidence
+from bukmatika.normalization import normalize_identifier, normalize_text
 from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.models import Asset, Edition, Work
 
@@ -39,25 +38,25 @@ class CatalogResolver:
         if work is None and candidate.record_kind == "work":
             work = await self._repository.work_for_identifier(
                 "provider_work_key",
-                self._normalize_identifier(candidate.work_key),
+                normalize_identifier(candidate.work_key),
             )
 
         if work is None and candidate.authors:
             work = await self._repository.work_for_exact_title_author(
-                self._normalize_text(candidate.title),
-                self._normalize_text(candidate.authors[0]),
+                normalize_text(candidate.title),
+                normalize_text(candidate.authors[0]),
             )
 
         if work is None:
             work = await self._repository.create_work(
                 title=candidate.title,
-                normalized_title=self._normalize_text(candidate.title),
+                normalized_title=normalize_text(candidate.title),
             )
             for author in candidate.authors:
                 await self._repository.add_author(
                     work_id=work.id,
                     display_name=author,
-                    normalized_name=self._normalize_text(author),
+                    normalized_name=normalize_text(author),
                 )
 
         if candidate.record_kind == "work":
@@ -66,14 +65,14 @@ class CatalogResolver:
                 entity_id=work.id,
                 scheme="provider_work_key",
                 value=candidate.work_key,
-                normalized_value=self._normalize_identifier(candidate.work_key),
+                normalized_value=normalize_identifier(candidate.work_key),
             )
 
         for subject in candidate.subjects:
             await self._repository.add_subject(
                 work_id=work.id,
                 display_name=subject,
-                normalized_name=self._normalize_text(subject),
+                normalized_name=normalize_text(subject),
             )
 
         if candidate.record_kind == "edition" and edition is None:
@@ -91,7 +90,7 @@ class CatalogResolver:
                         entity_id=edition.id,
                         scheme=scheme,
                         value=value,
-                        normalized_value=self._normalize_identifier(value),
+                        normalized_value=normalize_identifier(value),
                     )
 
         persisted_assets: list[tuple[DiscoveredAsset, Asset]] = []
@@ -171,7 +170,7 @@ class CatalogResolver:
             for value in values:
                 edition = await self._repository.edition_for_identifier(
                     scheme,
-                    self._normalize_identifier(value),
+                    normalize_identifier(value),
                 )
                 if edition is not None:
                     return edition
@@ -226,13 +225,3 @@ class CatalogResolver:
                 confidence=candidate.source_score,
                 normalization_method="bukmatika-normalize-v1",
             )
-
-    @staticmethod
-    def _normalize_text(value: str) -> str:
-        normalized = unicodedata.normalize("NFKC", value).casefold()
-        return " ".join(normalized.split())
-
-    @staticmethod
-    def _normalize_identifier(value: str) -> str:
-        normalized = unicodedata.normalize("NFKC", value).casefold().strip()
-        return re.sub(r"[\s-]+", "", normalized)

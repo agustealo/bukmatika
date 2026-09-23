@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Literal, TypeAlias
 from uuid import UUID
 
 from pydantic import BaseModel, Field, JsonValue
@@ -172,3 +172,53 @@ class LibraryPortabilityExportResponse(BaseModel):
     collections: list[PortableCollection]
     tags: list[PortableTag]
     smart_shelves: list[PortableSmartShelf]
+
+
+ImportPlanAction: TypeAlias = Literal["match", "create", "apply", "skip", "conflict"]
+ImportPlanTarget: TypeAlias = Literal[
+    "work",
+    "edition",
+    "library_entry",
+    "document",
+    "reading_state",
+    "collection",
+    "tag",
+    "smart_shelf",
+]
+
+
+class PortableImportTargetPlan(BaseModel):
+    target: ImportPlanTarget
+    source_id: UUID
+    action: ImportPlanAction
+    destination_id: UUID | None = None
+    reason: str
+
+
+class PortableImportConflict(BaseModel):
+    target: ImportPlanTarget
+    source_id: UUID
+    code: str
+    detail: str
+
+
+class PortableImportEntryPlan(BaseModel):
+    source_library_entry_id: UUID
+    work: PortableImportTargetPlan
+    edition: PortableImportTargetPlan | None
+    library_entry: PortableImportTargetPlan
+    documents: list[PortableImportTargetPlan]
+    reading_states: list[PortableImportTargetPlan]
+    collection_ids: list[UUID]
+    tag_ids: list[UUID]
+
+
+class LibraryPortabilityImportPlanResponse(BaseModel):
+    schema_version: Literal[1] = 1
+    mode: Literal["dry-run"] = "dry-run"
+    can_apply: bool
+    entries: list[PortableImportEntryPlan]
+    collections: list[PortableImportTargetPlan]
+    tags: list[PortableImportTargetPlan]
+    smart_shelves: list[PortableImportTargetPlan]
+    conflicts: list[PortableImportConflict]

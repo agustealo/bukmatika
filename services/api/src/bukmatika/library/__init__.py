@@ -28,7 +28,11 @@ from bukmatika.library.domain import (
     WorkDossierResponse,
 )
 from bukmatika.library.portability import LibraryPortabilityService
-from bukmatika.library.portability_domain import LibraryPortabilityExportResponse
+from bukmatika.library.portability_domain import (
+    LibraryPortabilityExportResponse,
+    LibraryPortabilityImportPlanResponse,
+)
+from bukmatika.library.portability_import import LibraryPortabilityImportPlanner
 from bukmatika.library.portability_routes import router as portability_router
 from bukmatika.library.routes import router as library_router
 from bukmatika.library.service import (
@@ -59,6 +63,8 @@ __all__ = [
     "LibraryOrganizationNotFound",
     "LibraryOrganizationResponse",
     "LibraryPortabilityExportResponse",
+    "LibraryPortabilityImportPlanResponse",
+    "LibraryPortabilityImportPlanner",
     "LibraryPortabilityService",
     "LibraryReadingStatus",
     "LibraryResponse",

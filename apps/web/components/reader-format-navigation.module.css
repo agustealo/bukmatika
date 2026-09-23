@@ -1,0 +1,39 @@
+.card {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.label {
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.select {
+  width: 100%;
+  min-height: 2.6rem;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, Canvas 94%, currentColor 6%);
+  color: inherit;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+}
+
+.select:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.help {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  opacity: 0.72;
+}
+
+.count {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.58;
+}

@@ -92,3 +92,33 @@ class Bookmark(Base, TimestampMixin):
     char_offset: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     locator: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     label: Mapped[str | None] = mapped_column(Text)
+
+
+class Highlight(Base, TimestampMixin):
+    __tablename__ = "highlights"
+    __table_args__ = (
+        UniqueConstraint(
+            "reading_state_id",
+            "section_id",
+            "char_start",
+            "char_end",
+            name="uq_highlight_range",
+        ),
+        CheckConstraint("char_start >= 0", name="ck_highlight_char_start"),
+        CheckConstraint("char_end > char_start", name="ck_highlight_char_range"),
+        Index("ix_highlights_state_created", "reading_state_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    reading_state_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("reading_states.id", ondelete="CASCADE"), nullable=False
+    )
+    section_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("document_sections.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    char_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    locator: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    note: Mapped[str | None] = mapped_column(Text)

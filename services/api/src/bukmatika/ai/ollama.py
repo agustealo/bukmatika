@@ -35,6 +35,11 @@ class _OllamaTagsResponse(BaseModel):
     models: list[_OllamaInstalledModel]
 
 
+class OllamaModelInventory(BaseModel):
+    state: ModelReadinessState
+    models: list[str]
+
+
 class OllamaLocalGateway(ModelGateway):
     """Loopback-only Ollama adapter using the native structured-output chat API."""
 
@@ -69,28 +74,15 @@ class OllamaLocalGateway(ModelGateway):
         return self._identity
 
     async def readiness(self) -> ModelProviderReadiness:
-        try:
-            response = await self._client.get(
-                f"{self._base_url}/api/tags",
-                timeout=self._readiness_timeout_seconds,
-            )
-        except httpx.RequestError:
-            return self._readiness(ModelReadinessState.PROVIDER_UNREACHABLE, ready=False)
-
-        try:
-            response.raise_for_status()
-            tags = _OllamaTagsResponse.model_validate(response.json())
-        except (httpx.HTTPStatusError, ValueError, ValidationError):
-            return self._readiness(ModelReadinessState.PROVIDER_INVALID, ready=False)
-
-        installed = {
-            candidate.strip()
-            for item in tags.models
-            for candidate in (item.name, item.model)
-            if candidate is not None and candidate.strip()
-        }
+        inventory = await inspect_ollama_models(
+            client=self._client,
+            base_url=self._base_url,
+            timeout_seconds=self._readiness_timeout_seconds,
+        )
+        if inventory.state is not ModelReadinessState.READY:
+            return self._readiness(inventory.state, ready=False)
         requested_aliases = _model_aliases(self._identity.model)
-        if installed.isdisjoint(requested_aliases):
+        if set(inventory.models).isdisjoint(requested_aliases):
             return self._readiness(ModelReadinessState.MODEL_MISSING, ready=False)
         return self._readiness(ModelReadinessState.READY, ready=True)
 
@@ -150,6 +142,50 @@ class OllamaLocalGateway(ModelGateway):
             ready=ready,
             identity=self._identity,
         )
+
+
+async def inspect_ollama_models(
+    *,
+    client: httpx.AsyncClient,
+    base_url: str,
+    timeout_seconds: float,
+) -> OllamaModelInventory:
+    """Inspect only loopback Ollama model metadata; never sends user or book content."""
+    if timeout_seconds <= 0 or timeout_seconds > 10:
+        raise ValueError("Ollama readiness timeout must be between 0 and 10 seconds")
+    normalized_base_url = _validate_loopback_base_url(base_url)
+    try:
+        response = await client.get(
+            f"{normalized_base_url}/api/tags",
+            timeout=timeout_seconds,
+        )
+    except httpx.RequestError:
+        return OllamaModelInventory(
+            state=ModelReadinessState.PROVIDER_UNREACHABLE,
+            models=[],
+        )
+
+    try:
+        response.raise_for_status()
+        tags = _OllamaTagsResponse.model_validate(response.json())
+    except (httpx.HTTPStatusError, ValueError, ValidationError):
+        return OllamaModelInventory(
+            state=ModelReadinessState.PROVIDER_INVALID,
+            models=[],
+        )
+
+    models = sorted(
+        {
+            candidate.strip()
+            for item in tags.models
+            for candidate in (item.name, item.model)
+            if candidate is not None and candidate.strip()
+        }
+    )
+    return OllamaModelInventory(
+        state=ModelReadinessState.READY,
+        models=models,
+    )
 
 
 def _model_aliases(model: str) -> set[str]:

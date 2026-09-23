@@ -53,6 +53,8 @@ class PersonalizationPortabilityService:
                     ai_enabled=records.user_model.ai_enabled,
                     learning_enabled=records.user_model.learning_enabled,
                     autonomy_level=records.user_model.autonomy_level,
+                    model_provider_override=records.user_model.model_provider_override,
+                    model_name_override=records.user_model.model_name_override,
                     created_at=records.user_model.created_at,
                     updated_at=records.user_model.updated_at,
                 ),
@@ -152,4 +154,6 @@ class PersonalizationPortabilityService:
                 ai_enabled=result.user_model.ai_enabled,
                 learning_enabled=result.user_model.learning_enabled,
                 autonomy_level=result.user_model.autonomy_level,
+                model_provider_override=result.user_model.model_provider_override,
+                model_name_override=result.user_model.model_name_override,
             )

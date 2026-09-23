@@ -10,6 +10,8 @@ class UserModelExport(BaseModel):
     ai_enabled: bool
     learning_enabled: bool
     autonomy_level: int
+    model_provider_override: str | None
+    model_name_override: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -111,3 +113,5 @@ class PersonalizationResetResponse(BaseModel):
     ai_enabled: bool
     learning_enabled: bool
     autonomy_level: int
+    model_provider_override: str | None
+    model_name_override: str | None

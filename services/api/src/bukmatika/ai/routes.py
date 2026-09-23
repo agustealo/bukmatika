@@ -1,9 +1,15 @@
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
+from bukmatika.ai.configuration import (
+    LocalModelConfigurationResponse,
+    LocalModelConfigurationUpdate,
+    LocalModelInventoryResponse,
+    PrincipalModelRuntimeResolver,
+)
 from bukmatika.ai.execution import (
     ActionExecutionDenied,
     AIExecutionDisabled,
@@ -20,6 +26,7 @@ from bukmatika.ai.gateway import (
 from bukmatika.ai.research_domain import GroundedResearchExecutionResponse
 from bukmatika.ai.research_service import GroundedResearchSynthesisService
 from bukmatika.ai.service import AIDisabled
+from bukmatika.config import get_settings
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence.personalization import ContextSelectionDenied
 from bukmatika.persistence.research import ResearchReaderPositionInvalid, ResearchSelectionDenied
@@ -49,11 +56,22 @@ class AIProviderStatusResponse(BaseModel):
     routing: str | None
 
 
-def model_gateway(request: Request) -> ModelGateway:
-    gateway = getattr(request.app.state, "model_gateway", None)
-    if gateway is None:
-        return UnconfiguredModelGateway()
-    return gateway
+def model_runtime_resolver(request: Request) -> PrincipalModelRuntimeResolver:
+    candidate = getattr(request.app.state, "model_gateway", None)
+    installation_gateway: ModelGateway = (
+        UnconfiguredModelGateway() if candidate is None else cast(ModelGateway, candidate)
+    )
+    return PrincipalModelRuntimeResolver(
+        settings=get_settings(),
+        installation_gateway=installation_gateway,
+    )
+
+
+async def model_gateway(
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    resolver: Annotated[PrincipalModelRuntimeResolver, Depends(model_runtime_resolver)],
+) -> ModelGateway:
+    return (await resolver.resolve(principal_id=identity.principal_id)).gateway
 
 
 def personalization_service() -> PersonalizationService:
@@ -64,6 +82,41 @@ def grounded_research_service(
     gateway: Annotated[ModelGateway, Depends(model_gateway)],
 ) -> GroundedResearchSynthesisService:
     return GroundedResearchSynthesisService(gateway=gateway)
+
+
+@router.get("/configuration", response_model=LocalModelConfigurationResponse)
+async def local_model_configuration(
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    resolver: Annotated[PrincipalModelRuntimeResolver, Depends(model_runtime_resolver)],
+) -> LocalModelConfigurationResponse:
+    return await resolver.configuration(principal_id=identity.principal_id)
+
+
+@router.post("/configuration", response_model=LocalModelConfigurationResponse)
+async def update_local_model_configuration(
+    update: LocalModelConfigurationUpdate,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    resolver: Annotated[PrincipalModelRuntimeResolver, Depends(model_runtime_resolver)],
+) -> LocalModelConfigurationResponse:
+    return await resolver.update_configuration(
+        principal_id=identity.principal_id,
+        update=update,
+    )
+
+
+@router.get("/local/models", response_model=LocalModelInventoryResponse)
+async def local_model_inventory(
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    resolver: Annotated[PrincipalModelRuntimeResolver, Depends(model_runtime_resolver)],
+    profile_service: Annotated[PersonalizationService, Depends(personalization_service)],
+) -> LocalModelInventoryResponse:
+    profile = await profile_service.profile(principal_id=identity.principal_id)
+    if not profile.ai_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "AI_DISABLED"},
+        )
+    return await resolver.installed_models()
 
 
 @router.get("/status", response_model=AIProviderStatusResponse)

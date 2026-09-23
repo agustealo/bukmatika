@@ -73,11 +73,25 @@ Only the first three are eligible for unattended download. A source adapter must
 
 Bukmatika now has a real discovery, lawful-acquisition, processing, reader/research, personalization, and bounded AI spine under active consumer hardening. The exact implementation state and remaining gates live in `docs/ROADMAP.md`; architecture authority lives in `docs/ARCHITECTURE.md` and `docs/AI_ARCHITECTURE.md`.
 
-Local AI is optional. The API defaults to no model provider, and ordinary discovery, acquisition, catalog, library, reader, and evidence-building paths must continue to work without one. When `BUKMATIKA_MODEL_PROVIDER=ollama` and `BUKMATIKA_OLLAMA_MODEL` name an installed local model, Bukmatika probes the loopback Ollama runtime before advertising model-backed research. Runtime state distinguishes unconfigured, unreachable, invalid, missing-model, and ready conditions. The reader only offers grounded local synthesis in the ready state and otherwise stays on canonical evidence retrieval.
+Local AI is optional. The API installation defaults to no model provider, and ordinary discovery, acquisition, catalog, library, reader, and evidence-building paths must continue to work without one. Installation owners may still set `BUKMATIKA_MODEL_PROVIDER=ollama` and `BUKMATIKA_OLLAMA_MODEL` as the default local model. An authenticated local profile may then inherit that default, disable model use for itself, or select another model that the loopback Ollama runtime reports as installed from the **AI & Personalization** surface. Profile model changes are durable and take effect for subsequent requests without restarting the API.
 
-The Ollama integration is loopback-only and does not use environment proxy routing. `BUKMATIKA_MODEL_TIMEOUT_SECONDS` limits generation calls and `BUKMATIKA_MODEL_READINESS_TIMEOUT_SECONDS` independently bounds the lightweight runtime/model readiness probe. Model-backed answers remain subject to the same principal ownership, action policy, evidence, citation-validation, and activity-ledger rules as the rest of the product.
+The consumer setup flow cannot change the Ollama address or route private context elsewhere. `BUKMATIKA_OLLAMA_BASE_URL`, `BUKMATIKA_MODEL_TIMEOUT_SECONDS`, and `BUKMATIKA_MODEL_READINESS_TIMEOUT_SECONDS` remain installation-controlled, the Ollama adapter accepts loopback HTTP origins only, and model HTTP clients ignore environment proxy routing. Installed-model discovery uses only Ollama's local model-list metadata endpoint and sends no book text, questions, annotations, prompts, or personalization context. When AI is disabled for a profile, Bukmatika does not probe the local model runtime.
+
+Runtime state distinguishes unconfigured, unreachable, invalid, missing-model, and ready conditions. The reader only offers grounded local synthesis in the ready state and otherwise stays on canonical evidence retrieval. Model-backed answers remain subject to the same principal ownership, action policy, evidence, citation-validation, and activity-ledger rules as the rest of the product.
+
+### Consumer local-model setup
+
+Open **AI & Personalization -> Local AI runtime**. The profile may:
+
+1. **Use installation default** to inherit the deployment's configured provider/model.
+2. **Use selected model** to choose one of the models reported by the local Ollama runtime.
+3. **Disable model for this profile** without affecting any other local profile.
+
+The model picker does not install or pull models. If Ollama reports no installed models, install the intended model through the local Ollama tooling and refresh the card. If AI assistance is disabled in the control center, model discovery is intentionally blocked until AI is enabled again.
 
 ### Verify a real local model
+
+The release-proof commands are installation-scoped rather than profile-scoped. Configure the installation default with an installed Ollama model before running them.
 
 After the API package is installed and the configured Ollama model is present locally, run:
 
@@ -85,9 +99,9 @@ After the API package is installed and the configured Ollama model is present lo
 bukmatika-ai-smoke
 ```
 
-The command uses the same canonical `ModelGateway` as the application. It first requires the provider and selected model to report ready, then sends a public, context-free structured-output verification request to the actual model. Success prints provider/model/routing identity plus the exact verification token. Unconfigured, unreachable, invalid, missing-model, transport, or structured-response failures exit non-zero. The smoke command does not use book text, reader context, annotations, or personal data.
+The command uses the same canonical `ModelGateway` contract as the application. It first requires the installation-default provider and selected model to report ready, then sends a public, context-free structured-output verification request to the actual model. Success prints provider/model/routing identity plus the exact verification token. Unconfigured, unreachable, invalid, missing-model, transport, or structured-response failures exit non-zero. The smoke command does not use book text, reader context, annotations, or personal data.
 
-For the full grounded-path release proof, run against a migrated Bukmatika database and the same ready local model:
+For the full grounded-path release proof, run against a migrated Bukmatika database and the same ready installation-default local model:
 
 ```text
 bukmatika-grounded-ai-proof

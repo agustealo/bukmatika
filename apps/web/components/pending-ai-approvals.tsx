@@ -17,16 +17,11 @@ type PendingApproval = {
   policy_version: string;
   step_fingerprint: string;
   evaluated_at: string;
+  approval_status: "approved" | "rejected" | null;
 };
 
 type PendingResponse = {
   items: PendingApproval[];
-};
-
-type RetryExecution = {
-  planId: string;
-  stepId: string;
-  label: string;
 };
 
 async function responseError(response: Response, fallback: string): Promise<Error> {
@@ -59,7 +54,6 @@ export function PendingAIApprovals() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [retryExecution, setRetryExecution] = useState<RetryExecution | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -83,19 +77,34 @@ export function PendingAIApprovals() {
   }, [refresh]);
 
   const execute = useCallback(
-    async (planId: string, stepId: string, label: string) => {
+    async (item: PendingApproval) => {
       const response = await apiFetch(
-        `/v1/ai/plans/${encodeURIComponent(planId)}/steps/${encodeURIComponent(stepId)}/execute`,
+        `/v1/ai/plans/${encodeURIComponent(item.plan_id)}/steps/${encodeURIComponent(item.step_id)}/execute`,
         { method: "POST" },
       );
       if (!response.ok) {
-        setRetryExecution({ planId, stepId, label });
         throw await responseError(response, "Approved action could not execute");
       }
-      setRetryExecution(null);
-      setNotice(`${label} was approved and applied.`);
+      setNotice(`${item.capability} was approved and applied.`);
     },
     [],
+  );
+
+  const runApproved = useCallback(
+    async (item: PendingApproval) => {
+      setBusy(item.action_decision_id);
+      setError(null);
+      setNotice(null);
+      try {
+        await execute(item);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Approved action failed.");
+      } finally {
+        await refresh();
+        setBusy(null);
+      }
+    },
+    [execute, refresh],
   );
 
   const decide = useCallback(
@@ -117,15 +126,14 @@ export function PendingAIApprovals() {
         }
 
         if (decision === "approved") {
-          await execute(item.plan_id, item.step_id, item.capability);
+          await execute(item);
         } else {
           setNotice(`${item.capability} was rejected and will not execute.`);
         }
-        await refresh();
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Approval action failed.");
-        await refresh();
       } finally {
+        await refresh();
         setBusy(null);
       }
     },
@@ -155,38 +163,6 @@ export function PendingAIApprovals() {
       ) : null}
       {notice ? <div className={styles.notice}>{notice}</div> : null}
 
-      {retryExecution ? (
-        <div className={styles.retryCard}>
-          <div>
-            <strong>Approval was saved, but execution did not complete.</strong>
-            <p>
-              The approval remains bound to the exact persisted action. Retrying still rechecks the
-              fingerprint, current AI state, and current policy.
-            </p>
-          </div>
-          <button
-            type="button"
-            disabled={busy !== null}
-            onClick={() => {
-              setBusy("retry");
-              setError(null);
-              void execute(
-                retryExecution.planId,
-                retryExecution.stepId,
-                retryExecution.label,
-              )
-                .then(refresh)
-                .catch((caught: unknown) => {
-                  setError(caught instanceof Error ? caught.message : "Retry failed.");
-                })
-                .finally(() => setBusy(null));
-            }}
-          >
-            Retry approved action
-          </button>
-        </div>
-      ) : null}
-
       {loading ? <div className="surface-loading">Checking approval queue…</div> : null}
 
       {!loading && items.length === 0 ? (
@@ -200,6 +176,7 @@ export function PendingAIApprovals() {
         <div className={styles.list}>
           {items.map((item) => {
             const itemBusy = busy === item.action_decision_id;
+            const alreadyApproved = item.approval_status === "approved";
             return (
               <article className={styles.card} key={item.action_decision_id}>
                 <div className={styles.topline}>
@@ -212,8 +189,12 @@ export function PendingAIApprovals() {
                 <p className={styles.rationale}>{item.rationale}</p>
 
                 <div className={styles.policy}>
-                  <span>Policy gate</span>
-                  <p>{item.policy_reason}</p>
+                  <span>{alreadyApproved ? "Approved, execution pending" : "Policy gate"}</span>
+                  <p>
+                    {alreadyApproved
+                      ? "The durable approval is already saved. Running it still rechecks the exact fingerprint, current AI state, and current policy."
+                      : item.policy_reason}
+                  </p>
                 </div>
 
                 <details className={styles.arguments}>
@@ -227,22 +208,35 @@ export function PendingAIApprovals() {
                 </div>
 
                 <div className={styles.actions}>
-                  <button
-                    className={styles.reject}
-                    type="button"
-                    disabled={busy !== null}
-                    onClick={() => void decide(item, "rejected")}
-                  >
-                    {itemBusy ? "Saving…" : "Reject"}
-                  </button>
-                  <button
-                    className={styles.approve}
-                    type="button"
-                    disabled={busy !== null}
-                    onClick={() => void decide(item, "approved")}
-                  >
-                    {itemBusy ? "Applying…" : "Approve exact action"}
-                  </button>
+                  {alreadyApproved ? (
+                    <button
+                      className={styles.approve}
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => void runApproved(item)}
+                    >
+                      {itemBusy ? "Applying…" : "Run approved action"}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        className={styles.reject}
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => void decide(item, "rejected")}
+                      >
+                        {itemBusy ? "Saving…" : "Reject"}
+                      </button>
+                      <button
+                        className={styles.approve}
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => void decide(item, "approved")}
+                      >
+                        {itemBusy ? "Applying…" : "Approve exact action"}
+                      </button>
+                    </>
+                  )}
                 </div>
               </article>
             );

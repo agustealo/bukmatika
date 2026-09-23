@@ -82,25 +82,11 @@ class LibraryBytePortabilityService:
         library_entry_id: UUID,
         asset_id: UUID,
     ) -> AuthorizedPortableByte:
-        async with self._session_scope() as database_session:
-            candidate = await LibraryBytePortabilityRepository(
-                database_session
-            ).export_candidate(
-                principal_id=principal_id,
-                library_entry_id=library_entry_id,
-                asset_id=asset_id,
-            )
-
-        if candidate is None:
-            raise BytePortabilityDenied(
-                "asset_unavailable",
-                (
-                    "The requested asset is not an owned, verified stored asset "
-                    "for this library entry."
-                ),
-            )
-        self._require_export_permission(candidate)
-        self._require_consistent_metadata(candidate)
+        candidate = await self._authorized_candidate(
+            principal_id=principal_id,
+            library_entry_id=library_entry_id,
+            asset_id=asset_id,
+        )
 
         try:
             source_path = await self._path_resolver.resolve_path(candidate.storage_key)
@@ -155,6 +141,11 @@ class LibraryBytePortabilityService:
                 expected_sha256=authorized.sha256,
                 expected_size=authorized.byte_size,
             )
+            rights_decision_id = await self._revalidate_export_commit(
+                principal_id=principal_id,
+                library_entry_id=library_entry_id,
+                authorized=authorized,
+            )
         else:
             temp_path = await asyncio.to_thread(
                 self._copy_to_temporary_file,
@@ -167,6 +158,11 @@ class LibraryBytePortabilityService:
                     expected_sha256=authorized.sha256,
                     expected_size=authorized.byte_size,
                 )
+                rights_decision_id = await self._revalidate_export_commit(
+                    principal_id=principal_id,
+                    library_entry_id=library_entry_id,
+                    authorized=authorized,
+                )
                 await asyncio.to_thread(os.replace, temp_path, destination)
             finally:
                 with suppress(FileNotFoundError):
@@ -174,13 +170,69 @@ class LibraryBytePortabilityService:
 
         return PortableByteCopy(
             asset_id=authorized.asset_id,
-            rights_decision_id=authorized.rights_decision_id,
+            rights_decision_id=rights_decision_id,
             format=authorized.format,
             media_type=authorized.media_type,
             sha256=authorized.sha256,
             byte_size=authorized.byte_size,
             path=destination,
         )
+
+    async def _authorized_candidate(
+        self,
+        *,
+        principal_id: UUID,
+        library_entry_id: UUID,
+        asset_id: UUID,
+    ) -> BytePortabilityCandidate:
+        async with self._session_scope() as database_session:
+            candidate = await LibraryBytePortabilityRepository(
+                database_session
+            ).export_candidate(
+                principal_id=principal_id,
+                library_entry_id=library_entry_id,
+                asset_id=asset_id,
+            )
+
+        if candidate is None:
+            raise BytePortabilityDenied(
+                "asset_unavailable",
+                (
+                    "The requested asset is not an owned, verified stored asset "
+                    "for this library entry."
+                ),
+            )
+        self._require_export_permission(candidate)
+        self._require_consistent_metadata(candidate)
+        return candidate
+
+    async def _revalidate_export_commit(
+        self,
+        *,
+        principal_id: UUID,
+        library_entry_id: UUID,
+        authorized: AuthorizedPortableByte,
+    ) -> UUID:
+        current = await self._authorized_candidate(
+            principal_id=principal_id,
+            library_entry_id=library_entry_id,
+            asset_id=authorized.asset_id,
+        )
+        if (
+            current.stored_object_id != authorized.stored_object_id
+            or current.sha256.casefold() != authorized.sha256.casefold()
+            or current.byte_size != authorized.byte_size
+            or current.asset_format.casefold() != authorized.format.casefold()
+            or self._normalized_media_type(current.media_type)
+            != self._normalized_media_type(authorized.media_type)
+        ):
+            raise BytePortabilityIntegrityError(
+                "portable_source_changed",
+                "The canonical asset changed after export authorization and before commit.",
+            )
+        if current.rights_decision_id is None:
+            raise RuntimeError("Export revalidation passed without a rights decision")
+        return current.rights_decision_id
 
     @staticmethod
     def _require_export_permission(candidate: BytePortabilityCandidate) -> None:
@@ -229,7 +281,10 @@ class LibraryBytePortabilityService:
         if (
             candidate.asset_media_type is not None
             and candidate.media_type is not None
-            and candidate.asset_media_type.casefold() != candidate.media_type.casefold()
+            and LibraryBytePortabilityService._normalized_media_type(
+                candidate.asset_media_type
+            )
+            != LibraryBytePortabilityService._normalized_media_type(candidate.media_type)
         ):
             raise BytePortabilityIntegrityError(
                 "stored_object_metadata_conflict",
@@ -238,12 +293,21 @@ class LibraryBytePortabilityService:
         if (
             candidate.acquisition_media_type is not None
             and candidate.media_type is not None
-            and candidate.acquisition_media_type.casefold() != candidate.media_type.casefold()
+            and LibraryBytePortabilityService._normalized_media_type(
+                candidate.acquisition_media_type
+            )
+            != LibraryBytePortabilityService._normalized_media_type(candidate.media_type)
         ):
             raise BytePortabilityIntegrityError(
                 "acquisition_metadata_conflict",
                 "Acquisition media type disagrees with the canonical stored object.",
             )
+
+    @staticmethod
+    def _normalized_media_type(value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip().casefold()
 
     async def _verify_path(
         self,

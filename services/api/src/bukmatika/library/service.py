@@ -17,6 +17,11 @@ from bukmatika.library.domain import (
     LibraryOrganizationResponse,
     LibraryReadingStatus,
     LibraryResponse,
+    SmartShelfContentsResponse,
+    SmartShelfCreate,
+    SmartShelfResponse,
+    SmartShelfRule,
+    SmartShelfUpdate,
     TagAssignRequest,
     TagResponse,
     TagSummaryResponse,
@@ -35,6 +40,7 @@ from bukmatika.persistence.library_organization import (
     LibraryOrganizationNotFound,
     LibraryOrganizationRepository,
 )
+from bukmatika.persistence.library_organization_models import LibrarySmartShelf
 from bukmatika.persistence.library_resume import LibraryResumeRepository
 from bukmatika.persistence.models import Asset, LibraryEntry, RightsEvidenceRecord
 from bukmatika.rights import RightsEngine
@@ -84,58 +90,12 @@ class LibraryService:
         tag_id: UUID | None = None,
     ) -> LibraryResponse:
         async with self._session_scope() as database_session:
-            repository = LibraryRepository(database_session)
-            organization = LibraryOrganizationRepository(database_session)
-            resume = LibraryResumeRepository(database_session)
-            entries = await repository.library_entries(principal_id)
-
-            if collection_id is not None:
-                allowed = await organization.collection_entry_ids(
-                    principal_id=principal_id,
-                    collection_id=collection_id,
-                )
-                entries = [entry for entry in entries if entry.id in allowed]
-            if tag_id is not None:
-                allowed = await organization.tag_entry_ids(
-                    principal_id=principal_id,
-                    tag_id=tag_id,
-                )
-                entries = [entry for entry in entries if entry.id in allowed]
-
-            items = [
-                await self._library_item(repository, resume, entry)
-                for entry in entries
-            ]
-            if reading_status is not None:
-                items = [
-                    item
-                    for item in items
-                    if _effective_reading_status(item) == reading_status.value
-                ]
-
-            collection_map, tag_map = await organization.organization_for_entries(
+            return await self._filtered_library(
+                database_session,
                 principal_id=principal_id,
-                entry_ids=[item.library_entry_id for item in items],
-            )
-            return LibraryResponse(
-                items=[
-                    item.model_copy(
-                        update={
-                            "collections": [
-                                CollectionSummaryResponse(
-                                    collection_id=collection.id,
-                                    name=collection.name,
-                                )
-                                for collection in collection_map.get(item.library_entry_id, [])
-                            ],
-                            "tags": [
-                                TagSummaryResponse(tag_id=tag.id, name=tag.name)
-                                for tag in tag_map.get(item.library_entry_id, [])
-                            ],
-                        }
-                    )
-                    for item in items
-                ]
+                reading_status=reading_status,
+                collection_id=collection_id,
+                tag_id=tag_id,
             )
 
     async def organization(self, *, principal_id: UUID) -> LibraryOrganizationResponse:
@@ -143,6 +103,15 @@ class LibraryService:
             repository = LibraryOrganizationRepository(database_session)
             collections = await repository.collections(principal_id)
             tags = await repository.tags(principal_id)
+            smart_shelves = await repository.smart_shelves(principal_id)
+            rendered_shelves = [
+                await self._smart_shelf_response(
+                    database_session,
+                    principal_id=principal_id,
+                    shelf=shelf,
+                )
+                for shelf in smart_shelves
+            ]
             return LibraryOrganizationResponse(
                 collections=[
                     CollectionResponse(
@@ -157,6 +126,7 @@ class LibraryService:
                     TagResponse(tag_id=tag.id, name=tag.name, item_count=count)
                     for tag, count in tags
                 ],
+                smart_shelves=rendered_shelves,
             )
 
     async def create_collection(
@@ -301,6 +271,87 @@ class LibraryService:
                 tag_id=tag_id,
             )
 
+    async def create_smart_shelf(
+        self,
+        *,
+        principal_id: UUID,
+        create: SmartShelfCreate,
+    ) -> SmartShelfResponse:
+        async with self._session_scope() as database_session:
+            repository = LibraryOrganizationRepository(database_session)
+            shelf = await repository.create_smart_shelf(
+                principal_id=principal_id,
+                name=create.name,
+                normalized_name=_normalized_key(create.name),
+                description=create.description,
+                reading_status=_reading_status_value(create.rule.reading_status),
+                collection_id=create.rule.collection_id,
+                tag_id=create.rule.tag_id,
+            )
+            return await self._smart_shelf_response(
+                database_session,
+                principal_id=principal_id,
+                shelf=shelf,
+            )
+
+    async def update_smart_shelf(
+        self,
+        *,
+        principal_id: UUID,
+        smart_shelf_id: UUID,
+        update: SmartShelfUpdate,
+    ) -> SmartShelfResponse:
+        async with self._session_scope() as database_session:
+            repository = LibraryOrganizationRepository(database_session)
+            shelf = await repository.update_smart_shelf(
+                principal_id=principal_id,
+                smart_shelf_id=smart_shelf_id,
+                name=update.name,
+                normalized_name=_normalized_key(update.name),
+                description=update.description,
+                reading_status=_reading_status_value(update.rule.reading_status),
+                collection_id=update.rule.collection_id,
+                tag_id=update.rule.tag_id,
+            )
+            return await self._smart_shelf_response(
+                database_session,
+                principal_id=principal_id,
+                shelf=shelf,
+            )
+
+    async def delete_smart_shelf(
+        self,
+        *,
+        principal_id: UUID,
+        smart_shelf_id: UUID,
+    ) -> None:
+        async with self._session_scope() as database_session:
+            await LibraryOrganizationRepository(database_session).delete_smart_shelf(
+                principal_id=principal_id,
+                smart_shelf_id=smart_shelf_id,
+            )
+
+    async def smart_shelf_contents(
+        self,
+        *,
+        principal_id: UUID,
+        smart_shelf_id: UUID,
+    ) -> SmartShelfContentsResponse:
+        async with self._session_scope() as database_session:
+            repository = LibraryOrganizationRepository(database_session)
+            shelf = await repository.require_smart_shelf(principal_id, smart_shelf_id)
+            library = await self._filtered_library(
+                database_session,
+                principal_id=principal_id,
+                reading_status=_reading_status(shelf.reading_status),
+                collection_id=shelf.collection_id,
+                tag_id=shelf.tag_id,
+            )
+            return SmartShelfContentsResponse(
+                shelf=_smart_shelf_response(shelf, len(library.items)),
+                items=library.items,
+            )
+
     async def save_work(self, *, principal_id: UUID, work_id: UUID) -> LibraryItemResponse:
         async with self._session_scope() as database_session:
             repository = LibraryRepository(database_session)
@@ -325,6 +376,82 @@ class LibraryService:
                 LibraryResumeRepository(database_session),
                 entry,
             )
+
+    async def _filtered_library(
+        self,
+        database_session: AsyncSession,
+        *,
+        principal_id: UUID,
+        reading_status: LibraryReadingStatus | None,
+        collection_id: UUID | None,
+        tag_id: UUID | None,
+    ) -> LibraryResponse:
+        repository = LibraryRepository(database_session)
+        organization = LibraryOrganizationRepository(database_session)
+        resume = LibraryResumeRepository(database_session)
+        entries = await repository.library_entries(principal_id)
+
+        if collection_id is not None:
+            allowed = await organization.collection_entry_ids(
+                principal_id=principal_id,
+                collection_id=collection_id,
+            )
+            entries = [entry for entry in entries if entry.id in allowed]
+        if tag_id is not None:
+            allowed = await organization.tag_entry_ids(
+                principal_id=principal_id,
+                tag_id=tag_id,
+            )
+            entries = [entry for entry in entries if entry.id in allowed]
+
+        items = [await self._library_item(repository, resume, entry) for entry in entries]
+        if reading_status is not None:
+            items = [
+                item
+                for item in items
+                if _effective_reading_status(item) == reading_status.value
+            ]
+
+        collection_map, tag_map = await organization.organization_for_entries(
+            principal_id=principal_id,
+            entry_ids=[item.library_entry_id for item in items],
+        )
+        return LibraryResponse(
+            items=[
+                item.model_copy(
+                    update={
+                        "collections": [
+                            CollectionSummaryResponse(
+                                collection_id=collection.id,
+                                name=collection.name,
+                            )
+                            for collection in collection_map.get(item.library_entry_id, [])
+                        ],
+                        "tags": [
+                            TagSummaryResponse(tag_id=tag.id, name=tag.name)
+                            for tag in tag_map.get(item.library_entry_id, [])
+                        ],
+                    }
+                )
+                for item in items
+            ]
+        )
+
+    async def _smart_shelf_response(
+        self,
+        database_session: AsyncSession,
+        *,
+        principal_id: UUID,
+        shelf: LibrarySmartShelf,
+    ) -> SmartShelfResponse:
+        library = await self._filtered_library(
+            database_session,
+            principal_id=principal_id,
+            reading_status=_reading_status(shelf.reading_status),
+            collection_id=shelf.collection_id,
+            tag_id=shelf.tag_id,
+        )
+        return _smart_shelf_response(shelf, len(library.items))
 
     async def _dossier(
         self,
@@ -455,6 +582,28 @@ def _normalized_key(value: str) -> str:
 
 def _effective_reading_status(item: LibraryItemResponse) -> str:
     return item.reading_status or LibraryReadingStatus.UNREAD.value
+
+
+def _reading_status(value: str | None) -> LibraryReadingStatus | None:
+    return LibraryReadingStatus(value) if value is not None else None
+
+
+def _reading_status_value(value: LibraryReadingStatus | None) -> str | None:
+    return value.value if value is not None else None
+
+
+def _smart_shelf_response(shelf: LibrarySmartShelf, item_count: int) -> SmartShelfResponse:
+    return SmartShelfResponse(
+        smart_shelf_id=shelf.id,
+        name=shelf.name,
+        description=shelf.description,
+        rule=SmartShelfRule(
+            reading_status=_reading_status(shelf.reading_status),
+            collection_id=shelf.collection_id,
+            tag_id=shelf.tag_id,
+        ),
+        item_count=item_count,
+    )
 
 
 def _rights_evidence(record: RightsEvidenceRecord) -> RightsEvidence:

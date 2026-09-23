@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -42,8 +43,8 @@ class LibraryPortabilityImportApplySummary(BaseModel):
 
 
 class LibraryPortabilityImportApplyResponse(BaseModel):
-    schema_version: int = 1
-    mode: str = "apply"
+    schema_version: Literal[1] = 1
+    mode: Literal["apply"] = "apply"
     committed: bool
     plan: LibraryPortabilityImportPlanResponse
     summary: LibraryPortabilityImportApplySummary
@@ -396,7 +397,7 @@ class LibraryPortabilityImportApplier:
                     ordinal=bookmark.section_ordinal,
                 )
                 await apply_repository.apply_bookmark(
-                    source_id=bookmark.source_bookmark_id,
+                    source_id=reading.source_reading_state_id,
                     reading_state_id=state.id,
                     section=bookmark_section,
                     char_offset=bookmark.char_offset,
@@ -410,7 +411,7 @@ class LibraryPortabilityImportApplier:
                     ordinal=highlight.section_ordinal,
                 )
                 await apply_repository.apply_highlight(
-                    source_id=highlight.source_highlight_id,
+                    source_id=reading.source_reading_state_id,
                     reading_state_id=state.id,
                     section=highlight_section,
                     char_start=highlight.char_start,

@@ -256,17 +256,16 @@ class LibraryPortabilityImportApplier:
         summary: LibraryPortabilityImportApplySummary,
     ) -> UUID:
         if target.action == "match":
-            work_id = self._destination_id(target)
-        elif target.action == "create":
-            work = await catalog.create_work(
-                title=portable.canonical_title,
-                normalized_title=normalize_text(portable.canonical_title),
-            )
-            work_id = work.id
-            summary.works_created += 1
-        else:
+            return self._destination_id(target)
+        if target.action != "create":
             raise RuntimeError(f"Unexpected work action during apply: {target.action}")
 
+        work = await catalog.create_work(
+            title=portable.canonical_title,
+            normalized_title=normalize_text(portable.canonical_title),
+        )
+        work_id = work.id
+        summary.works_created += 1
         for author in portable.authors:
             await catalog.add_author(
                 work_id=work_id,
@@ -310,22 +309,21 @@ class LibraryPortabilityImportApplier:
         summary: LibraryPortabilityImportApplySummary,
     ) -> UUID:
         if target.action == "match":
-            edition_id = self._destination_id(target)
-        elif target.action == "create":
-            edition = await catalog.create_edition(
-                work_id=work_id,
-                title=portable.title,
-                language=portable.language,
-                publication_year=portable.publication_year,
-                publisher=portable.publisher,
-            )
-            edition.edition_statement = portable.edition_statement
-            await session.flush()
-            edition_id = edition.id
-            summary.editions_created += 1
-        else:
+            return self._destination_id(target)
+        if target.action != "create":
             raise RuntimeError(f"Unexpected edition action during apply: {target.action}")
 
+        edition = await catalog.create_edition(
+            work_id=work_id,
+            title=portable.title,
+            language=portable.language,
+            publication_year=portable.publication_year,
+            publisher=portable.publisher,
+        )
+        edition.edition_statement = portable.edition_statement
+        await session.flush()
+        edition_id = edition.id
+        summary.editions_created += 1
         for identifier in portable.identifiers:
             await catalog.add_identifier(
                 entity_type="edition",

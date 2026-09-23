@@ -73,7 +73,7 @@ class ActionApprovalInvalid(RuntimeError):
     code = "ACTION_APPROVAL_INVALID"
 
 
-class ActionExecutionReceiptInvalid(RuntimeError):
+class ActionExecutionReceiptInvalid(ActionApprovalInvalid):
     code = "ACTION_EXECUTION_RECEIPT_INVALID"
 
 

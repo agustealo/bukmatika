@@ -22,6 +22,7 @@ export default async function DossierPage({ searchParams }: DossierPageProps) {
         <nav className="top-nav" aria-label="Primary navigation">
           <a href="/">Discover</a>
           <a href="/library">Library</a>
+          <a href="/status">Status</a>
           <a href="/research">Research</a>
           <a href="/personalization">AI</a>
         </nav>

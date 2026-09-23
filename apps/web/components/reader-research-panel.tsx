@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import type { ReaderHighlight } from "./reader-annotations";
 import styles from "./reader-research-panel.module.css";
 
 type ReaderLocator = Record<string, string | number>;
@@ -13,11 +14,17 @@ type ReaderResearchPanelProps = {
   sectionId: string | null;
   sectionHeading: string | null;
   sectionLocator: ReaderLocator | null;
+  highlights: ReaderHighlight[];
 };
 
 type EvidenceItem = {
   evidence_id: string;
-  source_kind: "reader_position" | "reader_selection" | "related_passage";
+  source_kind:
+    | "reader_position"
+    | "reader_selection"
+    | "selected_highlight"
+    | "related_passage";
+  source_highlight_id: string | null;
   library_entry_id: string;
   work_title: string;
   edition_title: string;
@@ -82,6 +89,7 @@ type AIErrorPayload = {
   };
 };
 
+const MAX_SELECTED_HIGHLIGHTS = 8;
 const AI_AVAILABILITY_STATES = new Set<AIAvailabilityState>([
   "ai_disabled",
   "unconfigured",
@@ -99,9 +107,11 @@ function locatorLabel(locator: ReaderLocator): string {
   return parts.length > 0 ? parts.join(" · ") : "Source coordinate";
 }
 
-function excerpt(text: string): string {
+function excerpt(text: string, maxLength = 260): string {
   const normalized = text.replace(/\s+/g, " ").trim();
-  return normalized.length > 260 ? `${normalized.slice(0, 257)}…` : normalized;
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, Math.max(0, maxLength - 3))}…`
+    : normalized;
 }
 
 function isAIAvailabilityState(value: unknown): value is AIAvailabilityState {
@@ -156,8 +166,10 @@ export function ReaderResearchPanel({
   sectionId,
   sectionHeading,
   sectionLocator,
+  highlights,
 }: ReaderResearchPanelProps) {
   const [question, setQuestion] = useState("");
+  const [selectedHighlightIds, setSelectedHighlightIds] = useState<string[]>([]);
   const [bundle, setBundle] = useState<EvidenceBundle | null>(null);
   const [answer, setAnswer] = useState<GroundedAnswer | null>(null);
   const [answerModel, setAnswerModel] = useState<string | null>(null);
@@ -194,7 +206,22 @@ export function ReaderResearchPanel({
     setError(null);
   }, [sectionId]);
 
+  useEffect(() => {
+    const available = new Set(highlights.map((highlight) => highlight.highlight_id));
+    setSelectedHighlightIds((current) => current.filter((id) => available.has(id)));
+  }, [highlights]);
+
   const canSynthesize = aiStatus?.ready === true && aiStatus.ai_enabled === true;
+
+  function toggleHighlight(highlightId: string) {
+    setSelectedHighlightIds((current) => {
+      if (current.includes(highlightId)) {
+        return current.filter((id) => id !== highlightId);
+      }
+      if (current.length >= MAX_SELECTED_HIGHLIGHTS) return current;
+      return [...current, highlightId];
+    });
+  }
 
   async function research(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -211,6 +238,7 @@ export function ReaderResearchPanel({
         char_offset: 0,
       },
       library_entry_ids: [libraryEntryId],
+      selected_highlight_ids: selectedHighlightIds,
       related_limit: 6,
     };
     const requestInit = {
@@ -290,6 +318,39 @@ export function ReaderResearchPanel({
       <p className={styles.explanation}>{statusExplanation(aiStatus)}</p>
 
       <form className={styles.form} onSubmit={(event) => void research(event)}>
+        {highlights.length > 0 ? (
+          <fieldset className={styles.highlightPicker}>
+            <legend>Include saved highlights</legend>
+            <p>
+              Only checked highlights are added to this request. They are resolved from saved
+              coordinates and are not promoted into AI memory.
+            </p>
+            <div className={styles.highlightOptions}>
+              {highlights.map((highlight) => {
+                const checked = selectedHighlightIds.includes(highlight.highlight_id);
+                const atLimit = selectedHighlightIds.length >= MAX_SELECTED_HIGHLIGHTS;
+                return (
+                  <label key={highlight.highlight_id}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={loading || (!checked && atLimit)}
+                      onChange={() => toggleHighlight(highlight.highlight_id)}
+                    />
+                    <span>
+                      <strong>{locatorLabel(highlight.locator)}</strong>
+                      <small>{excerpt(highlight.text, 120)}</small>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <small className={styles.highlightCount}>
+              {selectedHighlightIds.length}/{MAX_SELECTED_HIGHLIGHTS} selected
+            </small>
+          </fieldset>
+        ) : null}
+
         <label htmlFor="reader-research-question">Research question</label>
         <textarea
           id="reader-research-question"

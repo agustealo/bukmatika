@@ -479,6 +479,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
             sectionId={activeSection?.section_id ?? null}
             sectionHeading={activeSection?.heading ?? null}
             sectionLocator={activeSection?.locator ?? null}
+            highlights={highlights}
           />
         </aside>
 

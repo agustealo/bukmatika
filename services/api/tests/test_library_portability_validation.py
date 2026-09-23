@@ -235,7 +235,10 @@ def test_manifest_rejects_asset_document_and_bookmark_self_contradictions() -> N
         highlights=[],
     )
 
-    codes = _codes(_manifest([_entry(work=work, edition=edition, assets=[asset], readings=[reading])]))
+    manifest = _manifest(
+        [_entry(work=work, edition=edition, assets=[asset], readings=[reading])]
+    )
+    codes = _codes(manifest)
 
     assert "manifest_asset_document_sha_conflict" in codes
     assert "manifest_asset_document_format_conflict" in codes

@@ -16,6 +16,7 @@ from bukmatika.library.portability_domain import (
     PortableSmartShelf,
     PortableWorkIdentity,
 )
+from bukmatika.library.portability_validation import validate_manifest_consistency
 from bukmatika.normalization import normalize_identifier, normalize_text
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.document_models import Document, DocumentSection
@@ -43,7 +44,7 @@ class LibraryPortabilityImportPlanner:
     ) -> LibraryPortabilityImportPlanResponse:
         async with self._session_scope() as database_session:
             repository = LibraryImportPlanningRepository(database_session)
-            conflicts: list[PortableImportConflict] = []
+            conflicts = validate_manifest_consistency(manifest)
 
             collection_plans = await self._organization_plans(
                 repository,

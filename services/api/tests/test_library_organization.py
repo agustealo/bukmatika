@@ -38,7 +38,10 @@ async def _seed_entry(
     principal: Principal | None = None,
 ) -> tuple[Principal, Work, LibraryEntry]:
     owner = principal or Principal(kind="local", external_subject=f"org-{suffix}")
-    work = Work(canonical_title=f"Organized Work {suffix}", normalized_title=f"organized work {suffix}")
+    work = Work(
+        canonical_title=f"Organized Work {suffix}",
+        normalized_title=f"organized work {suffix}",
+    )
     if principal is None:
         session.add(owner)
     session.add(work)
@@ -256,7 +259,7 @@ async def test_work_level_library_resume_uses_actual_latest_read_state(
     assert item.reading_status == "reading"
 
 
-async def test_organization_routes_are_mounted_in_openapi_contract() -> None:
+def test_organization_routes_are_mounted_in_openapi_contract() -> None:
     paths = app.openapi()["paths"]
     assert "/v1/library/organization" in paths
     assert "/v1/library/collections" in paths

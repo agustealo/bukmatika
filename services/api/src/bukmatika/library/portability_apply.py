@@ -366,7 +366,7 @@ class LibraryPortabilityImportApplier:
                 summary.reading_states_skipped += 1
                 continue
             if reading_plan.action != "apply" or document_plan.action != "match":
-                raise RuntimeError("Planner returned a non-applicable reader target in an applyable plan")
+                raise RuntimeError("Planner returned a non-applicable reader target")
             document_id = self._destination_id(document_plan)
             await reader.require_access(principal_id, library_entry_id, document_id)
 

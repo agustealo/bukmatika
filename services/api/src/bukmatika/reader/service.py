@@ -13,6 +13,7 @@ from bukmatika.persistence.readers import (
     ReaderBookmarkNotFound,
     ReaderHighlightNotFound,
     ReaderHighlightRecord,
+    ReaderNavigationSource,
     ReaderPositionInvalid,
     ReaderRepository,
 )
@@ -23,6 +24,9 @@ from bukmatika.reader.domain import (
     HighlightNoteUpdate,
     HighlightResponse,
     ReaderDocumentResponse,
+    ReaderNavigationItem,
+    ReaderNavigationKind,
+    ReaderNavigationResponse,
     ReaderSection,
     ReadingProgressUpdate,
     ReadingStateResponse,
@@ -101,6 +105,19 @@ class ReaderService:
                 ],
                 next_after_ordinal=next_after,
             )
+
+    async def navigation(
+        self,
+        *,
+        principal_id: UUID,
+        library_entry_id: UUID,
+        document_id: UUID,
+    ) -> ReaderNavigationResponse:
+        async with self._session_scope() as database_session:
+            repository = ReaderRepository(database_session)
+            access = await repository.require_access(principal_id, library_entry_id, document_id)
+            sources = await repository.navigation_sources(document_id)
+            return _navigation_response(access.document.format, sources)
 
     async def save_progress(
         self,
@@ -279,6 +296,86 @@ class ReaderService:
                     "highlight_id": str(highlight_id),
                 },
             )
+
+
+def _navigation_response(
+    format_name: str,
+    sources: list[ReaderNavigationSource],
+) -> ReaderNavigationResponse:
+    normalized_format = format_name.upper()
+    if normalized_format == "PDF":
+        return ReaderNavigationResponse(
+            format=normalized_format,
+            kind=ReaderNavigationKind.PDF_PAGES,
+            items=_pdf_navigation_items(sources),
+        )
+    if normalized_format == "EPUB":
+        return ReaderNavigationResponse(
+            format=normalized_format,
+            kind=ReaderNavigationKind.EPUB_SPINE,
+            items=_epub_navigation_items(sources),
+        )
+    return ReaderNavigationResponse(format=normalized_format, kind=None, items=[])
+
+
+def _pdf_navigation_items(sources: list[ReaderNavigationSource]) -> list[ReaderNavigationItem]:
+    items: list[ReaderNavigationItem] = []
+    seen_pages: set[int] = set()
+    for source in sources:
+        page = _positive_int(source.locator.get("page"))
+        if page is None or page in seen_pages:
+            continue
+        seen_pages.add(page)
+        items.append(
+            ReaderNavigationItem(
+                key=f"page:{page}",
+                label=f"Page {page}",
+                section_id=source.section_id,
+                section_ordinal=source.ordinal,
+                locator=source.locator,
+                heading=source.heading,
+            )
+        )
+    return items
+
+
+def _epub_navigation_items(sources: list[ReaderNavigationSource]) -> list[ReaderNavigationItem]:
+    grouped: dict[int, list[ReaderNavigationSource]] = {}
+    for source in sources:
+        spine = _positive_int(source.locator.get("spine"))
+        if spine is None:
+            continue
+        grouped.setdefault(spine, []).append(source)
+
+    items: list[ReaderNavigationItem] = []
+    for spine in sorted(grouped):
+        group = grouped[spine]
+        target = group[0]
+        heading = next(
+            (
+                source.heading.strip()
+                for source in group
+                if source.heading is not None and source.heading.strip()
+            ),
+            None,
+        )
+        items.append(
+            ReaderNavigationItem(
+                key=f"spine:{spine}",
+                label=heading or f"Section {spine}",
+                section_id=target.section_id,
+                section_ordinal=target.ordinal,
+                locator=target.locator,
+                heading=heading,
+            )
+        )
+    return items
+
+
+def _positive_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return None
+    return value
 
 
 def _state_response(state: ReadingState | None) -> ReadingStateResponse | None:

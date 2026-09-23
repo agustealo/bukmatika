@@ -91,7 +91,10 @@ async def update_collection(
             update=update,
         )
     except LibraryOrganizationNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Collection not found",
+        ) from exc
     except LibraryOrganizationConflict as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -99,7 +102,10 @@ async def update_collection(
         ) from exc
 
 
-@router.post("/library/collections/{collection_id}/remove", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/library/collections/{collection_id}/remove",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def delete_collection(
     collection_id: UUID,
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
@@ -111,7 +117,10 @@ async def delete_collection(
             collection_id=collection_id,
         )
     except LibraryOrganizationNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Collection not found",
+        ) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -177,7 +186,10 @@ async def assign_tag(
             request=request,
         )
     except LibraryOrganizationNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Library entry not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Library entry not found",
+        ) from exc
 
 
 @router.post("/library/tags/{tag_id}", response_model=TagResponse)
@@ -194,7 +206,10 @@ async def update_tag(
             update=update,
         )
     except LibraryOrganizationNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tag not found",
+        ) from exc
     except LibraryOrganizationConflict as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -235,7 +250,10 @@ async def delete_tag(
     try:
         await service.delete_tag(principal_id=identity.principal_id, tag_id=tag_id)
     except LibraryOrganizationNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tag not found",
+        ) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -248,7 +266,10 @@ async def save_work(
     try:
         return await service.save_work(principal_id=identity.principal_id, work_id=work_id)
     except LibraryTargetNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Work not found",
+        ) from exc
 
 
 @router.post("/library/editions/{edition_id}", response_model=LibraryItemResponse)
@@ -281,7 +302,10 @@ async def work_dossier(
             work_id=work_id,
         )
     except DossierNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Work not found",
+        ) from exc
 
 
 @router.get("/dossiers/source", response_model=WorkDossierResponse)

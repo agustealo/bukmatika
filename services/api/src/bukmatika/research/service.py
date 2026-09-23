@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.research import (
+    ResearchDocumentContext,
     ResearchReaderPositionInvalid,
     ResearchRepository,
     ResearchSearchMatch,
@@ -15,6 +16,10 @@ from bukmatika.persistence.research import (
 )
 from bukmatika.research.domain import (
     GroundedResearchAnswer,
+    ResearchCompareRequest,
+    ResearchCompareResponse,
+    ResearchComparisonEdition,
+    ResearchComparisonSource,
     ResearchEvidenceBundleRequest,
     ResearchEvidenceBundleResponse,
     ResearchEvidenceItem,
@@ -103,6 +108,76 @@ class ResearchService:
                 query=request.query,
                 selected_library_entry_ids=request.library_entry_ids,
                 passages=[_passage_response(match) for match in matches],
+            )
+
+    async def compare(
+        self,
+        *,
+        principal_id: UUID,
+        request: ResearchCompareRequest,
+    ) -> ResearchCompareResponse:
+        async with self._session_scope() as database_session:
+            repository = ResearchRepository(database_session)
+            contexts = await repository.document_contexts(
+                principal_id=principal_id,
+                library_entry_ids=request.library_entry_ids,
+            )
+            contexts_by_entry: dict[UUID, list[ResearchDocumentContext]] = {
+                entry_id: [] for entry_id in request.library_entry_ids
+            }
+            for context in contexts:
+                contexts_by_entry[context.library_entry_id].append(context)
+
+            sources: list[ResearchComparisonSource] = []
+            passage_count = 0
+            matched_source_count = 0
+            for entry_id in request.library_entry_ids:
+                entry_contexts = contexts_by_entry[entry_id]
+                if not entry_contexts:
+                    raise ResearchSelectionDenied(
+                        "Selected comparison source has no processed research document"
+                    )
+
+                matches = await repository.search_owned_passages(
+                    principal_id=principal_id,
+                    library_entry_ids=[entry_id],
+                    query=request.query,
+                    limit=request.per_source_limit,
+                )
+                if matches:
+                    matched_source_count += 1
+                passage_count += len(matches)
+                first = entry_contexts[0]
+                sources.append(
+                    ResearchComparisonSource(
+                        library_entry_id=entry_id,
+                        work_id=first.work_id,
+                        work_title=first.work_title,
+                        available_editions=_comparison_editions(entry_contexts),
+                        passages=[_passage_response(match) for match in matches],
+                    )
+                )
+
+            await InteractionEventRepository(database_session).record(
+                SemanticEventType.RESEARCH_COMPARISON_COMPLETED,
+                principal_id=principal_id,
+                entity_type="library_selection",
+                context={
+                    "query": request.query,
+                    "selected_library_entry_ids": [
+                        str(entry_id) for entry_id in request.library_entry_ids
+                    ],
+                    "source_count": len(sources),
+                    "matched_source_count": matched_source_count,
+                    "passage_count": passage_count,
+                    "per_source_limit": request.per_source_limit,
+                },
+            )
+            return ResearchCompareResponse(
+                query=request.query,
+                selected_library_entry_ids=request.library_entry_ids,
+                per_source_limit=request.per_source_limit,
+                sources=sources,
             )
 
     async def evidence_bundle(
@@ -204,6 +279,24 @@ class ResearchService:
                     "Grounded answer references unknown evidence IDs: " + ", ".join(unknown)
                 )
         return answer
+
+
+def _comparison_editions(
+    contexts: list[ResearchDocumentContext],
+) -> list[ResearchComparisonEdition]:
+    editions: list[ResearchComparisonEdition] = []
+    seen: set[UUID] = set()
+    for context in contexts:
+        if context.edition_id in seen:
+            continue
+        seen.add(context.edition_id)
+        editions.append(
+            ResearchComparisonEdition(
+                edition_id=context.edition_id,
+                edition_title=context.edition_title,
+            )
+        )
+    return editions
 
 
 def _grounding_search_query(question: str) -> str:

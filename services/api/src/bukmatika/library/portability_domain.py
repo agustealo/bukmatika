@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, TypeAlias
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, JsonValue
@@ -174,8 +174,8 @@ class LibraryPortabilityExportResponse(BaseModel):
     smart_shelves: list[PortableSmartShelf]
 
 
-ImportPlanAction: TypeAlias = Literal["match", "create", "apply", "skip", "conflict"]
-ImportPlanTarget: TypeAlias = Literal[
+type ImportPlanAction = Literal["match", "create", "apply", "skip", "conflict"]
+type ImportPlanTarget = Literal[
     "work",
     "edition",
     "library_entry",

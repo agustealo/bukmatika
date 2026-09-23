@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from uuid import UUID
 
@@ -20,6 +20,7 @@ from bukmatika.normalization import normalize_identifier, normalize_text
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.document_models import Document, DocumentSection
 from bukmatika.persistence.library_portability_import import LibraryImportPlanningRepository
+from bukmatika.persistence.models import Edition
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -535,27 +536,30 @@ class LibraryPortabilityImportPlanner:
         plans: list[PortableImportTargetPlan] = []
         for source_id, name in values:
             normalized_name = normalize_text(name)
+            existing_id: UUID | None
             if target == "collection":
-                existing = await repository.collection_by_normalized_name(
+                collection = await repository.collection_by_normalized_name(
                     principal_id=principal_id,
                     normalized_name=normalized_name,
                 )
+                existing_id = collection.id if collection is not None else None
             elif target == "tag":
-                existing = await repository.tag_by_normalized_name(
+                tag = await repository.tag_by_normalized_name(
                     principal_id=principal_id,
                     normalized_name=normalized_name,
                 )
+                existing_id = tag.id if tag is not None else None
             else:
                 raise ValueError(f"Unsupported organization target: {target}")
             plans.append(
                 PortableImportTargetPlan(
                     target=target,
                     source_id=source_id,
-                    action="match" if existing is not None else "create",
-                    destination_id=existing.id if existing is not None else None,
+                    action="match" if existing_id is not None else "create",
+                    destination_id=existing_id,
                     reason=(
                         "Matched principal-owned normalized name"
-                        if existing is not None
+                        if existing_id is not None
                         else "No principal-owned normalized-name match"
                     ),
                 )
@@ -637,23 +641,23 @@ class LibraryPortabilityImportPlanner:
         document: Document,
         reading: PortableReadingState,
     ) -> list[str]:
-        checks: dict[int, list[tuple[str, dict[str, object], int, int | None]]] = {}
+        checks: dict[int, list[tuple[str, Mapping[str, object], int, int | None]]] = {}
         if reading.position is not None:
             checks.setdefault(reading.position.section_ordinal, []).append(
                 (
                     "position",
-                    dict(reading.position.locator),
+                    reading.position.locator,
                     reading.position.char_offset or 0,
                     None,
                 )
             )
         for bookmark in reading.bookmarks:
             checks.setdefault(bookmark.section_ordinal, []).append(
-                ("bookmark", dict(bookmark.locator), bookmark.char_offset, None)
+                ("bookmark", bookmark.locator, bookmark.char_offset, None)
             )
         for highlight in reading.highlights:
             checks.setdefault(highlight.section_ordinal, []).append(
-                ("highlight", dict(highlight.locator), highlight.char_start, highlight.char_end)
+                ("highlight", highlight.locator, highlight.char_start, highlight.char_end)
             )
 
         problems: list[str] = []
@@ -671,11 +675,11 @@ class LibraryPortabilityImportPlanner:
     @staticmethod
     def _section_coordinate_problems(
         section: DocumentSection,
-        coordinate_checks: list[tuple[str, dict[str, object], int, int | None]],
+        coordinate_checks: list[tuple[str, Mapping[str, object], int, int | None]],
     ) -> list[str]:
         problems: list[str] = []
         for kind, locator, start, end in coordinate_checks:
-            if dict(section.locator) != locator:
+            if dict(section.locator) != dict(locator):
                 problems.append(f"{kind} locator differs at section {section.ordinal}")
                 continue
             if start < 0 or start > len(section.text):
@@ -685,11 +689,10 @@ class LibraryPortabilityImportPlanner:
         return problems
 
     @staticmethod
-    def _edition_metadata_matches(candidate: object, portable: PortableEditionIdentity) -> bool:
-        from bukmatika.persistence.models import Edition
-
-        if not isinstance(candidate, Edition):
-            return False
+    def _edition_metadata_matches(
+        candidate: Edition,
+        portable: PortableEditionIdentity,
+    ) -> bool:
         return (
             normalize_text(candidate.title) == normalize_text(portable.title)
             and (

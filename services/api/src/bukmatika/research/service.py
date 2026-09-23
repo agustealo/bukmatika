@@ -118,21 +118,15 @@ class ResearchService:
     ) -> ResearchCompareResponse:
         async with self._session_scope() as database_session:
             repository = ResearchRepository(database_session)
-            contexts = await repository.document_contexts(
-                principal_id=principal_id,
-                library_entry_ids=request.library_entry_ids,
-            )
-            contexts_by_entry: dict[UUID, list[ResearchDocumentContext]] = {
-                entry_id: [] for entry_id in request.library_entry_ids
-            }
-            for context in contexts:
-                contexts_by_entry[context.library_entry_id].append(context)
-
             sources: list[ResearchComparisonSource] = []
             passage_count = 0
             matched_source_count = 0
+
             for entry_id in request.library_entry_ids:
-                entry_contexts = contexts_by_entry[entry_id]
+                entry_contexts = await repository.document_contexts(
+                    principal_id=principal_id,
+                    library_entry_ids=[entry_id],
+                )
                 if not entry_contexts:
                     raise ResearchSelectionDenied(
                         "Selected comparison source has no processed research document"

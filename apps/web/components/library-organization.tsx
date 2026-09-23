@@ -21,12 +21,28 @@ export type LibraryTag = TagSummary & {
   item_count: number;
 };
 
+export type ReadingFilter = "all" | "unread" | "reading" | "finished";
+export type SmartShelfReadingFilter = Exclude<ReadingFilter, "all">;
+
+export type SmartShelfRule = {
+  reading_status: SmartShelfReadingFilter | null;
+  collection_id: string | null;
+  tag_id: string | null;
+};
+
+export type LibrarySmartShelf = {
+  smart_shelf_id: string;
+  name: string;
+  description: string | null;
+  rule: SmartShelfRule;
+  item_count: number;
+};
+
 export type LibraryOrganization = {
   collections: LibraryCollection[];
   tags: LibraryTag[];
+  smart_shelves: LibrarySmartShelf[];
 };
-
-export type ReadingFilter = "all" | "unread" | "reading" | "finished";
 
 export type LibraryFilters = {
   reading: ReadingFilter;
@@ -34,26 +50,47 @@ export type LibraryFilters = {
   tagId: string;
 };
 
+export type SmartShelfInput = {
+  name: string;
+  description: null;
+  rule: SmartShelfRule;
+};
+
 type ToolbarProps = {
   organization: LibraryOrganization;
   filters: LibraryFilters;
+  activeSmartShelfId: string;
   busyKey: string | null;
   onFiltersChange: (filters: LibraryFilters) => void;
+  onOpenSmartShelf: (smartShelfId: string) => void;
   onCreateCollection: (name: string) => Promise<boolean>;
   onDeleteCollection: (collectionId: string) => Promise<void>;
   onDeleteTag: (tagId: string) => Promise<void>;
+  onCreateSmartShelf: (input: SmartShelfInput) => Promise<boolean>;
+  onUpdateSmartShelf: (smartShelfId: string, input: SmartShelfInput) => Promise<boolean>;
+  onDeleteSmartShelf: (smartShelfId: string) => Promise<void>;
 };
 
 export function LibraryOrganizationToolbar({
   organization,
   filters,
+  activeSmartShelfId,
   busyKey,
   onFiltersChange,
+  onOpenSmartShelf,
   onCreateCollection,
   onDeleteCollection,
   onDeleteTag,
+  onCreateSmartShelf,
+  onUpdateSmartShelf,
+  onDeleteSmartShelf,
 }: ToolbarProps) {
   const [collectionName, setCollectionName] = useState("");
+  const [smartShelfName, setSmartShelfName] = useState("");
+  const [smartReading, setSmartReading] = useState<ReadingFilter>("all");
+  const [smartCollectionId, setSmartCollectionId] = useState("");
+  const [smartTagId, setSmartTagId] = useState("");
+  const [editingSmartShelfId, setEditingSmartShelfId] = useState("");
 
   async function submitCollection(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -62,14 +99,80 @@ export function LibraryOrganizationToolbar({
     if (await onCreateCollection(normalized)) setCollectionName("");
   }
 
+  function resetSmartShelfForm() {
+    setSmartShelfName("");
+    setSmartReading("all");
+    setSmartCollectionId("");
+    setSmartTagId("");
+    setEditingSmartShelfId("");
+  }
+
+  function useCurrentFilters() {
+    setSmartReading(filters.reading);
+    setSmartCollectionId(filters.collectionId);
+    setSmartTagId(filters.tagId);
+  }
+
+  function editSmartShelf(shelf: LibrarySmartShelf) {
+    setEditingSmartShelfId(shelf.smart_shelf_id);
+    setSmartShelfName(shelf.name);
+    setSmartReading(shelf.rule.reading_status ?? "all");
+    setSmartCollectionId(shelf.rule.collection_id ?? "");
+    setSmartTagId(shelf.rule.tag_id ?? "");
+  }
+
+  async function submitSmartShelf(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = smartShelfName.trim();
+    const hasRule = smartReading !== "all" || Boolean(smartCollectionId) || Boolean(smartTagId);
+    if (!name || !hasRule || busyKey !== null) return;
+    const input: SmartShelfInput = {
+      name,
+      description: null,
+      rule: {
+        reading_status: smartReading === "all" ? null : smartReading,
+        collection_id: smartCollectionId || null,
+        tag_id: smartTagId || null,
+      },
+    };
+    const saved = editingSmartShelfId
+      ? await onUpdateSmartShelf(editingSmartShelfId, input)
+      : await onCreateSmartShelf(input);
+    if (saved) resetSmartShelfForm();
+  }
+
+  const hasSmartShelfDraft =
+    smartReading !== "all" || Boolean(smartCollectionId) || Boolean(smartTagId);
+  const currentFiltersCanSave =
+    filters.reading !== "all" || Boolean(filters.collectionId) || Boolean(filters.tagId);
+
   return (
     <section className="library-organize-toolbar" aria-label="Library organization">
+      {organization.smart_shelves.length > 0 ? (
+        <div className="library-smart-shelf-row" aria-label="Smart shelves">
+          <span>Smart shelves</span>
+          <div>
+            {organization.smart_shelves.map((shelf) => (
+              <button
+                type="button"
+                aria-pressed={activeSmartShelfId === shelf.smart_shelf_id}
+                className={activeSmartShelfId === shelf.smart_shelf_id ? "is-active" : ""}
+                key={shelf.smart_shelf_id}
+                onClick={() => onOpenSmartShelf(shelf.smart_shelf_id)}
+              >
+                {shelf.name} · {shelf.item_count}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div className="library-filter-group" role="group" aria-label="Reading status filter">
         {(["all", "unread", "reading", "finished"] as ReadingFilter[]).map((value) => (
           <button
             type="button"
-            aria-pressed={filters.reading === value}
-            className={filters.reading === value ? "is-active" : ""}
+            aria-pressed={filters.reading === value && !activeSmartShelfId}
+            className={filters.reading === value && !activeSmartShelfId ? "is-active" : ""}
             key={value}
             onClick={() => onFiltersChange({ ...filters, reading: value })}
           >
@@ -125,7 +228,91 @@ export function LibraryOrganizationToolbar({
             Add collection
           </button>
         </form>
+
+        <form className="library-smart-shelf-form" onSubmit={submitSmartShelf}>
+          <div className="library-smart-shelf-form-heading">
+            <strong>{editingSmartShelfId ? "Edit smart shelf" : "New smart shelf"}</strong>
+            <button
+              type="button"
+              disabled={!currentFiltersCanSave || busyKey !== null}
+              onClick={useCurrentFilters}
+            >
+              Use current filters
+            </button>
+          </div>
+          <input
+            aria-label="Smart shelf name"
+            maxLength={120}
+            placeholder="Smart shelf name"
+            value={smartShelfName}
+            onChange={(event) => setSmartShelfName(event.target.value)}
+          />
+          <div className="library-smart-shelf-rule-grid">
+            <label>
+              <span>Reading state</span>
+              <select
+                value={smartReading}
+                onChange={(event) => setSmartReading(event.target.value as ReadingFilter)}
+              >
+                <option value="all">Any state</option>
+                <option value="unread">Unread</option>
+                <option value="reading">Reading</option>
+                <option value="finished">Finished</option>
+              </select>
+            </label>
+            <label>
+              <span>Collection</span>
+              <select
+                value={smartCollectionId}
+                onChange={(event) => setSmartCollectionId(event.target.value)}
+              >
+                <option value="">Any collection</option>
+                {organization.collections.map((collection) => (
+                  <option value={collection.collection_id} key={collection.collection_id}>
+                    {collection.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Tag</span>
+              <select value={smartTagId} onChange={(event) => setSmartTagId(event.target.value)}>
+                <option value="">Any tag</option>
+                {organization.tags.map((tag) => (
+                  <option value={tag.tag_id} key={tag.tag_id}>#{tag.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="library-smart-shelf-form-actions">
+            <button
+              type="submit"
+              disabled={!smartShelfName.trim() || !hasSmartShelfDraft || busyKey !== null}
+            >
+              {editingSmartShelfId ? "Save shelf" : "Create smart shelf"}
+            </button>
+            {editingSmartShelfId ? (
+              <button type="button" onClick={resetSmartShelfForm}>Cancel</button>
+            ) : null}
+          </div>
+        </form>
+
         <div className="library-manage-list">
+          {organization.smart_shelves.map((shelf) => (
+            <div key={shelf.smart_shelf_id}>
+              <span>{shelf.name} · {shelf.item_count} live</span>
+              <div>
+                <button type="button" onClick={() => editSmartShelf(shelf)}>Edit</button>
+                <button
+                  type="button"
+                  disabled={busyKey === `smart-shelf:${shelf.smart_shelf_id}`}
+                  onClick={() => void onDeleteSmartShelf(shelf.smart_shelf_id)}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
           {organization.collections.map((collection) => (
             <div key={collection.collection_id}>
               <span>{collection.name} · {collection.item_count}</span>

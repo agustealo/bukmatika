@@ -339,7 +339,8 @@ def _validate_reading_states(
                 source_id=reading.source_reading_state_id,
                 code="manifest_duplicate_reading_document_identity",
                 detail=(
-                    "One library entry contains multiple reader states for the same document identity"
+                    "One library entry contains multiple reader states "
+                    "for the same document identity"
                 ),
             )
         else:

@@ -69,6 +69,8 @@ def validate_manifest_consistency(
     work_signatures: dict[UUID, Hashable] = {}
     edition_signatures: dict[UUID, Hashable] = {}
     document_signatures: dict[UUID, Hashable] = {}
+    edition_work_claims: dict[UUID, UUID] = {}
+    document_asset_claims: dict[UUID, UUID] = {}
     work_identifier_claims: dict[tuple[str, str], UUID] = {}
     work_source_claims: dict[tuple[str, str], UUID] = {}
     edition_identifier_claims: dict[tuple[str, str], UUID] = {}
@@ -101,7 +103,9 @@ def validate_manifest_consistency(
         if entry.edition is not None:
             _register_edition(
                 entry.edition,
+                parent_work_id=entry.work.source_work_id,
                 signatures=edition_signatures,
+                work_claims=edition_work_claims,
                 identifier_claims=edition_identifier_claims,
                 source_claims=edition_source_claims,
                 conflicts=conflicts,
@@ -128,11 +132,14 @@ def validate_manifest_consistency(
         _reject_duplicate_refs(entry, conflicts=conflicts)
         _validate_assets(
             entry,
+            parent_work_id=entry.work.source_work_id,
             asset_ids=asset_ids,
             edition_signatures=edition_signatures,
+            edition_work_claims=edition_work_claims,
             edition_identifier_claims=edition_identifier_claims,
             edition_source_claims=edition_source_claims,
             document_signatures=document_signatures,
+            document_asset_claims=document_asset_claims,
             conflicts=conflicts,
         )
         _validate_reading_states(
@@ -195,7 +202,9 @@ def _register_work(
 def _register_edition(
     edition: PortableEditionIdentity,
     *,
+    parent_work_id: UUID,
     signatures: dict[UUID, Hashable],
+    work_claims: dict[UUID, UUID],
     identifier_claims: dict[tuple[str, str], UUID],
     source_claims: dict[tuple[str, str], UUID],
     conflicts: list[PortableImportConflict],
@@ -212,6 +221,18 @@ def _register_edition(
         )
     else:
         signatures[edition.source_edition_id] = signature
+
+    previous_work_id = work_claims.get(edition.source_edition_id)
+    if previous_work_id is not None and previous_work_id != parent_work_id:
+        _append_conflict(
+            conflicts,
+            target="edition",
+            source_id=edition.source_edition_id,
+            code="manifest_edition_work_conflict",
+            detail="One source_edition_id is claimed under multiple source Work identities",
+        )
+    else:
+        work_claims[edition.source_edition_id] = parent_work_id
 
     for identifier in edition.identifiers:
         key = (normalize_text(identifier.scheme), normalize_identifier(identifier.value))
@@ -240,11 +261,14 @@ def _register_edition(
 def _validate_assets(
     entry: PortableLibraryEntry,
     *,
+    parent_work_id: UUID,
     asset_ids: set[UUID],
     edition_signatures: dict[UUID, Hashable],
+    edition_work_claims: dict[UUID, UUID],
     edition_identifier_claims: dict[tuple[str, str], UUID],
     edition_source_claims: dict[tuple[str, str], UUID],
     document_signatures: dict[UUID, Hashable],
+    document_asset_claims: dict[UUID, UUID],
     conflicts: list[PortableImportConflict],
 ) -> None:
     for asset in entry.assets:
@@ -260,7 +284,9 @@ def _validate_assets(
 
         _register_edition(
             asset.edition,
+            parent_work_id=parent_work_id,
             signatures=edition_signatures,
+            work_claims=edition_work_claims,
             identifier_claims=edition_identifier_claims,
             source_claims=edition_source_claims,
             conflicts=conflicts,
@@ -284,6 +310,17 @@ def _validate_assets(
             signatures=document_signatures,
             conflicts=conflicts,
         )
+        previous_asset_id = document_asset_claims.get(asset.document.source_document_id)
+        if previous_asset_id is not None and previous_asset_id != asset.source_asset_id:
+            _append_conflict(
+                conflicts,
+                target="document",
+                source_id=asset.document.source_document_id,
+                code="manifest_document_asset_conflict",
+                detail="One source_document_id is claimed by multiple source assets",
+            )
+        else:
+            document_asset_claims[asset.document.source_document_id] = asset.source_asset_id
         if asset.content_sha256 is not None and (
             asset.content_sha256.casefold() != asset.document.source_sha256.casefold()
         ):

@@ -17,7 +17,7 @@ from bukmatika.library.service import LibraryService
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.jobs import Job, JobStatus
 from bukmatika.persistence.library import LibraryRepository
-from bukmatika.persistence.models import Acquisition, LibraryEntry
+from bukmatika.persistence.models import Acquisition
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -226,10 +226,11 @@ def _classify(
         )
 
     if status.acquisition_status == "failed":
+        acquisition_error = acquisition.error_code if acquisition is not None else None
         return (
             LibraryAssetAggregateStatus.FAILED,
             LibraryAssetStage.ACQUISITION,
-            (acquisition.error_code if acquisition is not None else None) or "ACQUISITION_FAILED",
+            acquisition_error or "ACQUISITION_FAILED",
         )
 
     if status.acquisition_status == "quarantined":

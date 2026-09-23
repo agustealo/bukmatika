@@ -1,6 +1,5 @@
 import asyncio
 import hashlib
-import json
 import shutil
 import stat
 import tempfile
@@ -149,6 +148,7 @@ class LibraryPortabilityBundleService:
         package_path = root / "library.bukmatika"
         included: list[PortableBundleByte] = []
         omissions: list[PortableBundleOmission] = []
+        staged_bytes = 0
         try:
             for entry in manifest.entries:
                 for asset in entry.assets:
@@ -165,6 +165,11 @@ class LibraryPortabilityBundleService:
                             )
                         )
                         continue
+                    if staged_bytes + asset.byte_size > self._settings.archive_max_uncompressed_bytes:
+                        raise PortabilityBundleError(
+                            "bundle_export_too_large",
+                            "Rights-authorized library bytes exceed the configured archive limit.",
+                        )
                     try:
                         copied = await self._byte_export.copy_for_export(
                             principal_id=principal_id,
@@ -193,11 +198,9 @@ class LibraryPortabilityBundleService:
                             byte_size=copied.byte_size,
                         )
                     )
+                    staged_bytes += copied.byte_size
 
-            index = LibraryPortabilityBundleIndex(
-                bytes=included,
-                omissions=omissions,
-            )
+            index = LibraryPortabilityBundleIndex(bytes=included, omissions=omissions)
             await asyncio.to_thread(
                 self._write_bundle,
                 package_path,
@@ -357,8 +360,7 @@ class LibraryPortabilityBundleService:
         with zipfile.ZipFile(
             package_path,
             mode="x",
-            compression=zipfile.ZIP_DEFLATED,
-            compresslevel=6,
+            compression=zipfile.ZIP_STORED,
             allowZip64=True,
         ) as archive:
             archive.writestr(_MANIFEST_MEMBER, manifest.model_dump_json(indent=2))
@@ -390,75 +392,31 @@ class LibraryPortabilityBundleService:
             ) from exc
 
         with archive:
-            infos = archive.infolist()
-            if len(infos) > self._settings.archive_max_members:
-                raise PortabilityBundleError(
-                    "bundle_member_limit",
-                    "Portability bundle contains too many archive members.",
-                )
-            info_by_name: dict[str, zipfile.ZipInfo] = {}
-            total_uncompressed = 0
-            for info in infos:
-                self._validate_member_info(info)
-                if info.filename in info_by_name:
-                    raise PortabilityBundleError(
-                        "bundle_duplicate_member",
-                        f"Duplicate portability bundle member: {info.filename}",
-                    )
-                info_by_name[info.filename] = info
-                total_uncompressed += info.file_size
-                if total_uncompressed > self._settings.archive_max_uncompressed_bytes:
-                    raise PortabilityBundleError(
-                        "bundle_uncompressed_limit",
-                        "Portability bundle exceeds the configured uncompressed size limit.",
-                    )
-                if info.file_size and (
-                    info.file_size / max(info.compress_size, 1)
-                    > self._settings.archive_max_compression_ratio
-                ):
-                    raise PortabilityBundleError(
-                        "bundle_compression_ratio",
-                        f"Portability bundle member is compressed beyond the safety limit: {info.filename}",
-                    )
-
+            info_by_name = self._validated_member_index(archive.infolist())
             manifest_info = self._required_metadata_member(info_by_name, _MANIFEST_MEMBER)
             index_info = self._required_metadata_member(info_by_name, _INDEX_MEMBER)
             try:
                 manifest = LibraryPortabilityExportResponse.model_validate_json(
                     archive.read(manifest_info)
                 )
-                index = LibraryPortabilityBundleIndex.model_validate_json(archive.read(index_info))
-            except (ValidationError, ValueError, json.JSONDecodeError) as exc:
+                index = LibraryPortabilityBundleIndex.model_validate_json(
+                    archive.read(index_info)
+                )
+            except ValidationError as exc:
                 raise PortabilityBundleError(
                     "bundle_metadata_invalid",
                     "Portability bundle metadata does not match the supported schema.",
                 ) from exc
 
             assets = self._manifest_assets(manifest)
-            included_keys = {
-                (item.source_library_entry_id, item.source_asset_id) for item in index.bytes
-            }
-            omitted_keys = {
-                (item.source_library_entry_id, item.source_asset_id) for item in index.omissions
-            }
-            if len(included_keys) != len(index.bytes) or len(omitted_keys) != len(index.omissions):
-                raise PortabilityBundleError(
-                    "bundle_duplicate_asset",
-                    "Each manifest asset must have exactly one bundle byte disposition.",
-                )
-            if included_keys & omitted_keys or included_keys | omitted_keys != set(assets):
-                raise PortabilityBundleError(
-                    "bundle_asset_coverage",
-                    "Bundle byte index must account for every manifest asset exactly once.",
-                )
-
+            self._validate_asset_coverage(index=index, assets=assets)
             allowed_names = {_MANIFEST_MEMBER, _INDEX_MEMBER}
             byte_paths: dict[tuple[UUID, UUID], Path] = {}
             extracted_members: dict[str, Path] = {}
+
             for item in index.bytes:
                 key = (item.source_library_entry_id, item.source_asset_id)
-                asset = assets[key]
-                self._validate_index_item(item, asset)
+                self._validate_index_item(item, assets[key])
                 info = info_by_name.get(item.member_name)
                 if info is None or info.is_dir():
                     raise PortabilityBundleError(
@@ -481,18 +439,23 @@ class LibraryPortabilityBundleService:
                         self._settings.acquisition_max_bytes,
                     )
                     if actual_sha != item.sha256 or actual_size != item.byte_size:
+                        detail = (
+                            "Bundle bytes do not match their declared identity: "
+                            f"{item.member_name}"
+                        )
                         raise PortabilityBundleError(
                             "bundle_byte_identity_mismatch",
-                            f"Bundle bytes do not match their declared identity: {item.member_name}",
+                            detail,
                         )
                     extracted_members[item.member_name] = extracted
                 byte_paths[key] = extracted
 
             unknown = set(info_by_name) - allowed_names
             if unknown:
+                names = ", ".join(sorted(unknown))
                 raise PortabilityBundleError(
                     "bundle_unknown_member",
-                    f"Portability bundle contains unindexed members: {', '.join(sorted(unknown))}",
+                    f"Portability bundle contains unindexed members: {names}",
                 )
 
         return BundleInspection(
@@ -501,6 +464,42 @@ class LibraryPortabilityBundleService:
             byte_paths=byte_paths,
             root=extraction_root,
         )
+
+    def _validated_member_index(
+        self,
+        infos: list[zipfile.ZipInfo],
+    ) -> dict[str, zipfile.ZipInfo]:
+        if len(infos) > self._settings.archive_max_members:
+            raise PortabilityBundleError(
+                "bundle_member_limit",
+                "Portability bundle contains too many archive members.",
+            )
+        info_by_name: dict[str, zipfile.ZipInfo] = {}
+        total_uncompressed = 0
+        for info in infos:
+            self._validate_member_info(info)
+            if info.filename in info_by_name:
+                raise PortabilityBundleError(
+                    "bundle_duplicate_member",
+                    f"Duplicate portability bundle member: {info.filename}",
+                )
+            info_by_name[info.filename] = info
+            total_uncompressed += info.file_size
+            if total_uncompressed > self._settings.archive_max_uncompressed_bytes:
+                raise PortabilityBundleError(
+                    "bundle_uncompressed_limit",
+                    "Portability bundle exceeds the configured uncompressed size limit.",
+                )
+            if info.file_size and (
+                info.file_size / max(info.compress_size, 1)
+                > self._settings.archive_max_compression_ratio
+            ):
+                detail = (
+                    "Portability bundle member is compressed beyond the safety limit: "
+                    f"{info.filename}"
+                )
+                raise PortabilityBundleError("bundle_compression_ratio", detail)
+        return info_by_name
 
     def _required_metadata_member(
         self,
@@ -516,7 +515,7 @@ class LibraryPortabilityBundleService:
         if info.file_size > self._settings.processing_max_bytes:
             raise PortabilityBundleError(
                 "bundle_metadata_too_large",
-                f"Portability metadata member exceeds the configured processing limit: {name}",
+                f"Portability metadata member exceeds the processing limit: {name}",
             )
         return info
 
@@ -537,10 +536,38 @@ class LibraryPortabilityBundleService:
         return assets
 
     @staticmethod
+    def _validate_asset_coverage(
+        *,
+        index: LibraryPortabilityBundleIndex,
+        assets: dict[tuple[UUID, UUID], PortableAssetManifest],
+    ) -> None:
+        included_keys = {
+            (item.source_library_entry_id, item.source_asset_id) for item in index.bytes
+        }
+        omitted_keys = {
+            (item.source_library_entry_id, item.source_asset_id) for item in index.omissions
+        }
+        if len(included_keys) != len(index.bytes) or len(omitted_keys) != len(index.omissions):
+            raise PortabilityBundleError(
+                "bundle_duplicate_asset",
+                "Each manifest asset must have exactly one bundle byte disposition.",
+            )
+        if included_keys & omitted_keys or included_keys | omitted_keys != set(assets):
+            raise PortabilityBundleError(
+                "bundle_asset_coverage",
+                "Bundle byte index must account for every manifest asset exactly once.",
+            )
+
+    @staticmethod
     def _validate_index_item(
         item: PortableBundleByte,
         asset: PortableAssetManifest,
     ) -> None:
+        if not LibraryPortabilityBundleService._valid_sha256(item.sha256):
+            raise PortabilityBundleError(
+                "bundle_sha256_invalid",
+                "Portable byte SHA-256 must be a 64-character hexadecimal digest.",
+            )
         expected_name = f"{_BYTE_PREFIX}{item.sha256}"
         if item.member_name != expected_name:
             raise PortabilityBundleError(
@@ -550,7 +577,7 @@ class LibraryPortabilityBundleService:
         if asset.content_sha256 is None or asset.byte_size is None:
             raise PortabilityBundleError(
                 "bundle_manifest_content_identity_missing",
-                "Included bytes require canonical content SHA-256 and byte size in the manifest.",
+                "Included bytes require content SHA-256 and byte size in the manifest.",
             )
         if (
             item.sha256.casefold() != asset.content_sha256.casefold()
@@ -618,6 +645,10 @@ class LibraryPortabilityBundleService:
                 digest.update(chunk)
                 target.write(chunk)
         return digest.hexdigest(), total
+
+    @staticmethod
+    def _valid_sha256(value: str) -> bool:
+        return len(value) == 64 and all(character in "0123456789abcdefABCDEF" for character in value)
 
     @staticmethod
     def _media_type(value: str | None) -> str | None:

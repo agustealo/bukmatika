@@ -1,5 +1,6 @@
 import calendar
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -27,11 +28,13 @@ _MONTHS = {
 }
 _MONTH_PATTERN = "|".join(_MONTHS)
 _MONTH_FIRST = re.compile(
-    rf"\b(?P<month>{_MONTH_PATTERN})\s+(?P<day>\d{{1,2}})(?:st|nd|rd|th)?(?:,\s*|\s+)(?P<year>[1-9]\d{{2,3}})(?:\s+(?P<era>BCE|BC|CE|AD))?\b",
+    rf"\b(?P<month>{_MONTH_PATTERN})\s+(?P<day>\d{{1,2}})(?:st|nd|rd|th)?"
+    rf"(?:,\s*|\s+)(?P<year>[1-9]\d{{2,3}})(?:\s+(?P<era>BCE|BC|CE|AD))?\b",
     re.IGNORECASE,
 )
 _DAY_FIRST = re.compile(
-    rf"\b(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+(?P<month>{_MONTH_PATTERN})\s+(?P<year>[1-9]\d{{2,3}})(?:\s+(?P<era>BCE|BC|CE|AD))?\b",
+    rf"\b(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+(?P<month>{_MONTH_PATTERN})"
+    rf"\s+(?P<year>[1-9]\d{{2,3}})(?:\s+(?P<era>BCE|BC|CE|AD))?\b",
     re.IGNORECASE,
 )
 _ISO_DATE = re.compile(
@@ -41,11 +44,18 @@ _NUMERIC_DATE = re.compile(
     r"\b(?P<first>\d{1,2})[/-](?P<second>\d{1,2})[/-](?P<year>[1-9]\d{3})\b"
 )
 _MONTH_YEAR = re.compile(
-    rf"\b(?P<month>{_MONTH_PATTERN})\s+(?P<year>[1-9]\d{{2,3}})(?:\s+(?P<era>BCE|BC|CE|AD))?\b",
+    rf"\b(?P<month>{_MONTH_PATTERN})\s+(?P<year>[1-9]\d{{2,3}})"
+    rf"(?:\s+(?P<era>BCE|BC|CE|AD))?\b",
     re.IGNORECASE,
 )
-_ERA_PREFIX = re.compile(r"\b(?P<era>AD|CE|BC|BCE)\s+(?P<year>[1-9]\d{0,3})\b", re.IGNORECASE)
-_ERA_SUFFIX = re.compile(r"\b(?P<year>[1-9]\d{0,3})\s+(?P<era>BCE|BC|CE|AD)\b", re.IGNORECASE)
+_ERA_PREFIX = re.compile(
+    r"\b(?P<era>AD|CE|BC|BCE)\s+(?P<year>[1-9]\d{0,3})\b",
+    re.IGNORECASE,
+)
+_ERA_SUFFIX = re.compile(
+    r"\b(?P<year>[1-9]\d{0,3})\s+(?P<era>BCE|BC|CE|AD)\b",
+    re.IGNORECASE,
+)
 _BARE_YEAR = re.compile(r"(?<![\d/-])(?P<year>1\d{3}|20\d{2})(?![\d/-])")
 _SENTENCE_BREAK = re.compile(r"[.!?](?:\s|$)")
 
@@ -62,19 +72,18 @@ class _TimelineCandidate:
     precision: ResearchTimelinePrecision
 
 
+_CandidateParser = Callable[[re.Match[str]], _TimelineCandidate | None]
+_MergedTimelineValue = tuple[_TimelineCandidate, str, list[str], UUID, UUID, int, int]
+
+
 def build_timeline(bundle: ResearchEvidenceBundleResponse) -> ResearchTimelineResponse:
-    merged: dict[
-        tuple[UUID, UUID, int, int, str],
-        tuple[_TimelineCandidate, str, list[str], UUID, UUID, int, int],
-    ] = {}
+    merged: dict[tuple[UUID, UUID, int, int, str], _MergedTimelineValue] = {}
     dated_evidence_ids: set[str] = set()
-    total_candidates = 0
 
     for evidence in bundle.evidence:
         candidates = _extract_candidates(evidence.text)
         if candidates:
             dated_evidence_ids.add(evidence.evidence_id)
-        total_candidates += len(candidates)
         for candidate in candidates:
             source_start = evidence.char_start + candidate.local_start
             source_end = evidence.char_start + candidate.local_end
@@ -102,7 +111,16 @@ def build_timeline(bundle: ResearchEvidenceBundleResponse) -> ResearchTimelineRe
                     source_end,
                 )
                 continue
-            existing_candidate, existing_text, evidence_ids, document_id, section_id, _, _ = existing
+
+            (
+                existing_candidate,
+                existing_text,
+                evidence_ids,
+                document_id,
+                section_id,
+                _,
+                _,
+            ) = existing
             if evidence.evidence_id not in evidence_ids:
                 evidence_ids.append(evidence.evidence_id)
             merged[key] = (
@@ -116,7 +134,6 @@ def build_timeline(bundle: ResearchEvidenceBundleResponse) -> ResearchTimelineRe
             )
 
     ordered = sorted(merged.values(), key=_timeline_sort_key)
-    truncated = len(ordered) > MAX_TIMELINE_ITEMS
     items = [
         ResearchTimelineItem(
             timeline_id=f"T{index}",
@@ -152,7 +169,7 @@ def build_timeline(bundle: ResearchEvidenceBundleResponse) -> ResearchTimelineRe
         evidence=bundle,
         items=items,
         undated_evidence_ids=undated,
-        truncated=truncated or total_candidates > len(merged) + MAX_TIMELINE_ITEMS,
+        truncated=len(ordered) > MAX_TIMELINE_ITEMS,
     )
 
 
@@ -160,13 +177,12 @@ def _extract_candidates(text: str) -> list[_TimelineCandidate]:
     candidates: list[_TimelineCandidate] = []
     occupied: list[tuple[int, int]] = []
 
-    def add(pattern: re.Pattern[str], parser: object) -> None:
-        parse = parser
+    def add(pattern: re.Pattern[str], parser: _CandidateParser) -> None:
         for match in pattern.finditer(text):
             span = match.span()
             if any(_overlaps(span, existing) for existing in occupied):
                 continue
-            candidate = parse(match)  # type: ignore[operator]
+            candidate = parser(match)
             if candidate is None:
                 continue
             candidates.append(candidate)
@@ -344,9 +360,7 @@ def _source_excerpt(text: str, start: int, end: int) -> str:
     return text[excerpt_start:excerpt_end].strip()
 
 
-def _timeline_sort_key(
-    value: tuple[_TimelineCandidate, str, list[str], UUID, UUID, int, int],
-) -> tuple[int, int, int, int, int, int]:
+def _timeline_sort_key(value: _MergedTimelineValue) -> tuple[int, int, int, int, int, int]:
     candidate, _, _, _, _, source_start, _ = value
     signed_year = -candidate.year if candidate.era == "BCE" else candidate.year
     ambiguity = 1 if candidate.precision is ResearchTimelinePrecision.AMBIGUOUS else 0

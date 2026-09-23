@@ -109,7 +109,10 @@ def test_mentions_do_not_promote_uncued_name_or_saint_prefix() -> None:
 
 
 def test_unquoted_concept_cue_does_not_swallow_following_prose() -> None:
-    text = "The doctrine of discovery shaped policy. The concept called “separation of powers” followed."
+    text = (
+        "The doctrine of discovery shaped policy. "
+        "The concept called “separation of powers” followed."
+    )
 
     result = build_mentions(_bundle([_evidence(evidence_id="E1", text=text)]))
     concepts = [item for item in result.items if item.kind is ResearchMentionKind.CONCEPT]
@@ -168,9 +171,7 @@ async def _seed_mentions_book(
     *,
     principal: Principal,
 ) -> tuple[LibraryEntry, Document, DocumentSection]:
-    text = (
-        "Captain Ada Lovelace wrote about the concept of analysis in the city of London."
-    )
+    text = "Captain Ada Lovelace wrote about the concept of analysis in the city of London."
     token = uuid4().hex
     work = Work(
         canonical_title="Mention Canonical Work",

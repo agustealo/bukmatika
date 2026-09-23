@@ -27,6 +27,9 @@ from bukmatika.library.domain import (
     TagUpdate,
     WorkDossierResponse,
 )
+from bukmatika.library.portability import LibraryPortabilityService
+from bukmatika.library.portability_domain import LibraryPortabilityExportResponse
+from bukmatika.library.portability_routes import router as portability_router
 from bukmatika.library.routes import router as library_router
 from bukmatika.library.service import (
     LibraryOrganizationConflict,
@@ -39,6 +42,7 @@ from bukmatika.library.status_routes import router as status_router
 router = APIRouter()
 router.include_router(library_router)
 router.include_router(status_router)
+router.include_router(portability_router)
 
 __all__ = [
     "AssetStatusResponse",
@@ -54,6 +58,8 @@ __all__ = [
     "LibraryOrganizationConflict",
     "LibraryOrganizationNotFound",
     "LibraryOrganizationResponse",
+    "LibraryPortabilityExportResponse",
+    "LibraryPortabilityService",
     "LibraryReadingStatus",
     "LibraryResponse",
     "LibraryService",

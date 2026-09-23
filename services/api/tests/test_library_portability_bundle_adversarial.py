@@ -12,9 +12,9 @@ from bukmatika.config import Settings
 from bukmatika.library.portability_bundle import (
     LibraryPortabilityBundleIndex,
     LibraryPortabilityBundleService,
+    PortabilityBundleError,
     PortableBundleByte,
     PortableBundleOmission,
-    PortabilityBundleError,
 )
 from bukmatika.library.portability_domain import (
     LibraryPortabilityExportResponse,

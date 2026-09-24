@@ -130,6 +130,10 @@ def compare_retrieval_evaluations(
     acceptance: SemanticRecallBurnAcceptance | None = None,
 ) -> SemanticRecallBurnResult:
     criteria = acceptance or SemanticRecallBurnAcceptance()
+    if lexical.principal_id != semantic.principal_id:
+        raise ResearchRecallSuiteInvalid(
+            "Lexical and semantic evaluations belong to different principals"
+        )
     lexical_by_case = {case.case_id: case for case in lexical.cases}
     semantic_by_case = {case.case_id: case for case in semantic.cases}
     if set(lexical_by_case) != set(semantic_by_case):
@@ -142,6 +146,13 @@ def compare_retrieval_evaluations(
     for case_id in lexical_by_case:
         lexical_case = lexical_by_case[case_id]
         semantic_case = semantic_by_case[case_id]
+        if (
+            lexical_case.query != semantic_case.query
+            or lexical_case.expected_count != semantic_case.expected_count
+        ):
+            raise ResearchRecallSuiteInvalid(
+                f"Lexical and semantic case {case_id!r} do not share the same benchmark contract"
+            )
         comparisons.append(
             SemanticRecallCaseComparison(
                 case_id=case_id,

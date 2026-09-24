@@ -14,7 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 
 from bukmatika.config import get_settings
 from bukmatika.persistence.document_models import DocumentChunk, DocumentSection
-from bukmatika.persistence.research import ResearchRepository
+from bukmatika.persistence.research import (
+    ResearchRepository,
+    ResearchSelectionDenied,
+)
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -200,10 +203,16 @@ async def _validate_expected_targets(
     principal_id: UUID,
     case: ResearchRecallCase,
 ) -> None:
-    contexts = await repository.document_contexts(
-        principal_id=principal_id,
-        library_entry_ids=case.library_entry_ids,
-    )
+    try:
+        contexts = await repository.document_contexts(
+            principal_id=principal_id,
+            library_entry_ids=case.library_entry_ids,
+        )
+    except ResearchSelectionDenied as exc:
+        raise ResearchRecallSuiteInvalid(
+            f"Recall case {case.case_id!r} selects a library entry unavailable to this principal"
+        ) from exc
+
     selected_document_ids = {context.document_id for context in contexts}
     expected_by_chunk = {target.chunk_id: target for target in case.expected}
 

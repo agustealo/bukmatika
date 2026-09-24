@@ -10,6 +10,7 @@ from bukmatika.persistence.document_models import Document
 from bukmatika.persistence.models import Asset, Edition, LibraryEntry, Work
 from bukmatika.persistence.personalization_models import Goal, PreferenceClaim, UserModel
 from bukmatika.personalization.domain import (
+    AutonomyLevel2ConsentRequired,
     ExplicitPreferenceRequest,
     PersonalizationSettingsUpdate,
 )
@@ -288,6 +289,10 @@ class PersonalizationRepository:
         user_model = await self._lock_user_model(principal_id)
         previous_ai_enabled = user_model.ai_enabled
         previous_autonomy_level = user_model.autonomy_level
+        if previous_autonomy_level < 2 <= update.autonomy_level and not update.level_2_consent:
+            raise AutonomyLevel2ConsentRequired(
+                "Explicit consent is required when enabling autonomy Level 2"
+            )
         user_model.ai_enabled = update.ai_enabled
         user_model.learning_enabled = update.learning_enabled
         user_model.autonomy_level = update.autonomy_level

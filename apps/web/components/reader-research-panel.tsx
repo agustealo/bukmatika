@@ -31,6 +31,7 @@ type EvidenceItem = {
   document_id: string;
   chunk_id: string;
   section_id: string;
+  section_ordinal: number;
   heading: string | null;
   locator: ReaderLocator;
   char_start: number;
@@ -160,6 +161,15 @@ function excerpt(text: string, maxLength = 260): string {
   return normalized.length > maxLength
     ? `${normalized.slice(0, Math.max(0, maxLength - 3))}…`
     : normalized;
+}
+
+function evidenceAnchorId(evidenceId: string): string {
+  return `research-evidence-${evidenceId}`;
+}
+
+function evidenceReaderHref(item: EvidenceItem): string {
+  const params = new URLSearchParams({ section: String(item.section_ordinal) });
+  return `/read/${item.library_entry_id}/${item.document_id}?${params.toString()}#reader-section-${item.section_id}`;
 }
 
 function isAIAvailabilityState(value: unknown): value is AIAvailabilityState {
@@ -567,7 +577,14 @@ export function ReaderResearchPanel({
                     </span>
                     <div className={styles.citations} aria-label="Mention evidence citations">
                       {item.evidence_ids.map((evidenceId) => (
-                        <code key={evidenceId}>{evidenceId}</code>
+                        <a
+                          className="secondary-link"
+                          href={`#${evidenceAnchorId(evidenceId)}`}
+                          key={evidenceId}
+                          aria-label={`Inspect evidence ${evidenceId}`}
+                        >
+                          <code>{evidenceId}</code>
+                        </a>
                       ))}
                     </div>
                   </div>
@@ -614,7 +631,14 @@ export function ReaderResearchPanel({
                     </span>
                     <div className={styles.citations} aria-label="Timeline evidence citations">
                       {item.evidence_ids.map((evidenceId) => (
-                        <code key={evidenceId}>{evidenceId}</code>
+                        <a
+                          className="secondary-link"
+                          href={`#${evidenceAnchorId(evidenceId)}`}
+                          key={evidenceId}
+                          aria-label={`Inspect evidence ${evidenceId}`}
+                        >
+                          <code>{evidenceId}</code>
+                        </a>
                       ))}
                     </div>
                   </div>
@@ -650,7 +674,14 @@ export function ReaderResearchPanel({
                 <p>{claim.text}</p>
                 <div className={styles.citations} aria-label="Evidence citations">
                   {claim.evidence_ids.map((evidenceId) => (
-                    <code key={evidenceId}>{evidenceId}</code>
+                    <a
+                      className="secondary-link"
+                      href={`#${evidenceAnchorId(evidenceId)}`}
+                      key={evidenceId}
+                      aria-label={`Inspect evidence ${evidenceId}`}
+                    >
+                      <code>{evidenceId}</code>
+                    </a>
                   ))}
                 </div>
               </li>
@@ -667,7 +698,7 @@ export function ReaderResearchPanel({
           </div>
           <ol>
             {bundle.evidence.map((item) => (
-              <li key={item.evidence_id}>
+              <li id={evidenceAnchorId(item.evidence_id)} key={item.evidence_id}>
                 <div className={styles.evidenceTopline}>
                   <code>{item.evidence_id}</code>
                   <span>{item.source_kind.replaceAll("_", " ")}</span>
@@ -675,6 +706,9 @@ export function ReaderResearchPanel({
                 <strong>{item.heading ?? item.work_title}</strong>
                 <small>{locatorLabel(item.locator)}</small>
                 <p>{excerpt(item.text)}</p>
+                <a className="secondary-link" href={evidenceReaderHref(item)}>
+                  Open exact source
+                </a>
               </li>
             ))}
           </ol>

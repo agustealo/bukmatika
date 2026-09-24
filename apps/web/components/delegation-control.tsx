@@ -16,14 +16,31 @@ type DelegationStatus =
   | "failed"
   | "cancelled";
 
+type DelegationReviewLibraryEntry = {
+  library_entry_id: string;
+  title: string;
+};
+
+type DelegationReviewStep = {
+  step_id: string;
+  capability: string;
+  arguments: Record<string, unknown>;
+  rationale: string;
+};
+
 type DelegationControlItem = {
   delegation_id: string;
   plan_id: string;
   status: DelegationStatus;
+  review_valid: boolean;
+  user_request: string | null;
+  library_entries: DelegationReviewLibraryEntry[];
+  steps: DelegationReviewStep[];
   step_ids: string[];
   current_step_index: number;
   remaining_steps: number;
   attempts_used: number;
+  max_retries_per_step: number;
   max_total_attempts: number;
   remaining_attempts: number;
   max_runtime_seconds: number;
@@ -79,6 +96,10 @@ function formatDuration(seconds: number): string {
 
 function readableStep(stepId: string): string {
   return stepId.replaceAll("_", " ").replaceAll("-", " ");
+}
+
+function readableCapability(capability: string): string {
+  return capability.replaceAll(".", " · ").replaceAll("_", " ");
 }
 
 function statusLabel(status: DelegationStatus): string {
@@ -432,7 +453,7 @@ export function DelegationControl() {
             <span className={styles.label}>Delegations</span>
             <h3>Plan-specific control</h3>
           </div>
-          <p>Approve the exact proposal, start it explicitly, and stop it whenever you choose.</p>
+          <p>Review the exact request and bounded work, approve it, start it explicitly, and stop it whenever you choose.</p>
         </div>
 
         {!loading && snapshot?.active_delegations.length === 0 ? (
@@ -444,7 +465,11 @@ export function DelegationControl() {
 
         {snapshot?.active_delegations.map((delegation) => {
           const delegationBusy = busyAction?.endsWith(`:${delegation.delegation_id}`) ?? false;
-          const currentStep = delegation.step_ids[delegation.current_step_index] ?? null;
+          const currentStepId = delegation.step_ids[delegation.current_step_index] ?? null;
+          const currentStep = delegation.steps.find((step) => step.step_id === currentStepId) ?? null;
+          const heading = delegation.review_valid && delegation.steps.length > 0
+            ? delegation.steps.map((step) => readableCapability(step.capability)).join(" → ")
+            : delegation.step_ids.map(readableStep).join(" → ");
 
           return (
             <article className={styles.delegationCard} key={delegation.delegation_id}>
@@ -453,10 +478,56 @@ export function DelegationControl() {
                   <span className={styles.badge} data-tone={statusTone(delegation.status)}>
                     {statusLabel(delegation.status)}
                   </span>
-                  <h4>{delegation.step_ids.map(readableStep).join(" → ")}</h4>
+                  <h4>{heading}</h4>
                 </div>
                 <code title={delegation.delegation_id}>{delegation.delegation_id.slice(0, 8)}</code>
               </div>
+
+              {delegation.review_valid && delegation.user_request ? (
+                <div className={styles.reviewPanel}>
+                  <div className={styles.reviewSection}>
+                    <span>Research request</span>
+                    <p>{delegation.user_request}</p>
+                  </div>
+
+                  <div className={styles.reviewSection}>
+                    <span>Selected books</span>
+                    <ul className={styles.sourceList}>
+                      {delegation.library_entries.map((entry) => (
+                        <li key={entry.library_entry_id}>{entry.title}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className={styles.reviewSection}>
+                    <span>Bounded read-only steps</span>
+                    <ol className={styles.reviewSteps}>
+                      {delegation.steps.map((step) => (
+                        <li className={styles.reviewStep} key={step.step_id}>
+                          <div className={styles.reviewStepTopline}>
+                            <strong>{readableCapability(step.capability)}</strong>
+                            <code>{step.step_id}</code>
+                          </div>
+                          <p>{step.rationale}</p>
+                          <details>
+                            <summary>Exact arguments</summary>
+                            <pre>{JSON.stringify(step.arguments, null, 2)}</pre>
+                          </details>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                </div>
+              ) : (
+                <div className={styles.reviewInvalid} role="alert">
+                  <strong>Exact proposal review is unavailable.</strong>
+                  <p>
+                    The persisted plan or delegation no longer matches the fingerprint created with
+                    this proposal. Approval and start are disabled. You can reject or stop this stale
+                    delegation safely.
+                  </p>
+                </div>
+              )}
 
               <div className={styles.progressTrack} aria-hidden="true">
                 <span
@@ -477,7 +548,13 @@ export function DelegationControl() {
               <dl className={styles.delegationFacts}>
                 <div>
                   <dt>Current step</dt>
-                  <dd>{currentStep ? readableStep(currentStep) : "Not started"}</dd>
+                  <dd>
+                    {currentStep
+                      ? readableCapability(currentStep.capability)
+                      : currentStepId
+                        ? readableStep(currentStepId)
+                        : "Not started"}
+                  </dd>
                 </div>
                 <div>
                   <dt>Steps remaining</dt>
@@ -492,16 +569,16 @@ export function DelegationControl() {
                   </dd>
                 </div>
                 <div>
+                  <dt>Retries per step</dt>
+                  <dd>{delegation.max_retries_per_step}</dd>
+                </div>
+                <div>
                   <dt>Runtime remaining</dt>
                   <dd>{formatDuration(delegation.remaining_runtime_seconds)}</dd>
                 </div>
                 <div>
                   <dt>Started</dt>
                   <dd>{formatDate(delegation.started_at)}</dd>
-                </div>
-                <div>
-                  <dt>Plan</dt>
-                  <dd title={delegation.plan_id}>{delegation.plan_id.slice(0, 8)}</dd>
                 </div>
               </dl>
 
@@ -511,10 +588,10 @@ export function DelegationControl() {
                     <button
                       type="button"
                       className={styles.primaryAction}
-                      disabled={controlsDisabled || delegationBusy}
+                      disabled={controlsDisabled || delegationBusy || !delegation.review_valid}
                       onClick={() => void decideDelegation(delegation.delegation_id, "approved")}
                     >
-                      {busyAction === `approve:${delegation.delegation_id}` ? "Approving…" : "Approve"}
+                      {busyAction === `approve:${delegation.delegation_id}` ? "Approving…" : "Approve exact proposal"}
                     </button>
                     <button
                       type="button"
@@ -531,7 +608,12 @@ export function DelegationControl() {
                   <button
                     type="button"
                     className={styles.primaryAction}
-                    disabled={controlsDisabled || delegationBusy || !snapshot.level2_enabled}
+                    disabled={
+                      controlsDisabled ||
+                      delegationBusy ||
+                      !snapshot.level2_enabled ||
+                      !delegation.review_valid
+                    }
                     onClick={() => void startDelegation(delegation.delegation_id)}
                   >
                     {busyAction === `start:${delegation.delegation_id}` ? "Starting…" : "Start delegation"}

@@ -1,3 +1,4 @@
+import { DelegationControl } from "../../components/delegation-control";
 import { LocalAIStatus } from "../../components/local-ai-status";
 import { PendingAIApprovals } from "../../components/pending-ai-approvals";
 import { PersonalizationClient } from "../../components/personalization-client";
@@ -23,6 +24,7 @@ export default function PersonalizationPage() {
       <PersonalizationClient />
       <LocalAIStatus />
       <PendingAIApprovals />
+      <DelegationControl />
       <PersonalizationDataControls />
     </main>
   );

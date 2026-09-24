@@ -147,6 +147,11 @@ class DelegationControlService:
                 return _response(delegation, approval=existing)
             if delegation.status != DelegationStatus.PROPOSED.value:
                 raise DelegationConflict("Delegation is no longer awaiting approval")
+            if request.decision is DelegationApprovalDecision.APPROVED:
+                try:
+                    await self._revalidate_contract(repository=repository, delegation=delegation)
+                except (DelegationInvalid, DelegationStepUnavailable) as exc:
+                    raise DelegationConflict("Delegation proposal is no longer valid") from exc
 
             approval = await repository.create_approval(
                 delegation=delegation,

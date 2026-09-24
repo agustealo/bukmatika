@@ -14,6 +14,7 @@ from bukmatika.persistence.reader_models import Highlight, ReadingState
 
 MAX_READER_SELECTION_CHUNKS = 8
 _MAX_FALLBACK_TERMS = 12
+_MIN_PREFERRED_FALLBACK_TERM_LENGTH = 4
 _FALLBACK_TOKEN_PATTERN = re.compile(r"[^\W_]{2,32}", re.UNICODE)
 _WEBSEARCH_SYNTAX_PATTERN = re.compile(r'(^|\s)(?:OR\s|-[^\s]|"[^\"]*\")', re.IGNORECASE)
 
@@ -461,4 +462,10 @@ def _fallback_websearch_query(query: str) -> str | None:
             break
     if len(terms) < 2:
         return None
+
+    preferred_terms = [
+        term for term in terms if len(term) >= _MIN_PREFERRED_FALLBACK_TERM_LENGTH
+    ]
+    if len(preferred_terms) >= 2:
+        terms = preferred_terms
     return " OR ".join(terms)

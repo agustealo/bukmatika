@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from bukmatika.ai.embedding_gateway import (
@@ -40,6 +40,7 @@ from bukmatika.research.semantic import ResearchSemanticIntegrityError, Semantic
 from bukmatika.research.semantic_domain import ResearchSemanticSearchRequest
 
 _PAINE_SEMANTIC_CASE_ID = "paine-natural-paraphrase"
+_SEMANTIC_RECALL_LIMIT = 5
 
 
 class SemanticRecallCaseComparison(BaseModel):
@@ -93,14 +94,21 @@ class SemanticRecallEvaluator:
                 principal_id=suite.principal_id,
                 case=case,
             )
+            result_limit = min(case.limit, _SEMANTIC_RECALL_LIMIT)
             response = await self._service.search(
                 principal_id=suite.principal_id,
                 request=ResearchSemanticSearchRequest(
                     query=case.query,
                     library_entry_ids=case.library_entry_ids,
-                    limit=case.limit,
+                    limit=result_limit,
                 ),
             )
+            if response.candidate_count <= result_limit:
+                raise ResearchRecallSuiteInvalid(
+                    "Semantic benchmark result cutoff must be smaller than the candidate set: "
+                    f"case={case.case_id!r}, cutoff={result_limit}, "
+                    f"candidates={response.candidate_count}"
+                )
             case_results.append(
                 build_recall_case_result(
                     case,
@@ -261,10 +269,23 @@ async def run_semantic_recall_burn(
         await engine.dispose()
 
 
+def _print_unavailable(*, code: str, message: str) -> None:
+    print(
+        json.dumps(
+            {"status": "unavailable", "code": code, "message": message},
+            sort_keys=True,
+        ),
+        file=sys.stderr,
+    )
+
+
 def main() -> None:
-    settings = get_settings()
     try:
+        settings = get_settings()
         result = asyncio.run(run_semantic_recall_burn(settings=settings))
+    except ValidationError as exc:
+        _print_unavailable(code="SETTINGS_INVALID", message=str(exc))
+        raise SystemExit(2) from None
     except (
         EmbeddingProviderNotReady,
         EmbeddingProviderRequestFailed,
@@ -273,13 +294,7 @@ def main() -> None:
         ResearchSemanticIntegrityError,
     ) as exc:
         code = getattr(exc, "code", type(exc).__name__)
-        print(
-            json.dumps(
-                {"status": "unavailable", "code": code, "message": str(exc)},
-                sort_keys=True,
-            ),
-            file=sys.stderr,
-        )
+        _print_unavailable(code=code, message=str(exc))
         raise SystemExit(2) from None
 
     print(result.model_dump_json(indent=2))

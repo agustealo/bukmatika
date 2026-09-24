@@ -43,7 +43,9 @@ def _result(request: PlanningRequest) -> PersistedPlanResponse:
         capability=CapabilityName.RESEARCH_SEARCH,
         arguments={
             "query": "navigation",
-            "library_entry_ids": [str(value) for value in request.context_request.library_entry_ids],
+            "library_entry_ids": [
+                str(value) for value in request.context_request.library_entry_ids
+            ],
             "limit": 12,
         },
         rationale="Find grounded evidence in the explicitly selected books.",

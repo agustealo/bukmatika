@@ -48,9 +48,10 @@ class _SemanticProbeGateway:
         vectors: list[list[float]] = []
         for text in request.inputs:
             normalized = text.casefold()
-            if "state authority exists" in normalized:
-                vectors.append([1.0, 0.0, 0.0])
-            elif "government by our wickedness" in normalized:
+            if (
+                "state authority exists" in normalized
+                or "government by our wickedness" in normalized
+            ):
                 vectors.append([1.0, 0.0, 0.0])
             elif "necessary evil" in normalized:
                 vectors.append([0.8, 0.2, 0.0])

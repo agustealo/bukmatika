@@ -157,7 +157,7 @@ function locatorLabel(locator: ReaderLocator): string {
 }
 
 function evidenceReaderHref(item: EvidenceItem): string {
-  return `/read/${item.library_entry_id}/${item.document_id}?section=${item.section_ordinal}#reader-section-${item.section_id}`;
+  return `/read/${item.library_entry_id}/${item.document_id}?section=${item.section_ordinal}&offset=${item.char_start}#reader-section-${item.section_id}`;
 }
 
 function visibleReaderCharOffset(sectionId: string): number {

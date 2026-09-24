@@ -27,7 +27,11 @@ from bukmatika.domain import (
 from bukmatika.library import LibraryService
 from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.models import Asset, Principal
-from bukmatika.processing import DocumentProcessingService, ParserRegistry, TextDocumentParser
+from bukmatika.processing import (
+    DocumentProcessingService,
+    ParserRegistry,
+    TextDocumentParser,
+)
 from bukmatika.reader import ReaderService
 from bukmatika.reader.domain import ReadingProgressUpdate
 from bukmatika.research import ResearchService

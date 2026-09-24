@@ -25,6 +25,7 @@ from bukmatika.ai.configuration import (
 from bukmatika.ai.delegation import DelegationControlService
 from bukmatika.ai.delegation_domain import (
     DelegationApprovalRequest,
+    DelegationApprovalRequired,
     DelegationConflict,
     DelegationExecutionDisabled,
     DelegationInvalid,
@@ -302,6 +303,34 @@ async def decide_delegation(
             detail={"code": exc.code},
         ) from exc
     except DelegationConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code},
+        ) from exc
+
+
+@router.post("/delegations/{delegation_id}/start", response_model=DelegationResponse)
+async def start_delegation(
+    delegation_id: UUID,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[DelegationControlService, Depends(delegation_control_service)],
+) -> DelegationResponse:
+    try:
+        return await service.activate(
+            principal_id=identity.principal_id,
+            delegation_id=delegation_id,
+        )
+    except DelegationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": exc.code},
+        ) from exc
+    except (
+        DelegationApprovalRequired,
+        DelegationConflict,
+        DelegationExecutionDisabled,
+        DelegationStepUnavailable,
+    ) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code},

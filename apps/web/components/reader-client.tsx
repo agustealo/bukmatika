@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import { readerPositionHref } from "../lib/reader-links";
 import {
   ReaderAnnotations,
   type PendingReaderSelection,
@@ -37,6 +38,7 @@ type ReadingState = {
 type Bookmark = {
   bookmark_id: string;
   section_id: string;
+  section_ordinal: number;
   char_offset: number;
   locator: ReaderLocator;
   label: string | null;
@@ -532,7 +534,10 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
             <nav aria-label="Bookmarks">
               {bookmarks.length === 0 ? <p>No bookmarks yet.</p> : null}
               {bookmarks.map((bookmark) => (
-                <a key={bookmark.bookmark_id} href={`#reader-section-${bookmark.section_id}`}>
+                <a
+                  key={bookmark.bookmark_id}
+                  href={readerPositionHref(bookmark.section_ordinal, bookmark.char_offset)}
+                >
                   {bookmark.label ?? locatorLabel(bookmark.locator)}
                 </a>
               ))}

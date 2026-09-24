@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from "react";
 
+import { readerPositionHref } from "../lib/reader-links";
+
 export type ReaderLocator = Record<string, string | number>;
 
 export type ReaderHighlight = {
   highlight_id: string;
   section_id: string;
+  section_ordinal: number;
   char_start: number;
   char_end: number;
   locator: ReaderLocator;
@@ -92,7 +95,9 @@ export function ReaderAnnotations({
           const busy = busyKey === highlight.highlight_id;
           return (
             <article className="reader-highlight-item" key={highlight.highlight_id}>
-              <a href={`#reader-section-${highlight.section_id}`}>Open passage</a>
+              <a href={readerPositionHref(highlight.section_ordinal, highlight.char_start)}>
+                Open passage
+              </a>
               <blockquote>“{highlight.text}”</blockquote>
               {editing ? (
                 <textarea

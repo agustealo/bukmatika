@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.ai.delegation_control import revoke_level2_consent_in_session
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.personalization import (
@@ -87,6 +88,17 @@ class PersonalizationService:
                 principal_id=principal_id,
                 update=update,
             )
+            if not user_model.ai_enabled or user_model.autonomy_level < 2:
+                reason = (
+                    "ai_disabled"
+                    if not user_model.ai_enabled
+                    else "autonomy_reduced_below_level2"
+                )
+                await revoke_level2_consent_in_session(
+                    database_session,
+                    principal_id=principal_id,
+                    reason=reason,
+                )
             await InteractionEventRepository(database_session).record(
                 SemanticEventType.PERSONALIZATION_SETTINGS_UPDATED,
                 principal_id=principal_id,

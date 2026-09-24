@@ -36,6 +36,12 @@ class ReaderAccess:
 
 
 @dataclass(frozen=True, slots=True)
+class ReaderBookmarkRecord:
+    bookmark: Bookmark
+    section: DocumentSection
+
+
+@dataclass(frozen=True, slots=True)
 class ReaderHighlightRecord:
     highlight: Highlight
     section: DocumentSection
@@ -147,19 +153,22 @@ class ReaderRepository:
         self,
         library_entry_id: UUID,
         document_id: UUID,
-    ) -> list[Bookmark]:
+    ) -> list[ReaderBookmarkRecord]:
         state = await self.state_for(library_entry_id, document_id)
         if state is None:
             return []
-        return list(
-            (
-                await self._session.scalars(
-                    select(Bookmark)
-                    .where(Bookmark.reading_state_id == state.id)
-                    .order_by(Bookmark.created_at, Bookmark.id)
-                )
-            ).all()
-        )
+        rows = (
+            await self._session.execute(
+                select(Bookmark, DocumentSection)
+                .join(DocumentSection, DocumentSection.id == Bookmark.section_id)
+                .where(Bookmark.reading_state_id == state.id)
+                .order_by(Bookmark.created_at, Bookmark.id)
+            )
+        ).all()
+        return [
+            ReaderBookmarkRecord(bookmark=bookmark, section=section)
+            for bookmark, section in rows
+        ]
 
     async def highlights_for(
         self,
@@ -234,7 +243,7 @@ class ReaderRepository:
         section_id: UUID,
         char_offset: int,
         label: str | None,
-    ) -> Bookmark:
+    ) -> ReaderBookmarkRecord:
         section = await self._validated_section(
             document_id=access.document.id,
             section_id=section_id,
@@ -264,7 +273,8 @@ class ReaderRepository:
             )
             .returning(Bookmark)
         )
-        return (await self._session.execute(statement)).scalar_one()
+        bookmark = (await self._session.execute(statement)).scalar_one()
+        return ReaderBookmarkRecord(bookmark=bookmark, section=section)
 
     async def remove_bookmark(
         self,

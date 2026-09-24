@@ -27,6 +27,24 @@ class ActiveGoalResponse(BaseModel):
     updated_at: datetime
 
 
+class ActiveDelegationResponse(BaseModel):
+    delegation_id: UUID
+    plan_id: UUID
+    status: str
+    step_ids: list[str]
+    current_step_index: int
+    remaining_steps: int
+    max_runtime_seconds: int
+    remaining_runtime_seconds: int | None
+    max_retries_per_step: int
+    max_total_attempts: int
+    attempts_used: int
+    remaining_attempts: int
+    started_at: datetime | None
+    stop_requested_at: datetime | None
+    updated_at: datetime
+
+
 class ActivityOutcomeResponse(BaseModel):
     outcome_id: UUID
     plan_id: UUID | None
@@ -70,6 +88,7 @@ class PersonalizationControlCenterResponse(BaseModel):
     ai_enabled: bool
     learning_enabled: bool
     autonomy_level: int
+    active_delegations: list[ActiveDelegationResponse]
     explicit_preferences: list[InspectablePreferenceResponse]
     inferred_preferences: list[InspectablePreferenceResponse]
     active_goals: list[ActiveGoalResponse]

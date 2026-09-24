@@ -27,7 +27,7 @@ from bukmatika.ai.delegation_domain import (
     DelegationStopRequested,
 )
 from bukmatika.ai.domain import PlanStep
-from bukmatika.ai.policy import ActionDecisionValue, POLICY_VERSION
+from bukmatika.ai.policy import POLICY_VERSION, ActionDecisionValue
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.delegation_models import AIDelegation, AIDelegationApproval
 from bukmatika.persistence.delegations import DelegationPlanBundle, DelegationRepository

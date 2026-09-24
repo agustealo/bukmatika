@@ -84,8 +84,41 @@ The Ollama provider is loopback-only and uses the batch `POST /api/embed` endpoi
 - vectors are never persisted or added to user memory/personalization;
 - no vector database, graph store, background embedding worker, or embedding cache exists in this slice.
 
+## Real-model recall burn
+
+The operational semantic benchmark is separate from the normal GitHub Quality workflow. CI proves the benchmark machinery with a deterministic embedding gateway, while the real burn requires an explicitly configured local embedding model.
+
+Run:
+
+```text
+BUKMATIKA_EMBEDDING_PROVIDER=ollama \
+BUKMATIKA_OLLAMA_EMBEDDING_MODEL=<installed-embedding-model> \
+bukmatika-semantic-recall-burn
+```
+
+The command:
+
+1. requires the configured embedding model to be ready before seeding benchmark data;
+2. opens one PostgreSQL transaction and creates a unique ephemeral benchmark principal;
+3. seeds the same representative Paine, Douglass, Wollstonecraft, and Du Bois corpus used by the PostgreSQL recall gate;
+4. measures canonical PostgreSQL lexical retrieval and production request-local semantic retrieval against the same 12 exact targets;
+5. reports provider/model/routing identity, per-case recall and rank, micro/macro recall, MRR, recovered cases, recall regressions, and rank regressions;
+6. rolls the transaction back so benchmark principals, library rows, documents, events, and user-model state do not survive the run.
+
+Exit status is `0` only when the semantic acceptance gate passes, `1` for a measured quality failure, and `2` for an invalid or unavailable operational setup.
+
+The current acceptance contract requires:
+
+- semantic macro recall of `1.0` across all 12 cases;
+- semantic MRR of at least the PostgreSQL baseline `11/12`;
+- no case losing recall relative to PostgreSQL;
+- the Paine no-overlap paraphrase recovered within rank 5;
+- any rank deterioration surfaced explicitly even when aggregate recall improves.
+
+The burn does not download models and does not persist embeddings.
+
 ## Acceptance
 
-The deterministic test gateway proves privacy, ownership, budget, routing, batching, ranking, and provenance contracts only. It is not evidence that a real embedding model solves the benchmark.
+The deterministic test gateway proves privacy, ownership, budget, routing, batching, ranking, provenance, benchmark comparison, and rollback contracts only. It is not evidence that a real embedding model solves the benchmark.
 
-A real configured local embedding model must be evaluated against the representative public-domain retrieval corpus before consumer semantic-search UX is considered complete. The remaining Paine no-overlap case must be recovered without materially regressing the other benchmark cases or losing canonical source coordinates.
+A real configured local embedding model must pass `bukmatika-semantic-recall-burn` before consumer semantic-search UX is considered complete. The remaining Paine no-overlap case must be recovered without materially regressing the other benchmark cases or losing canonical source coordinates.

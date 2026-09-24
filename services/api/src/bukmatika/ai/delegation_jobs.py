@@ -1,5 +1,6 @@
 import asyncio
-from contextlib import suppress
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -8,13 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.ai.delegation import DelegationControlService
 from bukmatika.ai.delegation_domain import (
-    DelegationBudgetExceeded,
-    DelegationConflict,
-    DelegationExecutionDisabled,
     DelegationNotFound,
     DelegationResponse,
     DelegationStatus,
-    DelegationStepUnavailable,
     DelegationStopRequested,
 )
 from bukmatika.ai.delegation_runtime import DelegationRuntimeService
@@ -24,6 +21,7 @@ from bukmatika.persistence.delegations import DelegationRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.jobs import Job, JobLease, JobLeaseLost, JobRepository, JobStatus
 
+SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 logger = structlog.get_logger(__name__)
 DELEGATION_JOB_TYPE = "ai_delegation"
 DELEGATION_DISPATCH_FAILURE_CODE = "DELEGATION_DISPATCH_FAILED"
@@ -72,14 +70,21 @@ class DelegationJobWorker:
         *,
         runtime_service: DelegationRuntimeService | None = None,
         control_service: DelegationControlService | None = None,
+        session_scope_factory: SessionScopeFactory = session_scope,
     ) -> None:
         if settings.delegation_job_heartbeat_seconds >= settings.delegation_job_lease_seconds:
             raise ValueError("Delegation job heartbeat must be shorter than the lease")
         if settings.delegation_job_lease_seconds <= 60:
             raise ValueError("Delegation job lease must outlive the delegated attempt claim lease")
         self._settings = settings
-        self._control = control_service or DelegationControlService()
-        self._runtime = runtime_service or DelegationRuntimeService(control_service=self._control)
+        self._session_scope = session_scope_factory
+        self._control = control_service or DelegationControlService(
+            session_scope_factory=session_scope_factory
+        )
+        self._runtime = runtime_service or DelegationRuntimeService(
+            control_service=self._control,
+            session_scope_factory=session_scope_factory,
+        )
 
     async def run(self) -> None:
         while True:
@@ -100,7 +105,7 @@ class DelegationJobWorker:
         return True
 
     async def _claim(self) -> JobLease | None:
-        async with session_scope() as database_session:
+        async with self._session_scope() as database_session:
             return await JobRepository(database_session).claim_next(
                 job_type=DELEGATION_JOB_TYPE,
                 lease_seconds=self._settings.delegation_job_lease_seconds,
@@ -174,13 +179,7 @@ class DelegationJobWorker:
                         job_id=str(lease.job_id),
                     )
                     return
-                except (
-                    DelegationBudgetExceeded,
-                    DelegationExecutionDisabled,
-                    DelegationStepUnavailable,
-                    TimeoutError,
-                    Exception,
-                ) as exc:
+                except Exception as exc:
                     try:
                         after = await self._control.get(
                             principal_id=principal_id,
@@ -265,7 +264,7 @@ class DelegationJobWorker:
         return False
 
     async def _lease_is_owned(self, lease: JobLease) -> bool:
-        async with session_scope() as database_session:
+        async with self._session_scope() as database_session:
             return await JobRepository(database_session).lease_is_owned(
                 job_id=lease.job_id,
                 claim_token=lease.claim_token,
@@ -274,7 +273,7 @@ class DelegationJobWorker:
     async def _heartbeat_loop(self, lease: JobLease) -> None:
         while True:
             await asyncio.sleep(self._settings.delegation_job_heartbeat_seconds)
-            async with session_scope() as database_session:
+            async with self._session_scope() as database_session:
                 await JobRepository(database_session).heartbeat(
                     job_id=lease.job_id,
                     claim_token=lease.claim_token,
@@ -282,21 +281,21 @@ class DelegationJobWorker:
                 )
 
     async def _complete_job(self, lease: JobLease) -> None:
-        async with session_scope() as database_session:
+        async with self._session_scope() as database_session:
             await JobRepository(database_session).complete(
                 job_id=lease.job_id,
                 claim_token=lease.claim_token,
             )
 
     async def _cancel_job(self, lease: JobLease) -> None:
-        async with session_scope() as database_session:
+        async with self._session_scope() as database_session:
             await JobRepository(database_session).cancel_owned(
                 job_id=lease.job_id,
                 claim_token=lease.claim_token,
             )
 
     async def _fail_job(self, lease: JobLease, *, error_code: str, detail: str) -> None:
-        async with session_scope() as database_session:
+        async with self._session_scope() as database_session:
             await JobRepository(database_session).fail(
                 job_id=lease.job_id,
                 claim_token=lease.claim_token,
@@ -313,7 +312,7 @@ class DelegationJobWorker:
         error_code: str,
         detail: str,
     ) -> None:
-        async with session_scope() as database_session:
+        async with self._session_scope() as database_session:
             job = await JobRepository(database_session).retry(
                 job_id=lease.job_id,
                 claim_token=lease.claim_token,

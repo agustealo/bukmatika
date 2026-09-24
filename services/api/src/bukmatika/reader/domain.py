@@ -48,6 +48,7 @@ class ReadingStateResponse(BaseModel):
 class BookmarkResponse(BaseModel):
     bookmark_id: UUID
     section_id: UUID
+    section_ordinal: int = Field(ge=0)
     char_offset: int = Field(ge=0)
     locator: dict[str, Any]
     label: str | None

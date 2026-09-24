@@ -16,6 +16,7 @@ from bukmatika.ai.delegation_domain import (
     DelegationBudgetExceeded,
     DelegationConflict,
     DelegationExecutionDisabled,
+    DelegationInvalid,
     DelegationNotFound,
     DelegationProposalRequest,
     DelegationStatus,
@@ -30,7 +31,12 @@ from bukmatika.persistence.models import Principal
 from bukmatika.persistence.personalization import PersonalizationRepository
 from bukmatika.persistence.personalization_models import Plan, UserModel
 from bukmatika.persistence.plans import PlanRepository
-from bukmatika.personalization.domain import ContextManifest, ContextTask
+from bukmatika.personalization.domain import ContextLibraryEntry, ContextManifest, ContextTask
+
+RESEARCH_ENTRY_ID = UUID(int=101)
+RESEARCH_WORK_ID = UUID(int=102)
+RESEARCH_EDITION_ID = UUID(int=103)
+RESEARCH_DOCUMENT_ID = UUID(int=104)
 
 
 def _scope(session: AsyncSession):  # type: ignore[no-untyped-def]
@@ -50,6 +56,20 @@ async def _principal(session: AsyncSession, suffix: str) -> Principal:
 
 
 def _context(*capabilities: CapabilityName) -> ContextManifest:
+    selected_research_entries = (
+        [
+            ContextLibraryEntry(
+                library_entry_id=RESEARCH_ENTRY_ID,
+                work_id=RESEARCH_WORK_ID,
+                edition_id=RESEARCH_EDITION_ID,
+                title="Selected delegation contract book",
+                document_ids=[RESEARCH_DOCUMENT_ID],
+                inclusion_reason="Explicitly selected for delegated research.",
+            )
+        ]
+        if CapabilityName.RESEARCH_SEARCH in capabilities
+        else []
+    )
     return ContextManifest(
         task=ContextTask.RESEARCH,
         ai_enabled=True,
@@ -58,22 +78,30 @@ def _context(*capabilities: CapabilityName) -> ContextManifest:
         model_context_ready=True,
         preferences=[],
         goal=None,
-        library_entries=[],
+        library_entries=selected_research_entries,
         available_capabilities=[capability.value for capability in capabilities],
         exclusion_reasons=[],
     )
 
 
-def _step(capability: CapabilityName, *, step_id: str = "research") -> PlanStep:
-    return PlanStep(
-        step_id=step_id,
-        capability=capability,
-        arguments={
-            "query": "bounded delegation evidence",
-            "library_entry_ids": [],
-            "limit": 5,
-        },
-        rationale="Exercise only the durable delegation control plane.",
+def _step(
+    capability: CapabilityName,
+    *,
+    step_id: str = "research",
+    arguments: dict[str, object] | None = None,
+) -> PlanStep:
+    return PlanStep.model_validate(
+        {
+            "step_id": step_id,
+            "capability": capability.value,
+            "arguments": arguments
+            or {
+                "query": "bounded delegation evidence",
+                "library_entry_ids": [str(RESEARCH_ENTRY_ID)],
+                "limit": 5,
+            },
+            "rationale": "Exercise only the durable delegation control plane.",
+        }
     )
 
 
@@ -178,6 +206,34 @@ async def test_delegation_approval_is_exact_idempotent_and_principal_scoped(
         )
 
 
+async def test_malformed_delegated_arguments_fail_before_proposal_persistence(
+    session: AsyncSession,
+) -> None:
+    principal = await _principal(session, "invalid-preflight")
+    plan = await _plan(
+        session,
+        principal_id=principal.id,
+        steps=[
+            _step(
+                CapabilityName.RESEARCH_SEARCH,
+                arguments={"query": "", "library_entry_ids": [], "limit": 5},
+            )
+        ],
+    )
+    service = DelegationControlService(session_scope_factory=_scope(session))
+
+    with pytest.raises(DelegationInvalid, match="arguments"):
+        await service.propose(
+            principal_id=principal.id,
+            plan_id=plan.id,
+            request=_proposal("research"),
+        )
+
+    assert await session.scalar(
+        select(func.count(AIDelegation.id)).where(AIDelegation.plan_id == plan.id)
+    ) == 0
+
+
 async def test_only_explicitly_delegatable_read_only_capabilities_can_enter_control_plane(
     session: AsyncSession,
 ) -> None:
@@ -245,6 +301,50 @@ async def test_public_level_one_cannot_activate_and_attempt_permit_never_execute
     attempt = await session.get(AIDelegationAttempt, permit.attempt_id)
     assert attempt is not None
     assert attempt.status == "authorized"
+
+
+async def test_attempt_authorization_revalidates_contract_before_consuming_attempt(
+    session: AsyncSession,
+) -> None:
+    principal = await _principal(session, "attempt-preflight")
+    plan = await _plan(
+        session,
+        principal_id=principal.id,
+        steps=[_step(CapabilityName.RESEARCH_SEARCH)],
+    )
+    service = DelegationControlService(session_scope_factory=_scope(session))
+    proposed = await service.propose(
+        principal_id=principal.id,
+        plan_id=plan.id,
+        request=_proposal("research"),
+    )
+    await _approve(
+        service,
+        principal_id=principal.id,
+        delegation_id=proposed.delegation_id,
+    )
+    await _enable_level_two(session, principal.id)
+    await service.activate(
+        principal_id=principal.id,
+        delegation_id=proposed.delegation_id,
+    )
+
+    mutated_step = dict(plan.steps[0])
+    mutated_step["arguments"] = {"query": "", "library_entry_ids": [], "limit": 5}
+    plan.steps = [mutated_step]
+    await session.flush()
+
+    with pytest.raises(DelegationInvalid, match="arguments"):
+        await service.authorize_next_step(
+            principal_id=principal.id,
+            delegation_id=proposed.delegation_id,
+        )
+
+    assert await session.scalar(
+        select(func.count(AIDelegationAttempt.id)).where(
+            AIDelegationAttempt.delegation_id == proposed.delegation_id
+        )
+    ) == 0
 
 
 async def test_stop_request_survives_service_restart_and_blocks_new_attempts(

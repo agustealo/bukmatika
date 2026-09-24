@@ -113,7 +113,9 @@ async def recent_delegation_results(
                     capability=item.result.capability,
                     completed_at=finished_at,
                     available=False,
-                    unavailable_reason="Canonical delegated result sources are no longer available.",
+                    unavailable_reason=(
+                        "Canonical delegated result sources are no longer available."
+                    ),
                 )
             )
             continue

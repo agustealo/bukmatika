@@ -11,6 +11,16 @@ from bukmatika.ai.domain import (
     PlanProposal,
     PlanStep,
 )
+from bukmatika.ai.embedding_gateway import (
+    EmbeddingBatch,
+    EmbeddingGateway,
+    EmbeddingProviderNotReady,
+    EmbeddingProviderRequestFailed,
+    EmbeddingProviderResponseInvalid,
+    EmbeddingProviderUnconfigured,
+    EmbeddingRequest,
+    UnconfiguredEmbeddingGateway,
+)
 from bukmatika.ai.gateway import (
     ModelDataClassification,
     ModelGateway,
@@ -31,6 +41,13 @@ __all__ = [
     "CapabilityRegistry",
     "CapabilityRisk",
     "CapabilitySpec",
+    "EmbeddingBatch",
+    "EmbeddingGateway",
+    "EmbeddingProviderNotReady",
+    "EmbeddingProviderRequestFailed",
+    "EmbeddingProviderResponseInvalid",
+    "EmbeddingProviderUnconfigured",
+    "EmbeddingRequest",
     "ModelDataClassification",
     "ModelGateway",
     "ModelProviderUnconfigured",
@@ -43,5 +60,6 @@ __all__ = [
     "PlannedActionDecision",
     "PlanningService",
     "PolicyDecision",
+    "UnconfiguredEmbeddingGateway",
     "UnconfiguredModelGateway",
 ]

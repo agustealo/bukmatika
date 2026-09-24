@@ -7,10 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.document_models import DocumentSection
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
-from bukmatika.persistence.reader_models import Bookmark, ReadingState
+from bukmatika.persistence.reader_models import ReadingState
 from bukmatika.persistence.readers import (
     ReaderAccessDenied,
     ReaderBookmarkNotFound,
+    ReaderBookmarkRecord,
     ReaderHighlightNotFound,
     ReaderHighlightRecord,
     ReaderNavigationSource,
@@ -91,7 +92,7 @@ class ReaderService:
                 section_count=access.document.section_count,
                 chunk_count=access.document.chunk_count,
                 reading_state=_state_response(reading_state),
-                bookmarks=[_bookmark_response(bookmark) for bookmark in bookmarks],
+                bookmarks=[_bookmark_response(record) for record in bookmarks],
                 highlights=[_highlight_response(record) for record in highlights],
                 sections=[
                     ReaderSection(
@@ -165,12 +166,13 @@ class ReaderService:
         async with self._session_scope() as database_session:
             repository = ReaderRepository(database_session)
             access = await repository.require_access(principal_id, library_entry_id, document_id)
-            bookmark = await repository.add_bookmark(
+            record = await repository.add_bookmark(
                 access=access,
                 section_id=create.section_id,
                 char_offset=create.char_offset,
                 label=label,
             )
+            bookmark = record.bookmark
             await InteractionEventRepository(database_session).record(
                 SemanticEventType.BOOKMARK_ADDED,
                 principal_id=access.principal_id,
@@ -183,7 +185,7 @@ class ReaderService:
                     "char_offset": bookmark.char_offset,
                 },
             )
-            return _bookmark_response(bookmark)
+            return _bookmark_response(record)
 
     async def remove_bookmark(
         self,
@@ -394,10 +396,12 @@ def _state_response(state: ReadingState | None) -> ReadingStateResponse | None:
     )
 
 
-def _bookmark_response(bookmark: Bookmark) -> BookmarkResponse:
+def _bookmark_response(record: ReaderBookmarkRecord) -> BookmarkResponse:
+    bookmark = record.bookmark
     return BookmarkResponse(
         bookmark_id=bookmark.id,
         section_id=bookmark.section_id,
+        section_ordinal=record.section.ordinal,
         char_offset=bookmark.char_offset,
         locator=bookmark.locator,
         label=bookmark.label,

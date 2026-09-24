@@ -4,6 +4,21 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from bukmatika.ai.configuration import PrincipalModelRuntimeResolver
+from bukmatika.ai.delegation_control import DelegationOperatorControlService
+from bukmatika.ai.delegation_control_domain import (
+    DelegationConsentConflict,
+    DelegationConsentRequest,
+    DelegationConsentUnavailable,
+    DelegationControlStatusResponse,
+)
+from bukmatika.ai.delegation_domain import (
+    DelegationApprovalRequired,
+    DelegationConflict,
+    DelegationExecutionDisabled,
+    DelegationNotFound,
+    DelegationResponse,
+    DelegationStepUnavailable,
+)
 from bukmatika.ai.gateway import ModelGateway, UnconfiguredModelGateway
 from bukmatika.config import get_settings
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
@@ -34,6 +49,7 @@ router = APIRouter(prefix="/v1/personalization", tags=["personalization"])
 _personalization_service = PersonalizationService()
 _control_service = PersonalizationControlService()
 _portability_service = PersonalizationPortabilityService()
+_delegation_operator_service = DelegationOperatorControlService()
 
 
 def personalization_service() -> PersonalizationService:
@@ -65,6 +81,10 @@ def personalization_control_service() -> PersonalizationControlService:
 
 def personalization_portability_service() -> PersonalizationPortabilityService:
     return _portability_service
+
+
+def delegation_operator_control_service() -> DelegationOperatorControlService:
+    return _delegation_operator_service
 
 
 @router.get("", response_model=PersonalizationProfileResponse)
@@ -99,6 +119,71 @@ async def personalization_activity(
         principal_id=identity.principal_id,
         limit=limit,
     )
+
+
+@router.get("/delegation-control", response_model=DelegationControlStatusResponse)
+async def delegation_control_status(
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[
+        DelegationOperatorControlService,
+        Depends(delegation_operator_control_service),
+    ],
+) -> DelegationControlStatusResponse:
+    return await service.status(principal_id=identity.principal_id)
+
+
+@router.post("/delegation-control/consent", response_model=DelegationControlStatusResponse)
+async def decide_delegation_consent(
+    request: DelegationConsentRequest,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[
+        DelegationOperatorControlService,
+        Depends(delegation_operator_control_service),
+    ],
+) -> DelegationControlStatusResponse:
+    try:
+        return await service.decide_consent(
+            principal_id=identity.principal_id,
+            request=request,
+        )
+    except (DelegationConsentUnavailable, DelegationConsentConflict) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code},
+        ) from exc
+
+
+@router.post("/delegations/{delegation_id}/start", response_model=DelegationResponse)
+async def start_delegation(
+    delegation_id: UUID,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[
+        DelegationOperatorControlService,
+        Depends(delegation_operator_control_service),
+    ],
+) -> DelegationResponse:
+    try:
+        return await service.start(
+            principal_id=identity.principal_id,
+            delegation_id=delegation_id,
+        )
+    except DelegationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": exc.code},
+        ) from exc
+    except (
+        DelegationConsentUnavailable,
+        DelegationConsentConflict,
+        DelegationApprovalRequired,
+        DelegationConflict,
+        DelegationExecutionDisabled,
+        DelegationStepUnavailable,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code},
+        ) from exc
 
 
 @router.get("/export", response_model=PersonalizationExportResponse)

@@ -18,6 +18,8 @@ class CapabilitySpec:
     risk: CapabilityRisk
     reversible: bool
     description: str
+    delegatable: bool = False
+    undo_authority: str | None = None
 
 
 class PlanCapabilityUnavailable(ValueError):
@@ -55,18 +57,21 @@ _DEFAULT_CAPABILITIES = (
         CapabilityRisk.READ_ONLY,
         True,
         "Search configured discovery providers through the canonical discovery service.",
+        undo_authority="none_required",
     ),
     CapabilitySpec(
         CapabilityName.CATALOG_SEARCH,
         CapabilityRisk.READ_ONLY,
         True,
         "Search the canonical catalog without mutating it.",
+        undo_authority="none_required",
     ),
     CapabilitySpec(
         CapabilityName.LIBRARY_LIST,
         CapabilityRisk.READ_ONLY,
         True,
         "Inspect the authenticated principal's library.",
+        undo_authority="none_required",
     ),
     CapabilitySpec(
         CapabilityName.LIBRARY_SAVE,
@@ -79,12 +84,15 @@ _DEFAULT_CAPABILITIES = (
         CapabilityRisk.READ_ONLY,
         True,
         "Open an owned processed document at a canonical reader location.",
+        undo_authority="none_required",
     ),
     CapabilitySpec(
         CapabilityName.RESEARCH_SEARCH,
         CapabilityRisk.READ_ONLY,
         True,
         "Search selected owned books using the canonical research service.",
+        delegatable=True,
+        undo_authority="none_required",
     ),
     CapabilitySpec(
         CapabilityName.RESEARCH_ANSWER,
@@ -94,6 +102,7 @@ _DEFAULT_CAPABILITIES = (
             "Synthesize a citation-grounded answer from a finite canonical research evidence "
             "bundle. Registered but unavailable until a real ModelGateway provider is configured."
         ),
+        undo_authority="none_required",
     ),
     CapabilitySpec(
         CapabilityName.ACQUISITION_REQUEST,

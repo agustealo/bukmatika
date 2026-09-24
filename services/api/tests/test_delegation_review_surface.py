@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_ai_delegation import (
     RESEARCH_ENTRY_ID,
@@ -18,6 +19,7 @@ from bukmatika.ai.delegation_domain import (
     DelegationStatus,
 )
 from bukmatika.ai.domain import CapabilityName
+from bukmatika.persistence.personalization_models import ActionDecision
 
 
 async def test_control_status_projects_exact_persisted_delegation_review(
@@ -104,3 +106,33 @@ async def test_stale_plan_review_fails_closed_before_approval_but_can_be_rejecte
         ),
     )
     assert rejected.status is DelegationStatus.REJECTED
+
+
+async def test_stale_policy_is_reported_as_delegation_conflict_at_approval(
+    session: AsyncSession,
+) -> None:
+    principal = await _principal(session, "stale-policy-review")
+    plan = await _plan(
+        session,
+        principal_id=principal.id,
+        steps=[_step(CapabilityName.RESEARCH_SEARCH)],
+    )
+    control = DelegationControlService(session_scope_factory=_scope(session))
+    proposed = await control.propose(
+        principal_id=principal.id,
+        plan_id=plan.id,
+        request=_proposal("research"),
+    )
+    decision = await session.scalar(select(ActionDecision).where(ActionDecision.plan_id == plan.id))
+    assert decision is not None
+    decision.policy_version = "retired-policy-version"
+    await session.flush()
+
+    with pytest.raises(DelegationConflict):
+        await control.decide(
+            principal_id=principal.id,
+            delegation_id=proposed.delegation_id,
+            request=DelegationApprovalRequest(
+                decision=DelegationApprovalDecision.APPROVED,
+            ),
+        )

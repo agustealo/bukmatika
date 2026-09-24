@@ -322,9 +322,11 @@ def main() -> None:
         result = asyncio.run(_run_from_settings(args.suite))
     except ResearchRecallSuiteInvalid as exc:
         print(
-            json.dumps({"status": "invalid", "code": exc.code, "message": str(exc)}),
+            json.dumps(
+                {"status": "invalid", "code": exc.code, "message": str(exc)},
+                sort_keys=True,
+            ),
             file=sys.stderr,
-            sort_keys=True,
         )
         raise SystemExit(2) from None
 

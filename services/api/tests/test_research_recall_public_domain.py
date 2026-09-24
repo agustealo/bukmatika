@@ -242,7 +242,9 @@ async def _seed_public_domain_book(
 
 def _target_for_phrase(book: SeededBook, phrase: str) -> ResearchRecallTarget:
     matches = [chunk for chunk in book.chunks if phrase.casefold() in chunk.text.casefold()]
-    assert len(matches) == 1, f"benchmark target phrase must resolve to exactly one chunk: {phrase!r}"
+    assert len(matches) == 1, (
+        f"benchmark target phrase must resolve to exactly one chunk: {phrase!r}"
+    )
     chunk = matches[0]
     return ResearchRecallTarget(
         document_id=book.document.id,
@@ -291,14 +293,24 @@ async def test_public_domain_recall_baseline_measures_lexical_strength_and_parap
             case_id="douglass-birthday-age",
             query="slaves birthday age",
             library_entry_ids=selected,
-            expected=[_target_for_phrase(books["douglass-narrative"], "slave who could tell of his birthday")],
+            expected=[
+                _target_for_phrase(
+                    books["douglass-narrative"],
+                    "slave who could tell of his birthday",
+                )
+            ],
             limit=20,
         ),
         ResearchRecallCase(
             case_id="douglass-childhood-privilege",
             query="white children ages privilege",
             library_entry_ids=selected,
-            expected=[_target_for_phrase(books["douglass-narrative"], "white children could tell their ages")],
+            expected=[
+                _target_for_phrase(
+                    books["douglass-narrative"],
+                    "white children could tell their ages",
+                )
+            ],
             limit=20,
         ),
         ResearchRecallCase(
@@ -312,21 +324,36 @@ async def test_public_domain_recall_baseline_measures_lexical_strength_and_parap
             case_id="wollstonecraft-reason-virtue-knowledge",
             query="reason virtue knowledge",
             library_entry_ids=selected,
-            expected=[_target_for_phrase(books["rights-of-woman"], "degree of reason, virtue, and knowledge")],
+            expected=[
+                _target_for_phrase(
+                    books["rights-of-woman"],
+                    "degree of reason, virtue, and knowledge",
+                )
+            ],
             limit=20,
         ),
         ResearchRecallCase(
             case_id="dubois-color-line",
             query="problem twentieth century color line",
             library_entry_ids=selected,
-            expected=[_target_for_phrase(books["souls-black-folk"], "problem of the Twentieth Century")],
+            expected=[
+                _target_for_phrase(
+                    books["souls-black-folk"],
+                    "problem of the Twentieth Century",
+                )
+            ],
             limit=20,
         ),
         ResearchRecallCase(
             case_id="dubois-races-relation",
             query="relation darker lighter races",
             library_entry_ids=selected,
-            expected=[_target_for_phrase(books["souls-black-folk"], "relation of the darker to the lighter races")],
+            expected=[
+                _target_for_phrase(
+                    books["souls-black-folk"],
+                    "relation of the darker to the lighter races",
+                )
+            ],
             limit=20,
         ),
         ResearchRecallCase(
@@ -340,7 +367,12 @@ async def test_public_domain_recall_baseline_measures_lexical_strength_and_parap
             case_id="douglass-natural-paraphrase",
             query="enslaved children denied knowledge of their birthdays",
             library_entry_ids=selected,
-            expected=[_target_for_phrase(books["douglass-narrative"], "slave who could tell of his birthday")],
+            expected=[
+                _target_for_phrase(
+                    books["douglass-narrative"],
+                    "slave who could tell of his birthday",
+                )
+            ],
             limit=20,
         ),
         ResearchRecallCase(
@@ -354,7 +386,12 @@ async def test_public_domain_recall_baseline_measures_lexical_strength_and_parap
             case_id="dubois-natural-paraphrase",
             query="racial division defines the coming century",
             library_entry_ids=selected,
-            expected=[_target_for_phrase(books["souls-black-folk"], "problem of the Twentieth Century")],
+            expected=[
+                _target_for_phrase(
+                    books["souls-black-folk"],
+                    "problem of the Twentieth Century",
+                )
+            ],
             limit=20,
         ),
     ]

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import { ResearchDelegationComposer } from "./research-delegation-composer";
 
 type LibraryItem = {
   library_entry_id: string;
@@ -330,6 +331,11 @@ export function ResearchClient() {
                   : "Results are lexical matches from PostgreSQL full-text search over only the selected owned documents. Every result resolves back to canonical source text."}
               </p>
             </form>
+
+            <ResearchDelegationComposer
+              libraryEntryIds={selected}
+              researchRequest={query}
+            />
 
             {mode === "search" && searchResults ? (
               <div className="research-results" aria-live="polite">

@@ -34,10 +34,10 @@ class ActionPolicy:
                 ActionDecisionValue.DENY,
                 "AI context is disabled or unavailable.",
             )
-        if context.autonomy_level not in (0, 1):
+        if context.autonomy_level not in (0, 1, 2):
             return PolicyDecision(
                 ActionDecisionValue.DENY,
-                "Only autonomy Levels 0-1 are currently supported.",
+                "Only autonomy Levels 0-2 are currently supported.",
             )
         if step.capability.value not in context.available_capabilities:
             return PolicyDecision(
@@ -63,5 +63,5 @@ class ActionPolicy:
             )
         return PolicyDecision(
             ActionDecisionValue.REQUIRE_APPROVAL,
-            "Durable mutations require explicit approval at autonomy Levels 0-1.",
+            "Durable mutations require explicit approval at autonomy Levels 0-2.",
         )

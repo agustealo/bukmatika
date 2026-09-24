@@ -16,6 +16,7 @@ from bukmatika.ai.approval_domain import (
     PendingActionApprovalResponse,
 )
 from bukmatika.ai.approvals import ApprovalService
+from bukmatika.ai.capabilities import PlanCapabilityUnavailable
 from bukmatika.ai.configuration import (
     LocalModelConfigurationResponse,
     LocalModelConfigurationUpdate,
@@ -33,6 +34,7 @@ from bukmatika.ai.delegation_domain import (
     DelegationResponse,
     DelegationStepUnavailable,
 )
+from bukmatika.ai.domain import PersistedPlanResponse
 from bukmatika.ai.execution import (
     ActionApprovalRequired,
     ActionExecutionDenied,
@@ -52,12 +54,13 @@ from bukmatika.ai.gateway import (
 )
 from bukmatika.ai.research_domain import GroundedResearchExecutionResponse
 from bukmatika.ai.research_service import GroundedResearchSynthesisService
-from bukmatika.ai.service import AIDisabled
+from bukmatika.ai.service import AIContextUnavailable, AIDisabled, PlanningService
 from bukmatika.config import get_settings
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence.execution import ActionExecutionNotFound, PlanIntegrityError
-from bukmatika.persistence.personalization import ContextSelectionDenied
+from bukmatika.persistence.personalization import ContextGoalDenied, ContextSelectionDenied
 from bukmatika.persistence.research import ResearchReaderPositionInvalid, ResearchSelectionDenied
+from bukmatika.personalization.domain import ContextRequest
 from bukmatika.personalization.service import PersonalizationService
 from bukmatika.research import ResearchEvidenceBundleRequest, ResearchEvidenceReferenceInvalid
 
@@ -85,6 +88,11 @@ class AIProviderStatusResponse(BaseModel):
     provider: str | None
     model: str | None
     routing: str | None
+
+
+class PlanningRequest(BaseModel):
+    user_request: str
+    context_request: ContextRequest
 
 
 def model_runtime_resolver(request: Request) -> PrincipalModelRuntimeResolver:
@@ -119,6 +127,12 @@ def execution_coordinator() -> ExecutionCoordinator:
 
 def delegation_control_service() -> DelegationControlService:
     return _delegation_control_service
+
+
+def planning_service(
+    gateway: Annotated[ModelGateway, Depends(model_gateway)],
+) -> PlanningService:
+    return PlanningService(gateway=gateway)
 
 
 def grounded_research_service(
@@ -192,6 +206,59 @@ async def ai_provider_status(
         model=provider.model if provider is not None else None,
         routing=provider.routing if provider is not None else None,
     )
+
+
+@router.post(
+    "/plans",
+    response_model=PersistedPlanResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def propose_plan(
+    request: PlanningRequest,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[PlanningService, Depends(planning_service)],
+) -> PersistedPlanResponse:
+    try:
+        return await service.propose(
+            principal_id=identity.principal_id,
+            user_request=request.user_request,
+            context_request=request.context_request,
+        )
+    except ModelProviderUnconfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": exc.code},
+        ) from exc
+    except ModelProviderNotReady as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": exc.code, "state": exc.readiness.state.value},
+        ) from exc
+    except (ModelProviderRequestFailed, ModelProviderResponseInvalid) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": exc.code},
+        ) from exc
+    except (AIDisabled, AIContextUnavailable) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code},
+        ) from exc
+    except (ContextGoalDenied, ContextSelectionDenied) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "AI_CONTEXT_SELECTION_UNAVAILABLE"},
+        ) from exc
+    except PlanCapabilityUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": exc.code},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "PLAN_REQUEST_INVALID"},
+        ) from exc
 
 
 @router.get("/approvals/pending", response_model=PendingActionApprovalResponse)

@@ -70,6 +70,11 @@ type ReaderParagraph = {
   charEnd: number;
 };
 
+type ReaderPosition = {
+  sectionId: string | null;
+  charOffset: number;
+};
+
 const PAGE_SIZE = 12;
 
 function readerUrl(libraryEntryId: string, documentId: string, after?: number): string {
@@ -103,11 +108,14 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
   const [annotationBusyKey, setAnnotationBusyKey] = useState<string | null>(null);
   const [readingState, setReadingState] = useState<ReadingState | null>(null);
   const [nextAfter, setNextAfter] = useState<number | null>(null);
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const [activePosition, setActivePosition] = useState<ReaderPosition>({
+    sectionId: null,
+    charOffset: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const lastPersistedSection = useRef<string | null>(null);
+  const lastPersistedPosition = useRef<string | null>(null);
 
   const basePath = useMemo(
     () => `/v1/library/${libraryEntryId}/documents/${documentId}`,
@@ -177,11 +185,17 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
         setNextAfter(visible.next_after_ordinal);
         const resumeId = visible.reading_state?.section_id;
         const targetId = requestedSectionId ?? resumeId ?? visible.sections[0]?.section_id ?? null;
-        setActiveSectionId(targetId);
+        const targetOffset =
+          requestedSectionId !== null
+            ? 0
+            : targetId !== null && visible.reading_state?.section_id === targetId
+              ? (visible.reading_state.char_offset ?? 0)
+              : 0;
+        setActivePosition({ sectionId: targetId, charOffset: targetOffset });
         if (targetId) {
           requestAnimationFrame(() => {
             documentElement(targetId)?.focus({ preventScroll: true });
-            documentElement(targetId)?.scrollIntoView({ block: "start" });
+            readerPositionElement(targetId, targetOffset)?.scrollIntoView({ block: "start" });
           });
         }
       } catch (caught) {
@@ -205,22 +219,36 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
         const visible = entries
           .filter((entry) => entry.isIntersecting)
           .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top);
-        const sectionId = visible[0]?.target.getAttribute("data-reader-section-id");
-        if (sectionId) setActiveSectionId(sectionId);
+        const paragraph = visible[0]?.target;
+        if (!(paragraph instanceof HTMLElement)) return;
+        const sectionId = paragraph.getAttribute("data-reader-section-id");
+        const rawOffset = paragraph.getAttribute("data-reader-char-start");
+        const charOffset = Number(rawOffset);
+        if (!sectionId || !Number.isInteger(charOffset) || charOffset < 0) return;
+        setActivePosition((current) =>
+          current.sectionId === sectionId && current.charOffset === charOffset
+            ? current
+            : { sectionId, charOffset },
+        );
       },
       { rootMargin: "-18% 0px -62% 0px", threshold: [0, 0.25, 0.5] },
     );
     for (const section of sections) {
       const element = documentElement(section.section_id);
-      if (element) observer.observe(element);
+      if (!element) continue;
+      for (const paragraph of element.querySelectorAll("[data-reader-char-start]")) {
+        observer.observe(paragraph);
+      }
     }
     return () => observer.disconnect();
   }, [sections]);
 
   useEffect(() => {
-    if (!activeSectionId || !document) return;
-    if (lastPersistedSection.current === activeSectionId) return;
-    const section = sections.find((item) => item.section_id === activeSectionId);
+    const { sectionId, charOffset } = activePosition;
+    if (!sectionId || !document) return;
+    const positionKey = `${sectionId}:${charOffset}`;
+    if (lastPersistedPosition.current === positionKey) return;
+    const section = sections.find((item) => item.section_id === sectionId);
     if (!section) return;
     const timer = window.setTimeout(async () => {
       const progress = Math.min(1, (section.ordinal + 1) / document.section_count);
@@ -230,20 +258,20 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             section_id: section.section_id,
-            char_offset: 0,
+            char_offset: charOffset,
             progress_fraction: progress,
           }),
         });
         if (!response.ok) return;
         const persisted = (await response.json()) as ReadingState;
-        lastPersistedSection.current = section.section_id;
+        lastPersistedPosition.current = positionKey;
         setReadingState(persisted);
       } catch {
         // Reading stays usable during a transient persistence failure.
       }
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [activeSectionId, basePath, document, sections]);
+  }, [activePosition, basePath, document, sections]);
 
   async function loadMore() {
     if (nextAfter === null || loadingMore) return;
@@ -419,7 +447,9 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
 
   const progressPercent = Math.round((readingState?.progress_fraction ?? 0) * 100);
   const activeSection =
-    sections.find((section) => section.section_id === activeSectionId) ?? sections[0] ?? null;
+    sections.find((section) => section.section_id === activePosition.sectionId) ??
+    sections[0] ??
+    null;
 
   return (
     <main className="reader-shell">
@@ -519,6 +549,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
                 {paragraphsWithOffsets(section.text).map((paragraph) => (
                   <p
                     className="reader-paragraph"
+                    data-reader-section-id={section.section_id}
                     data-reader-char-start={paragraph.charStart}
                     key={`${section.section_id}:${paragraph.key}`}
                   >
@@ -631,4 +662,18 @@ function closestElement(node: Node, selector: string): Element | null {
 
 function documentElement(sectionId: string): HTMLElement | null {
   return document.getElementById(`reader-section-${sectionId}`);
+}
+
+function readerPositionElement(sectionId: string, charOffset: number): HTMLElement | null {
+  const section = documentElement(sectionId);
+  if (!section) return null;
+
+  let candidate: HTMLElement = section;
+  for (const paragraph of section.querySelectorAll<HTMLElement>("[data-reader-char-start]")) {
+    const value = Number(paragraph.getAttribute("data-reader-char-start"));
+    if (!Number.isInteger(value) || value < 0) continue;
+    if (value > charOffset) break;
+    candidate = paragraph;
+  }
+  return candidate;
 }

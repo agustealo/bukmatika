@@ -19,6 +19,8 @@ from bukmatika.ai.delegation_domain import (
     DelegationResponse,
     DelegationStepUnavailable,
 )
+from bukmatika.ai.delegation_result_domain import DelegationRecentResult
+from bukmatika.ai.delegation_results import DelegationResultProjectionService
 from bukmatika.ai.gateway import ModelGateway, UnconfiguredModelGateway
 from bukmatika.config import get_settings
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
@@ -50,6 +52,7 @@ _personalization_service = PersonalizationService()
 _control_service = PersonalizationControlService()
 _portability_service = PersonalizationPortabilityService()
 _delegation_operator_service = DelegationOperatorControlService()
+_delegation_result_service = DelegationResultProjectionService()
 
 
 def personalization_service() -> PersonalizationService:
@@ -85,6 +88,10 @@ def personalization_portability_service() -> PersonalizationPortabilityService:
 
 def delegation_operator_control_service() -> DelegationOperatorControlService:
     return _delegation_operator_service
+
+
+def delegation_result_projection_service() -> DelegationResultProjectionService:
+    return _delegation_result_service
 
 
 @router.get("", response_model=PersonalizationProfileResponse)
@@ -130,6 +137,17 @@ async def delegation_control_status(
     ],
 ) -> DelegationControlStatusResponse:
     return await service.status(principal_id=identity.principal_id)
+
+
+@router.get("/delegation-results", response_model=list[DelegationRecentResult])
+async def delegation_recent_results(
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[
+        DelegationResultProjectionService,
+        Depends(delegation_result_projection_service),
+    ],
+) -> list[DelegationRecentResult]:
+    return await service.recent(principal_id=identity.principal_id)
 
 
 @router.post("/delegation-control/consent", response_model=DelegationControlStatusResponse)

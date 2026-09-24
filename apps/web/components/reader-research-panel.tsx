@@ -160,6 +160,36 @@ function evidenceReaderHref(item: EvidenceItem): string {
   return `/read/${item.library_entry_id}/${item.document_id}?section=${item.section_ordinal}#reader-section-${item.section_id}`;
 }
 
+function visibleReaderCharOffset(sectionId: string): number {
+  const section = document.getElementById(`reader-section-${sectionId}`);
+  if (!section) return 0;
+
+  const paragraphs = Array.from(
+    section.querySelectorAll<HTMLElement>("[data-reader-char-start]"),
+  );
+  if (paragraphs.length === 0) return 0;
+
+  const anchorY = window.innerHeight * 0.32;
+  let best: HTMLElement | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const paragraph of paragraphs) {
+    const rect = paragraph.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > window.innerHeight) continue;
+    const distance =
+      rect.top <= anchorY && rect.bottom >= anchorY
+        ? 0
+        : Math.min(Math.abs(rect.top - anchorY), Math.abs(rect.bottom - anchorY));
+    if (distance < bestDistance) {
+      best = paragraph;
+      bestDistance = distance;
+    }
+  }
+
+  const raw = (best ?? paragraphs[0])?.getAttribute("data-reader-char-start");
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
 function excerpt(text: string, maxLength = 260): string {
   const normalized = text.replace(/\s+/g, " ").trim();
   return normalized.length > maxLength
@@ -297,7 +327,7 @@ export function ReaderResearchPanel({
         library_entry_id: libraryEntryId,
         document_id: documentId,
         section_id: requestedSectionId,
-        char_offset: 0,
+        char_offset: visibleReaderCharOffset(requestedSectionId),
       },
       library_entry_ids: [libraryEntryId],
       selected_highlight_ids: selectedHighlightIds,

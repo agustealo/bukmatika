@@ -144,16 +144,32 @@ async def test_unconfigured_embedding_gateway_is_fail_closed() -> None:
         await gateway.embed(_request())
 
 
-def test_embedding_factory_requires_local_provider_and_dedicated_model() -> None:
+def test_embedding_factory_requires_dedicated_provider_and_model() -> None:
     client = httpx.AsyncClient()
     disabled = build_embedding_gateway(
-        settings=Settings(model_provider="none", ollama_embedding_model="embeddinggemma"),
+        settings=Settings(
+            embedding_provider="none",
+            ollama_embedding_model="embeddinggemma",
+        ),
         client=client,
     )
     missing_model = build_embedding_gateway(
-        settings=Settings(model_provider="ollama", ollama_embedding_model=""),
+        settings=Settings(
+            embedding_provider="ollama",
+            ollama_embedding_model="",
+        ),
+        client=client,
+    )
+    configured = build_embedding_gateway(
+        settings=Settings(
+            model_provider="none",
+            embedding_provider="ollama",
+            ollama_embedding_model="embeddinggemma",
+        ),
         client=client,
     )
 
     assert disabled.identity is None
     assert missing_model.identity is None
+    assert configured.identity is not None
+    assert configured.identity.model == "embeddinggemma"

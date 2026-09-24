@@ -1,15 +1,15 @@
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from bukmatika.persistence.models import Principal
-from bukmatika.research import ResearchRecallCase, ResearchRecallEvaluator, ResearchRecallSuite
 from test_research_recall_public_domain import (
     PUBLIC_DOMAIN_WORKS,
     _scope,
     _seed_public_domain_book,
     _target_for_phrase,
 )
+
+from bukmatika.persistence.models import Principal
+from bukmatika.research import ResearchRecallCase, ResearchRecallEvaluator, ResearchRecallSuite
 
 
 async def test_measure_postgres_fallback_paraphrase_recall(

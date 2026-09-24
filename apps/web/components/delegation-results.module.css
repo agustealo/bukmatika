@@ -1,0 +1,160 @@
+.panel {
+  padding: 42px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.headingRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 22px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.headingRow h2,
+.resultCard h3 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.headingRow h2 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+}
+
+.intro,
+.muted,
+.error,
+.unavailable,
+.resultMeta,
+.passageHeading span {
+  color: var(--muted);
+}
+
+.intro {
+  max-width: 720px;
+  margin: 10px 0 0;
+  line-height: 1.55;
+}
+
+.refreshButton,
+.sourceLink {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  text-decoration: none;
+}
+
+.refreshButton {
+  padding: 10px 15px;
+  cursor: pointer;
+}
+
+.refreshButton:hover,
+.sourceLink:hover {
+  border-color: var(--accent);
+}
+
+.refreshButton:focus-visible,
+.sourceLink:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.error,
+.unavailable {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.error {
+  color: var(--danger, #a63d40);
+}
+
+.results {
+  display: grid;
+  gap: 14px;
+}
+
+.resultCard {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+}
+
+.resultMeta,
+.passageHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.resultMeta {
+  margin-bottom: 12px;
+  font-size: 0.75rem;
+}
+
+.resultCard h3 {
+  margin: 0 0 16px;
+  font-size: 1.35rem;
+}
+
+.passages {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.passage {
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+
+.passageHeading {
+  align-items: baseline;
+}
+
+.passageHeading span {
+  font-size: 0.78rem;
+}
+
+.passage p {
+  margin: 10px 0 14px;
+  line-height: 1.62;
+  white-space: pre-wrap;
+}
+
+.sourceLink {
+  display: inline-flex;
+  padding: 7px 11px;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 720px) {
+  .headingRow,
+  .resultMeta,
+  .passageHeading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .refreshButton {
+    align-self: flex-start;
+  }
+}

@@ -1,11 +1,14 @@
 from collections import defaultdict
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence import session_scope
+from bukmatika.persistence.delegation_models import AIDelegation
+from bukmatika.persistence.delegations import DelegationRepository
 from bukmatika.persistence.personalization import PersonalizationRepository
 from bukmatika.persistence.personalization_models import (
     ActionDecision,
@@ -22,6 +25,7 @@ from bukmatika.persistence.personalization_read import (
     PreferenceEvidenceRow,
 )
 from bukmatika.personalization.control_domain import (
+    ActiveDelegationResponse,
     ActiveGoalResponse,
     ActivityLedgerItem,
     ActivityLedgerResponse,
@@ -58,9 +62,11 @@ class PersonalizationControlService:
     ) -> PersonalizationControlCenterResponse:
         async with self._session_scope() as database_session:
             personalization = PersonalizationRepository(database_session)
+            delegations = DelegationRepository(database_session)
             reads = PersonalizationReadRepository(database_session)
 
             user_model = await personalization.get_or_create_user_model(principal_id)
+            open_delegations = await delegations.open_for_principal(principal_id=principal_id)
             claims = await personalization.active_claims(principal_id)
             inferred_ids = [claim.id for claim in claims if claim.source == "inferred"]
             evidence = await reads.preference_evidence(
@@ -102,12 +108,17 @@ class PersonalizationControlService:
                 principal_id=principal_id,
                 limit=outcome_limit,
             )
+            now = datetime.now(UTC)
 
             return PersonalizationControlCenterResponse(
                 user_model_id=user_model.id,
                 ai_enabled=user_model.ai_enabled,
                 learning_enabled=user_model.learning_enabled,
                 autonomy_level=user_model.autonomy_level,
+                active_delegations=[
+                    _delegation_response(delegation, now=now)
+                    for delegation in open_delegations
+                ],
                 explicit_preferences=explicit,
                 inferred_preferences=inferred,
                 active_goals=[_goal_response(goal) for goal in goals],
@@ -159,6 +170,37 @@ def _evidence_by_claim(
     for row in rows:
         grouped[row.claim_id].append(row)
     return grouped
+
+
+def _delegation_response(
+    delegation: AIDelegation,
+    *,
+    now: datetime,
+) -> ActiveDelegationResponse:
+    remaining_runtime_seconds: int | None = None
+    if delegation.started_at is not None:
+        elapsed = max(0, int((now - delegation.started_at).total_seconds()))
+        remaining_runtime_seconds = max(0, delegation.max_runtime_seconds - elapsed)
+    return ActiveDelegationResponse(
+        delegation_id=delegation.id,
+        plan_id=delegation.plan_id,
+        status=delegation.status,
+        step_ids=list(delegation.selected_step_ids),
+        current_step_index=delegation.current_step_index,
+        remaining_steps=max(
+            0,
+            len(delegation.selected_step_ids) - delegation.current_step_index,
+        ),
+        max_runtime_seconds=delegation.max_runtime_seconds,
+        remaining_runtime_seconds=remaining_runtime_seconds,
+        max_retries_per_step=delegation.max_retries_per_step,
+        max_total_attempts=delegation.max_total_attempts,
+        attempts_used=delegation.attempts_used,
+        remaining_attempts=max(0, delegation.max_total_attempts - delegation.attempts_used),
+        started_at=delegation.started_at,
+        stop_requested_at=delegation.stop_requested_at,
+        updated_at=delegation.updated_at,
+    )
 
 
 def _claim_response(

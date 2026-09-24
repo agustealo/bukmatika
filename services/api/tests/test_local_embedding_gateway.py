@@ -103,20 +103,24 @@ async def test_ollama_embedding_readiness_is_metadata_only() -> None:
 
 
 @pytest.mark.parametrize(
-    "payload",
+    "response_content",
     [
-        {"model": "other-model", "embeddings": [[1.0], [1.0]]},
-        {"model": "embeddinggemma:latest", "embeddings": [[1.0]]},
-        {"model": "embeddinggemma:latest", "embeddings": [[1.0], [1.0, 0.0]]},
-        {"model": "embeddinggemma:latest", "embeddings": [[float("nan")], [1.0]]},
+        b'{"model":"other-model","embeddings":[[1.0],[1.0]]}',
+        b'{"model":"embeddinggemma:latest","embeddings":[[1.0]]}',
+        b'{"model":"embeddinggemma:latest","embeddings":[[1.0],[1.0,0.0]]}',
+        b'{"model":"embeddinggemma:latest","embeddings":[[NaN],[1.0]]}',
     ],
 )
 async def test_ollama_embedding_gateway_rejects_invalid_responses(
-    payload: dict[str, object],
+    response_content: bytes,
 ) -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         del request
-        return httpx.Response(200, json=payload)
+        return httpx.Response(
+            200,
+            content=response_content,
+            headers={"content-type": "application/json"},
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(EmbeddingProviderResponseInvalid):

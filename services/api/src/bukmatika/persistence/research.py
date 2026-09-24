@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -11,6 +13,10 @@ from bukmatika.persistence.models import Asset, Edition, LibraryEntry, Work
 from bukmatika.persistence.reader_models import Highlight, ReadingState
 
 MAX_READER_SELECTION_CHUNKS = 8
+_MAX_FALLBACK_TERMS = 12
+_MIN_PREFERRED_FALLBACK_TERM_LENGTH = 4
+_FALLBACK_TOKEN_PATTERN = re.compile(r"[^\W_]{2,32}", re.UNICODE)
+_WEBSEARCH_SYNTAX_PATTERN = re.compile(r'(^|\s)(?:OR\s|-[^\s]|"[^\"]*\")', re.IGNORECASE)
 
 
 class ResearchSelectionDenied(LookupError):
@@ -70,6 +76,30 @@ class ResearchRepository:
             return []
 
         context_by_document = {context.document_id: context for context in contexts}
+        matches = await self._search_with_webquery(
+            context_by_document=context_by_document,
+            query=query,
+            limit=limit,
+        )
+        if matches:
+            return matches
+
+        fallback_query = _fallback_websearch_query(query)
+        if fallback_query is None:
+            return []
+        return await self._search_with_webquery(
+            context_by_document=context_by_document,
+            query=fallback_query,
+            limit=limit,
+        )
+
+    async def _search_with_webquery(
+        self,
+        *,
+        context_by_document: dict[UUID, ResearchDocumentContext],
+        query: str,
+        limit: int,
+    ) -> list[ResearchSearchMatch]:
         configuration: ColumnElement[Any] = literal_column("'simple'::regconfig")
         tsquery = func.websearch_to_tsquery(configuration, query)
         rank = func.ts_rank_cd(DocumentChunk.search_vector, tsquery).label("score")
@@ -413,3 +443,29 @@ class ResearchRepository:
             if existing is None or priority[entry_id] < priority[existing.library_entry_id]:
                 contexts_by_document[document_id] = candidate
         return list(contexts_by_document.values())
+
+
+def _fallback_websearch_query(query: str) -> str | None:
+    normalized = unicodedata.normalize("NFKC", query).strip()
+    if not normalized or _WEBSEARCH_SYNTAX_PATTERN.search(normalized):
+        return None
+
+    terms: list[str] = []
+    seen: set[str] = set()
+    for match in _FALLBACK_TOKEN_PATTERN.finditer(normalized.casefold()):
+        term = match.group(0)
+        if term in {"and", "not", "or"} or term in seen:
+            continue
+        seen.add(term)
+        terms.append(term)
+        if len(terms) == _MAX_FALLBACK_TERMS:
+            break
+    if len(terms) < 2:
+        return None
+
+    preferred_terms = [
+        term for term in terms if len(term) >= _MIN_PREFERRED_FALLBACK_TERM_LENGTH
+    ]
+    if len(preferred_terms) >= 2:
+        terms = preferred_terms
+    return " OR ".join(terms)

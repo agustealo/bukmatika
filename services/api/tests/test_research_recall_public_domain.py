@@ -255,7 +255,7 @@ def _target_for_phrase(book: SeededBook, phrase: str) -> ResearchRecallTarget:
     )
 
 
-async def test_public_domain_recall_baseline_measures_lexical_strength_and_paraphrase_gap(
+async def test_public_domain_recall_improves_lexically_and_preserves_semantic_gap(
     session: AsyncSession,
     tmp_path: Path,
 ) -> None:
@@ -399,19 +399,26 @@ async def test_public_domain_recall_baseline_measures_lexical_strength_and_parap
         principal_id=principal.id,
         cases=cases,
         minimum_case_recall=0.0,
-        minimum_macro_recall=0.60,
+        minimum_macro_recall=11 / 12,
     )
 
     result = await ResearchRecallEvaluator(session_scope_factory=_scope(session)).evaluate(suite)
     by_case = {case.case_id: case for case in result.cases}
 
     lexical_case_ids = {case.case_id for case in cases[:8]}
-    paraphrase_case_ids = {case.case_id for case in cases[8:]}
+    recovered_paraphrase_ids = {
+        "douglass-natural-paraphrase",
+        "wollstonecraft-natural-paraphrase",
+        "dubois-natural-paraphrase",
+    }
 
     assert result.passed is True
     assert all(by_case[case_id].recall == 1.0 for case_id in lexical_case_ids)
     assert all(by_case[case_id].first_relevant_rank == 1 for case_id in lexical_case_ids)
-    assert all(by_case[case_id].recall == 0.0 for case_id in paraphrase_case_ids)
-    assert result.micro_recall == 8 / 12
-    assert result.macro_recall == 8 / 12
-    assert result.mean_reciprocal_rank == 8 / 12
+    assert by_case["paine-natural-paraphrase"].recall == 0.0
+    assert by_case["paine-natural-paraphrase"].first_relevant_rank is None
+    assert all(by_case[case_id].recall == 1.0 for case_id in recovered_paraphrase_ids)
+    assert all(by_case[case_id].first_relevant_rank == 1 for case_id in recovered_paraphrase_ids)
+    assert result.micro_recall == 11 / 12
+    assert result.macro_recall == 11 / 12
+    assert result.mean_reciprocal_rank == 11 / 12

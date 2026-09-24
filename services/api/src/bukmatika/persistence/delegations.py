@@ -100,6 +100,44 @@ class DelegationRepository:
             raise DelegationNotFound("Delegation is unavailable")
         return delegation
 
+    async def open_for_principal(
+        self,
+        *,
+        principal_id: UUID,
+        lock: bool = False,
+    ) -> list[AIDelegation]:
+        statement = (
+            select(AIDelegation)
+            .where(
+                AIDelegation.principal_id == principal_id,
+                AIDelegation.status.in_(
+                    ("proposed", "approved", "running", "stop_requested")
+                ),
+            )
+            .order_by(AIDelegation.updated_at.desc(), AIDelegation.created_at.desc())
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return list((await self._session.scalars(statement)).all())
+
+    async def running_for_principal(
+        self,
+        *,
+        principal_id: UUID,
+        lock: bool = False,
+    ) -> list[AIDelegation]:
+        statement = (
+            select(AIDelegation)
+            .where(
+                AIDelegation.principal_id == principal_id,
+                AIDelegation.status == "running",
+            )
+            .order_by(AIDelegation.created_at, AIDelegation.id)
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return list((await self._session.scalars(statement)).all())
+
     async def approval(
         self,
         *,

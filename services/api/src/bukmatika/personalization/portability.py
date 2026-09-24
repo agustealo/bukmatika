@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.ai.delegation_control import revoke_level2_consent_in_session
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.personalization_portability import (
     PersonalizationPortabilityRepository,
@@ -146,6 +147,11 @@ class PersonalizationPortabilityService:
 
     async def reset(self, *, principal_id: UUID) -> PersonalizationResetResponse:
         async with self._session_scope() as database_session:
+            await revoke_level2_consent_in_session(
+                database_session,
+                principal_id=principal_id,
+                reason="personalization_reset",
+            )
             repository = PersonalizationPortabilityRepository(database_session)
             result = await repository.reset(principal_id)
             return PersonalizationResetResponse(

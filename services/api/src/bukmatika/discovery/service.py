@@ -6,9 +6,12 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from bukmatika.discovery.base import DiscoveredRecord
+from bukmatika.discovery.ranking import DiscoveryRankingProfile, personalization_signals
 from bukmatika.discovery.registry import ProviderRegistration, ProviderRegistry
 from bukmatika.domain import (
     DiscoveryCandidate,
+    DiscoveryPersonalizationExplanation,
+    DiscoveryPersonalizationSignal,
     DiscoveryResponse,
     DiscoverySourceStatus,
     RightsState,
@@ -39,6 +42,14 @@ class _AdapterResult:
     error: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _ScoredRecord:
+    record: DiscoveredRecord
+    neutral_score: float
+    final_score: float
+    signals: tuple[DiscoveryPersonalizationSignal, ...]
+
+
 class DiscoveryService:
     def __init__(
         self,
@@ -67,6 +78,8 @@ class DiscoveryService:
         self,
         intent: SearchIntent,
         session: SearchSession,
+        *,
+        ranking_profile: DiscoveryRankingProfile | None = None,
     ) -> DiscoveryBatch:
         registrations = self._registry.active()
         results = await asyncio.gather(
@@ -81,8 +94,21 @@ class DiscoveryService:
         records = self._deduplicate(
             record for result in results for record in result.records
         )
-        records.sort(key=lambda item: self._rank(item.candidate), reverse=True)
-        bounded_records = records[: session.max_records]
+        scored_records = [
+            self._score(record, ranking_profile=ranking_profile)
+            for record in records
+        ]
+        scored_records.sort(
+            key=lambda item: (
+                -item.final_score,
+                -item.neutral_score,
+                item.record.candidate.source,
+                item.record.candidate.source_record_id,
+            )
+        )
+        bounded = scored_records[: session.max_records]
+        visible = bounded[: intent.limit]
+        bounded_records = [item.record for item in bounded]
         elapsed_ms = max(0, int((time.monotonic() - session.started_at) * 1000))
         source_status = {
             result.name: DiscoverySourceStatus(
@@ -99,13 +125,39 @@ class DiscoveryService:
                 session_id=session.id,
                 elapsed_ms=elapsed_ms,
                 intent=intent,
-                candidates=[
-                    record.candidate for record in bounded_records[: intent.limit]
-                ],
+                candidates=[item.record.candidate for item in visible],
                 sources_queried=[registration.name for registration in registrations],
                 source_errors=errors,
                 source_status=source_status,
+                personalization=[
+                    DiscoveryPersonalizationExplanation(
+                        source=item.record.candidate.source,
+                        source_record_id=item.record.candidate.source_record_id,
+                        neutral_score=item.neutral_score,
+                        final_score=item.final_score,
+                        signals=list(item.signals),
+                    )
+                    for item in visible
+                    if item.signals
+                ],
             ),
+        )
+
+    @classmethod
+    def _score(
+        cls,
+        record: DiscoveredRecord,
+        *,
+        ranking_profile: DiscoveryRankingProfile | None,
+    ) -> _ScoredRecord:
+        neutral_score = cls._rank(record.candidate)
+        signals = personalization_signals(record.candidate, ranking_profile)
+        final_score = neutral_score + sum(signal.score_delta for signal in signals)
+        return _ScoredRecord(
+            record=record,
+            neutral_score=neutral_score,
+            final_score=final_score,
+            signals=signals,
         )
 
     @staticmethod

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { apiFetch } from "../lib/api";
+import { API_MUTATION_EVENT, type ApiMutationDetail, apiFetch } from "../lib/api";
 import styles from "./delegation-control.module.css";
 
 type DelegationStatus =
@@ -172,6 +172,26 @@ export function DelegationControl() {
     };
   }, [refresh]);
 
+  useEffect(() => {
+    const handleApiMutation = (event: Event) => {
+      const detail = (event as CustomEvent<ApiMutationDetail>).detail;
+      if (detail.path !== "/v1/personalization/settings") {
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      void refresh()
+        .catch((caught) => {
+          setError(caught instanceof Error ? caught.message : "Could not refresh delegation controls.");
+        })
+        .finally(() => setLoading(false));
+    };
+
+    window.addEventListener(API_MUTATION_EVENT, handleApiMutation);
+    return () => window.removeEventListener(API_MUTATION_EVENT, handleApiMutation);
+  }, [refresh]);
+
   const runningCount = useMemo(
     () =>
       snapshot?.active_delegations.filter(
@@ -185,7 +205,10 @@ export function DelegationControl() {
     [snapshot],
   );
 
-  async function mutate(action: NonNullable<BusyAction>, request: () => Promise<Response>) {
+  async function mutate(
+    action: NonNullable<BusyAction>,
+    request: () => Promise<Response>,
+  ): Promise<boolean> {
     setBusyAction(action);
     setError(null);
     try {
@@ -194,24 +217,29 @@ export function DelegationControl() {
         throw await responseError(response, "The delegation change was not saved");
       }
       await refresh();
+      return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The delegation change failed.");
+      return false;
     } finally {
       setBusyAction(null);
     }
   }
 
   async function decideConsent(action: "grant" | "revoke") {
-    await mutate(action, () =>
+    const saved = await mutate(action, () =>
       apiFetch("/v1/personalization/delegation-control/consent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
       }),
     );
-    if (action === "revoke") {
-      setConsentAcknowledged(false);
+    if (!saved) {
+      return;
     }
+
+    setConsentAcknowledged(false);
+    window.location.reload();
   }
 
   async function decideDelegation(delegationId: string, decision: "approved" | "rejected") {
@@ -422,10 +450,7 @@ export function DelegationControl() {
             <article className={styles.delegationCard} key={delegation.delegation_id}>
               <div className={styles.delegationHeader}>
                 <div>
-                  <span
-                    className={styles.badge}
-                    data-tone={statusTone(delegation.status)}
-                  >
+                  <span className={styles.badge} data-tone={statusTone(delegation.status)}>
                     {statusLabel(delegation.status)}
                   </span>
                   <h4>{delegation.step_ids.map(readableStep).join(" → ")}</h4>

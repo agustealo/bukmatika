@@ -3,10 +3,17 @@ from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bukmatika.ai.delegation import DelegationControlService, _event_context, _response
+from bukmatika.ai.delegation import (
+    DelegationControlService,
+    _delegation_fingerprint,
+    _event_context,
+    _plan_fingerprint,
+    _response,
+)
 from bukmatika.ai.delegation_control_domain import (
     ActiveDelegationControlItem,
     DelegationConsentAction,
@@ -15,14 +22,20 @@ from bukmatika.ai.delegation_control_domain import (
     DelegationConsentScope,
     DelegationConsentUnavailable,
     DelegationControlStatusResponse,
+    DelegationReviewLibraryEntry,
+    DelegationReviewStep,
 )
 from bukmatika.ai.delegation_dispatch import enqueue_delegation_job_in_session
 from bukmatika.ai.delegation_domain import (
     DelegationConflict,
     DelegationExecutionDisabled,
+    DelegationInvalid,
+    DelegationNotFound,
+    DelegationProposalRequest,
     DelegationResponse,
     DelegationStatus,
 )
+from bukmatika.ai.domain import PlanStep
 from bukmatika.config import Settings, get_settings
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.delegation_control import DelegationControlRepository
@@ -34,6 +47,7 @@ from bukmatika.persistence.personalization import (
     lock_personalization_state,
 )
 from bukmatika.persistence.personalization_models import UserModel
+from bukmatika.personalization.domain import ContextManifest
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 LEVEL2_DELEGATION_CONSENT_POLICY_VERSION = "ai-level2-read-only-consent-v1"
@@ -57,7 +71,11 @@ class DelegationOperatorControlService:
 
     async def status(self, *, principal_id: UUID) -> DelegationControlStatusResponse:
         async with self._session_scope() as database_session:
-            return await _status_in_session(database_session, principal_id=principal_id)
+            return await _status_in_session(
+                database_session,
+                principal_id=principal_id,
+                delegation_service=self._delegation_service,
+            )
 
     async def decide_consent(
         self,
@@ -171,7 +189,11 @@ class DelegationOperatorControlService:
                     consent.policy_version == LEVEL2_DELEGATION_CONSENT_POLICY_VERSION
                     and user_model.autonomy_level == 2
                 ):
-                    return await _status_in_session(database_session, principal_id=principal_id)
+                    return await _status_in_session(
+                        database_session,
+                        principal_id=principal_id,
+                        delegation_service=self._delegation_service,
+                    )
                 if user_model.autonomy_level != 2:
                     raise DelegationConsentConflict(
                         "Active delegation consent conflicts with the current autonomy level"
@@ -213,7 +235,11 @@ class DelegationOperatorControlService:
                     "autonomy_level": user_model.autonomy_level,
                 },
             )
-            return await _status_in_session(database_session, principal_id=principal_id)
+            return await _status_in_session(
+                database_session,
+                principal_id=principal_id,
+                delegation_service=self._delegation_service,
+            )
 
     async def _revoke(
         self,
@@ -241,7 +267,11 @@ class DelegationOperatorControlService:
                 user_model.autonomy_level = prior_level if prior_level is not None else 1
                 user_model.updated_at = datetime.now(UTC)
                 await database_session.flush()
-            return await _status_in_session(database_session, principal_id=principal_id)
+            return await _status_in_session(
+                database_session,
+                principal_id=principal_id,
+                delegation_service=self._delegation_service,
+            )
 
 
 async def revoke_level2_consent_in_session(
@@ -290,12 +320,14 @@ async def _status_in_session(
     database_session: AsyncSession,
     *,
     principal_id: UUID,
+    delegation_service: DelegationControlService,
 ) -> DelegationControlStatusResponse:
     personalization = PersonalizationRepository(database_session)
     user_model = await personalization.get_or_create_user_model(principal_id)
     repository = DelegationControlRepository(database_session)
     consent = await repository.consent(principal_id=principal_id)
     active = await repository.active_delegations(principal_id=principal_id)
+    delegation_repository = DelegationRepository(database_session)
     level2_enabled = bool(
         user_model.ai_enabled
         and user_model.autonomy_level == 2
@@ -304,6 +336,14 @@ async def _status_in_session(
         and consent.scope == DelegationConsentScope.READ_ONLY.value
         and consent.policy_version == LEVEL2_DELEGATION_CONSENT_POLICY_VERSION
     )
+    items: list[ActiveDelegationControlItem] = []
+    for delegation in active:
+        review = await _delegation_review(
+            repository=delegation_repository,
+            delegation=delegation,
+            delegation_service=delegation_service,
+        )
+        items.append(_delegation_item(delegation, review=review))
     return DelegationControlStatusResponse(
         ai_enabled=user_model.ai_enabled,
         autonomy_level=user_model.autonomy_level,
@@ -316,24 +356,94 @@ async def _status_in_session(
         consent_policy_version=(consent.policy_version if consent is not None else None),
         consented_at=(consent.consented_at if consent is not None else None),
         revoked_at=(consent.revoked_at if consent is not None else None),
-        active_delegations=[_delegation_item(value) for value in active],
+        active_delegations=items,
     )
 
 
-def _delegation_item(delegation: AIDelegation) -> ActiveDelegationControlItem:
+async def _delegation_review(
+    *,
+    repository: DelegationRepository,
+    delegation: AIDelegation,
+    delegation_service: DelegationControlService,
+) -> tuple[str, list[PlanStep], ContextManifest] | None:
+    try:
+        bundle = await repository.plan_bundle(
+            principal_id=delegation.principal_id,
+            plan_id=delegation.plan_id,
+        )
+        steps = [PlanStep.model_validate(value) for value in bundle.plan.steps]
+        context = ContextManifest.model_validate(bundle.plan.context_manifest)
+        if len(bundle.decisions) != len(steps):
+            return None
+        selected = delegation_service._selected_steps(
+            steps=steps,
+            step_ids=list(delegation.selected_step_ids),
+        )
+        current_plan_fingerprint = _plan_fingerprint(bundle)
+        request = DelegationProposalRequest(
+            step_ids=list(delegation.selected_step_ids),
+            max_runtime_seconds=delegation.max_runtime_seconds,
+            max_retries_per_step=delegation.max_retries_per_step,
+            max_total_attempts=delegation.max_total_attempts,
+        )
+        current_delegation_fingerprint = _delegation_fingerprint(
+            plan_fingerprint=current_plan_fingerprint,
+            request=request,
+        )
+    except (DelegationInvalid, DelegationNotFound, ValidationError, ValueError):
+        return None
+    if (
+        current_plan_fingerprint != delegation.plan_fingerprint
+        or current_delegation_fingerprint != delegation.delegation_fingerprint
+    ):
+        return None
+    return bundle.plan.user_request, selected, context
+
+
+def _delegation_item(
+    delegation: AIDelegation,
+    *,
+    review: tuple[str, list[PlanStep], ContextManifest] | None,
+) -> ActiveDelegationControlItem:
     remaining_runtime = delegation.max_runtime_seconds
     if delegation.started_at is not None:
         elapsed = max(0, int((datetime.now(UTC) - delegation.started_at).total_seconds()))
         remaining_runtime = max(0, delegation.max_runtime_seconds - elapsed)
     remaining_steps = max(0, len(delegation.selected_step_ids) - delegation.current_step_index)
+    user_request: str | None = None
+    library_entries: list[DelegationReviewLibraryEntry] = []
+    review_steps: list[DelegationReviewStep] = []
+    if review is not None:
+        user_request, selected_steps, context = review
+        library_entries = [
+            DelegationReviewLibraryEntry(
+                library_entry_id=entry.library_entry_id,
+                title=entry.title,
+            )
+            for entry in context.library_entries
+        ]
+        review_steps = [
+            DelegationReviewStep(
+                step_id=step.step_id,
+                capability=step.capability.value,
+                arguments=step.arguments,
+                rationale=step.rationale,
+            )
+            for step in selected_steps
+        ]
     return ActiveDelegationControlItem(
         delegation_id=delegation.id,
         plan_id=delegation.plan_id,
         status=DelegationStatus(delegation.status),
+        review_valid=review is not None,
+        user_request=user_request,
+        library_entries=library_entries,
+        steps=review_steps,
         step_ids=list(delegation.selected_step_ids),
         current_step_index=delegation.current_step_index,
         remaining_steps=remaining_steps,
         attempts_used=delegation.attempts_used,
+        max_retries_per_step=delegation.max_retries_per_step,
         max_total_attempts=delegation.max_total_attempts,
         remaining_attempts=max(0, delegation.max_total_attempts - delegation.attempts_used),
         max_runtime_seconds=delegation.max_runtime_seconds,

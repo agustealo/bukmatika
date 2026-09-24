@@ -411,7 +411,6 @@ class ReaderRepository:
         if state is not None:
             return state
 
-        now = datetime.now(UTC)
         statement = (
             insert(ReadingState)
             .values(
@@ -423,7 +422,7 @@ class ReaderRepository:
                 section_ordinal=section.ordinal,
                 char_offset=char_offset,
                 locator=section.locator,
-                last_read_at=now,
+                last_read_at=None,
             )
             .on_conflict_do_nothing(constraint="uq_reading_state_library_document")
             .returning(ReadingState)

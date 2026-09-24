@@ -52,6 +52,8 @@ class SemanticEventType(StrEnum):
     AI_DELEGATION_ATTEMPT_FAILED = "ai.delegation_attempt_failed"
     AI_DELEGATION_ATTEMPT_CANCELLED = "ai.delegation_attempt_cancelled"
     AI_DELEGATION_BUDGET_EXHAUSTED = "ai.delegation_budget_exhausted"
+    AI_DELEGATION_CONSENT_GRANTED = "ai.delegation_consent_granted"
+    AI_DELEGATION_CONSENT_REVOKED = "ai.delegation_consent_revoked"
     READER_OPENED = "reader.opened"
     READING_PROGRESS_UPDATED = "reader.progress_updated"
     BOOKMARK_ADDED = "reader.bookmark_added"

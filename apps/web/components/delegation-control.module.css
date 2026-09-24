@@ -387,6 +387,135 @@
   font-size: 0.68rem;
 }
 
+.reviewPanel {
+  display: grid;
+  gap: 16px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.reviewSection > span {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.reviewSection > p,
+.reviewStep p,
+.reviewInvalid p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.sourceList,
+.reviewSteps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sourceList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.sourceList li {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 0.72rem;
+}
+
+.reviewSteps {
+  display: grid;
+  gap: 9px;
+}
+
+.reviewStep {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.reviewStepTopline {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.reviewStepTopline strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+  text-transform: capitalize;
+}
+
+.reviewStepTopline code {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.reviewStep details {
+  margin-top: 9px;
+}
+
+.reviewStep summary {
+  width: fit-content;
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reviewStep pre {
+  max-height: 220px;
+  margin: 9px 0 0;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--ink);
+  font-size: 0.68rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.reviewInvalid {
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel-2));
+}
+
+.reviewInvalid strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+
+.reviewInvalid p {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 .progressTrack {
   height: 5px;
   margin: 16px 0;
@@ -457,7 +586,8 @@
 
 @media (max-width: 520px) {
   .cardTopline,
-  .delegationHeader {
+  .delegationHeader,
+  .reviewStepTopline {
     align-items: stretch;
     flex-direction: column;
   }

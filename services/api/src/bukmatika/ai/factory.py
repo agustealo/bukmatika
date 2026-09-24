@@ -9,6 +9,7 @@ from bukmatika.ai.ollama_embedding import OllamaLocalEmbeddingGateway
 from bukmatika.config import Settings
 
 ModelProviderSelection = Literal["none", "ollama"]
+EmbeddingProviderSelection = Literal["none", "ollama"]
 
 
 def build_model_gateway(
@@ -55,9 +56,26 @@ def build_embedding_gateway(
     client: httpx.AsyncClient,
 ) -> EmbeddingGateway:
     """Construct the installation-default embedding gateway, fail-closed when unconfigured."""
-    if settings.model_provider != "ollama":
+    return build_selected_embedding_gateway(
+        settings=settings,
+        client=client,
+        provider=settings.embedding_provider,
+        model=settings.ollama_embedding_model,
+    )
+
+
+def build_selected_embedding_gateway(
+    *,
+    settings: Settings,
+    client: httpx.AsyncClient,
+    provider: EmbeddingProviderSelection | str,
+    model: str | None,
+) -> EmbeddingGateway:
+    if provider == "none":
         return UnconfiguredEmbeddingGateway()
-    normalized_model = (settings.ollama_embedding_model or "").strip()
+    if provider != "ollama":
+        raise ValueError(f"Unsupported embedding provider: {provider}")
+    normalized_model = (model or "").strip()
     if not normalized_model:
         return UnconfiguredEmbeddingGateway()
     return OllamaLocalEmbeddingGateway(

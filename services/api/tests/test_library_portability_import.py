@@ -40,6 +40,8 @@ from bukmatika.persistence.models import (
 )
 from bukmatika.persistence.reader_models import ReadingState
 
+SECTION_TEXT = "Portable chapter text for coordinate validation."
+
 
 def _scope(session: AsyncSession):  # type: ignore[no-untyped-def]
     @asynccontextmanager
@@ -172,13 +174,12 @@ async def _seed_destination(
     )
     session.add(document)
     await session.flush()
-    section_text = "Portable chapter text for coordinate validation."
     section = DocumentSection(
         document_id=document.id,
         ordinal=0,
         heading="Chapter one",
         locator={"spine_index": 0, "href": "chapter.xhtml"},
-        text=section_text,
+        text=SECTION_TEXT,
     )
     session.add(section)
     await session.flush()
@@ -188,8 +189,8 @@ async def _seed_destination(
             section_id=section.id,
             ordinal=0,
             char_start=0,
-            char_end=len(section_text),
-            text=section_text,
+            char_end=len(SECTION_TEXT),
+            text=SECTION_TEXT,
         )
     )
     await session.flush()
@@ -250,7 +251,7 @@ def _manifest(
             parser_version=parser_version,
         ),
         status="reading",
-        progress_fraction=0.4,
+        progress_fraction=5 / len(SECTION_TEXT),
         position=PortableReadingPosition(
             section_ordinal=0,
             char_offset=5,
@@ -371,6 +372,57 @@ async def test_import_plan_resolves_durable_identity_and_ignores_source_uuids(
     assert result.collections[0].destination_id == local_collection.id
     assert result.tags[0].action == "create"
     assert result.smart_shelves[0].action == "create"
+
+
+async def test_import_plan_rejects_reader_progress_that_disagrees_with_position(
+    session: AsyncSession,
+) -> None:
+    principal, _, _, _, document, _ = await _seed_destination(
+        session,
+        suffix="progress-conflict",
+    )
+    assert document is not None
+    manifest = _manifest(
+        suffix="progress-conflict",
+        document_sha=document.source_sha256,
+    )
+    reading = manifest.entries[0].reading_states[0]
+    reading.status = "finished"
+    reading.progress_fraction = 1.0
+
+    result = await LibraryPortabilityImportPlanner(
+        session_scope_factory=_scope(session)
+    ).plan(principal_id=principal.id, manifest=manifest)
+
+    assert result.can_apply is False
+    assert result.entries[0].reading_states[0].action == "conflict"
+    assert any(conflict.code == "reading_progress_incompatible" for conflict in result.conflicts)
+
+
+async def test_import_plan_allows_annotation_only_unread_state_with_anchor(
+    session: AsyncSession,
+) -> None:
+    principal, _, _, _, document, _ = await _seed_destination(
+        session,
+        suffix="annotation-only",
+    )
+    assert document is not None
+    manifest = _manifest(
+        suffix="annotation-only",
+        document_sha=document.source_sha256,
+    )
+    reading = manifest.entries[0].reading_states[0]
+    reading.status = "unread"
+    reading.progress_fraction = 0.0
+    reading.last_read_at = None
+
+    result = await LibraryPortabilityImportPlanner(
+        session_scope_factory=_scope(session)
+    ).plan(principal_id=principal.id, manifest=manifest)
+
+    assert result.can_apply is True
+    assert result.entries[0].reading_states[0].action == "apply"
+    assert result.conflicts == []
 
 
 async def test_import_plan_blocks_conflicting_strong_work_evidence(session: AsyncSession) -> None:

@@ -16,9 +16,9 @@ from bukmatika.ai.gateway import (
     ModelReadinessState,
 )
 from bukmatika.ai.ollama import (
-    _model_aliases,
-    _validate_loopback_base_url,
     inspect_ollama_models,
+    ollama_model_aliases,
+    validate_ollama_loopback_base_url,
 )
 
 
@@ -47,7 +47,7 @@ class OllamaLocalEmbeddingGateway(EmbeddingGateway):
         if readiness_timeout_seconds <= 0 or readiness_timeout_seconds > 10:
             raise ValueError("Ollama readiness timeout must be between 0 and 10 seconds")
         self._client = client
-        self._base_url = _validate_loopback_base_url(base_url)
+        self._base_url = validate_ollama_loopback_base_url(base_url)
         self._timeout_seconds = timeout_seconds
         self._readiness_timeout_seconds = readiness_timeout_seconds
         self._identity = ModelProviderIdentity(
@@ -68,7 +68,7 @@ class OllamaLocalEmbeddingGateway(EmbeddingGateway):
         )
         if inventory.state is not ModelReadinessState.READY:
             return self._readiness(inventory.state, ready=False)
-        requested_aliases = _model_aliases(self._identity.model)
+        requested_aliases = ollama_model_aliases(self._identity.model)
         if set(inventory.models).isdisjoint(requested_aliases):
             return self._readiness(ModelReadinessState.MODEL_MISSING, ready=False)
         return self._readiness(ModelReadinessState.READY, ready=True)
@@ -91,7 +91,7 @@ class OllamaLocalEmbeddingGateway(EmbeddingGateway):
 
         try:
             envelope = _OllamaEmbedResponse.model_validate(response.json())
-            if envelope.model not in _model_aliases(self._identity.model):
+            if envelope.model not in ollama_model_aliases(self._identity.model):
                 raise ValueError("Ollama embedding response model does not match the request")
             if len(envelope.embeddings) != len(request.inputs):
                 raise ValueError("Ollama returned the wrong number of embedding vectors")

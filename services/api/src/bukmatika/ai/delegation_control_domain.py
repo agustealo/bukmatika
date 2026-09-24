@@ -5,7 +5,6 @@ from uuid import UUID
 from pydantic import BaseModel, JsonValue
 
 from bukmatika.ai.delegation_domain import DelegationStatus
-from bukmatika.ai.delegation_result_domain import DelegationRecentResult
 
 
 class DelegationConsentAction(StrEnum):
@@ -63,7 +62,6 @@ class DelegationControlStatusResponse(BaseModel):
     consented_at: datetime | None = None
     revoked_at: datetime | None = None
     active_delegations: list[ActiveDelegationControlItem]
-    recent_results: list[DelegationRecentResult]
 
 
 class DelegationConsentUnavailable(RuntimeError):

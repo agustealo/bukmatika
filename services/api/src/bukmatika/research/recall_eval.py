@@ -14,10 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 
 from bukmatika.config import get_settings
 from bukmatika.persistence.document_models import DocumentChunk, DocumentSection
-from bukmatika.persistence.research import (
-    ResearchRepository,
-    ResearchSelectionDenied,
-)
+from bukmatika.persistence.research import ResearchRepository, ResearchSelectionDenied
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -138,7 +135,7 @@ class ResearchRecallEvaluator:
             case_results: list[ResearchRecallCaseResult] = []
 
             for case in suite.cases:
-                await _validate_expected_targets(
+                await validate_recall_case_targets(
                     database_session,
                     repository=repository,
                     principal_id=suite.principal_id,
@@ -151,7 +148,7 @@ class ResearchRecallEvaluator:
                     limit=case.limit,
                 )
                 case_results.append(
-                    _case_result(
+                    build_recall_case_result(
                         case,
                         matches=[
                             ResearchRecallRetrievedPassage(
@@ -169,40 +166,17 @@ class ResearchRecallEvaluator:
                     )
                 )
 
-        expected_count = sum(result.expected_count for result in case_results)
-        hit_count = sum(result.hit_count for result in case_results)
-        micro_recall = hit_count / expected_count
-        macro_recall = sum(result.recall for result in case_results) / len(case_results)
-        mean_reciprocal_rank = (
-            sum(result.reciprocal_rank for result in case_results) / len(case_results)
-        )
-        passed = (
-            all(result.passed for result in case_results)
-            and macro_recall >= suite.minimum_macro_recall
-        )
-
-        return ResearchRecallEvaluation(
-            principal_id=suite.principal_id,
-            case_count=len(case_results),
-            expected_count=expected_count,
-            hit_count=hit_count,
-            micro_recall=micro_recall,
-            macro_recall=macro_recall,
-            mean_reciprocal_rank=mean_reciprocal_rank,
-            minimum_case_recall=suite.minimum_case_recall,
-            minimum_macro_recall=suite.minimum_macro_recall,
-            passed=passed,
-            cases=case_results,
-        )
+        return build_recall_evaluation(suite=suite, case_results=case_results)
 
 
-async def _validate_expected_targets(
+async def validate_recall_case_targets(
     session: AsyncSession,
     *,
     repository: ResearchRepository,
     principal_id: UUID,
     case: ResearchRecallCase,
 ) -> None:
+    """Fail closed unless every expected passage exactly matches selected canonical data."""
     try:
         contexts = await repository.document_contexts(
             principal_id=principal_id,
@@ -248,12 +222,13 @@ async def _validate_expected_targets(
             )
 
 
-def _case_result(
+def build_recall_case_result(
     case: ResearchRecallCase,
     *,
     matches: list[ResearchRecallRetrievedPassage],
     minimum_case_recall: float,
 ) -> ResearchRecallCaseResult:
+    """Score one retrieval result with the canonical recall/rank metric contract."""
     expected_ids = {target.chunk_id for target in case.expected}
     ranks = {match.chunk_id: match.rank for match in matches}
     hit_ids = expected_ids.intersection(ranks)
@@ -272,6 +247,40 @@ def _case_result(
         reciprocal_rank=reciprocal_rank,
         missed_chunk_ids=missed,
         retrieved=matches,
+    )
+
+
+def build_recall_evaluation(
+    *,
+    suite: ResearchRecallSuite,
+    case_results: list[ResearchRecallCaseResult],
+) -> ResearchRecallEvaluation:
+    """Aggregate case results with the same metrics used by lexical and semantic burns."""
+    if len(case_results) != len(suite.cases):
+        raise ResearchRecallSuiteInvalid("Recall evaluation case count does not match the suite")
+    expected_count = sum(result.expected_count for result in case_results)
+    hit_count = sum(result.hit_count for result in case_results)
+    micro_recall = hit_count / expected_count
+    macro_recall = sum(result.recall for result in case_results) / len(case_results)
+    mean_reciprocal_rank = sum(result.reciprocal_rank for result in case_results) / len(
+        case_results
+    )
+    passed = (
+        all(result.passed for result in case_results)
+        and macro_recall >= suite.minimum_macro_recall
+    )
+    return ResearchRecallEvaluation(
+        principal_id=suite.principal_id,
+        case_count=len(case_results),
+        expected_count=expected_count,
+        hit_count=hit_count,
+        micro_recall=micro_recall,
+        macro_recall=macro_recall,
+        mean_reciprocal_rank=mean_reciprocal_rank,
+        minimum_case_recall=suite.minimum_case_recall,
+        minimum_macro_recall=suite.minimum_macro_recall,
+        passed=passed,
+        cases=case_results,
     )
 
 
@@ -344,5 +353,8 @@ __all__ = [
     "ResearchRecallSuite",
     "ResearchRecallSuiteInvalid",
     "ResearchRecallTarget",
+    "build_recall_case_result",
+    "build_recall_evaluation",
     "main",
+    "validate_recall_case_targets",
 ]

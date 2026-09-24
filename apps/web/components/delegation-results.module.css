@@ -73,12 +73,14 @@
 }
 
 .error,
-.unavailable {
+.unavailable,
+.failure {
   margin: 0;
   line-height: 1.55;
 }
 
-.error {
+.error,
+.failure {
   color: var(--danger, #a63d40);
 }
 
@@ -105,6 +107,27 @@
 .resultMeta {
   margin-bottom: 12px;
   font-size: 0.75rem;
+}
+
+.statusBadge {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.statusBadge[data-status="completed"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.statusBadge[data-status="failed"] {
+  border-color: var(--danger, #a63d40);
+  color: var(--danger, #a63d40);
 }
 
 .resultCard h3 {
@@ -152,6 +175,10 @@
   .passageHeading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .statusBadge {
+    align-self: flex-start;
   }
 
   .refreshButton {

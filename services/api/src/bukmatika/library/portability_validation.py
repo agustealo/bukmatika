@@ -367,6 +367,15 @@ def _validate_reading_states(
             conflicts=conflicts,
         )
 
+        if reading.status == "unread" and reading.last_read_at is not None:
+            _append_conflict(
+                conflicts,
+                target="reading_state",
+                source_id=reading.source_reading_state_id,
+                code="manifest_unread_reader_recency_conflict",
+                detail="Unread reader state cannot claim last-read recency",
+            )
+
         document_signature = _document_signature(reading.document)
         previous_reading = reading_documents.get(document_signature)
         if previous_reading is not None and previous_reading != reading.source_reading_state_id:

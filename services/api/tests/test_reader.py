@@ -318,7 +318,7 @@ async def test_progress_rejects_offset_outside_section(session: AsyncSession) ->
 async def test_bookmark_is_idempotent_and_removable(session: AsyncSession) -> None:
     entry, document, sections = await _seed_reader_document(session, suffix="bookmark")
     service = ReaderService(session_scope_factory=_scope(session))
-    create = BookmarkCreate(section_id=sections[0].id, char_offset=3, label="Return here")
+    create = BookmarkCreate(section_id=sections[1].id, char_offset=3, label="Return here")
 
     first = await service.add_bookmark(
         principal_id=entry.principal_id,
@@ -333,7 +333,20 @@ async def test_bookmark_is_idempotent_and_removable(session: AsyncSession) -> No
         create=create,
     )
     assert first.bookmark_id == second.bookmark_id
-    assert first.locator == {"page": 1, "section": 1}
+    assert first.section_ordinal == sections[1].ordinal
+    assert first.char_offset == 3
+    assert first.locator == {"page": 2, "section": 2}
+
+    reopened = await service.open_reader(
+        principal_id=entry.principal_id,
+        library_entry_id=entry.id,
+        document_id=document.id,
+        after_ordinal=None,
+        limit=10,
+    )
+    assert len(reopened.bookmarks) == 1
+    assert reopened.bookmarks[0].section_ordinal == sections[1].ordinal
+    assert reopened.bookmarks[0].char_offset == 3
 
     state_count = len((await session.scalars(ReadingState.__table__.select())).all())
     bookmark_count = len((await session.scalars(Bookmark.__table__.select())).all())
@@ -360,7 +373,7 @@ async def test_highlight_is_coordinate_derived_idempotent_and_restart_safe(
 ) -> None:
     entry, document, sections = await _seed_reader_document(session, suffix="highlight")
     service = ReaderService(session_scope_factory=_scope(session))
-    section = sections[0]
+    section = sections[1]
     principal_id = entry.principal_id
     entry_id = entry.id
     document_id = document.id
@@ -394,6 +407,8 @@ async def test_highlight_is_coordinate_derived_idempotent_and_restart_safe(
     )
 
     assert second.highlight_id == first.highlight_id
+    assert second.section_ordinal == section.ordinal
+    assert second.char_start == char_start
     assert second.text == expected_text
     assert second.note == "Revised note"
     assert second.locator == expected_locator
@@ -410,6 +425,8 @@ async def test_highlight_is_coordinate_derived_idempotent_and_restart_safe(
     )
     assert len(reopened.highlights) == 1
     assert reopened.highlights[0].highlight_id == first.highlight_id
+    assert reopened.highlights[0].section_ordinal == section.ordinal
+    assert reopened.highlights[0].char_start == char_start
     assert reopened.highlights[0].text == expected_text
     assert reopened.highlights[0].note == "Revised note"
 

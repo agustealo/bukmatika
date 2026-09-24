@@ -157,7 +157,7 @@ class PersonalizationRepository:
                     Work.canonical_title,
                     Document.id,
                 )
-                .join(Work, Work.work_id == LibraryEntry.work_id)
+                .join(Work, Work.id == LibraryEntry.work_id)
                 .outerjoin(
                     Edition,
                     and_(

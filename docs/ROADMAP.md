@@ -2,17 +2,19 @@
 
 The roadmap is organized by vertical slices. A slice is complete only when the real user path works end-to-end.
 
-## Current engineering checkpoint - 2026-09-23
+## Current engineering checkpoint - 2026-09-24
 
-- Current production base entering this slice: `main@78119817051ac13ec872564ecbce2391861aeecf` after merged PR #60.
-- PR #60 exact head `cdefd51841a6ecb5edfd884f3af15deb3009f0d5` passed Quality #326 before merge, and post-merge Quality #327 passed on production `main`.
-- PR #61 adds the representative public-domain recall burn over the shipped canonical evaluator. Quality #330 on candidate `ed551aee90d82e9975da6695ba6386c3817fb51d` established 8/8 rank-1 lexical-native recall, 0/4 natural-paraphrase recall, and 8/12 overall micro recall, macro recall, and MRR while all quality gates remained green.
+- Current production base: `main@9f8a517ae2cfc46b762d9cb23b0ef8037de5a8d9` after merged PR #71.
+- Post-merge Quality #394 is green on that exact production commit.
+- The current API gate covers Ruff, strict MyPy across 141 source files, the migration chain through `0017_level2_delegation_consent`, and 408 PostgreSQL/API tests. The web gate covers TypeScript typecheck and production build.
 - Grounded reader research is live behind the canonical `ModelGateway` with loopback-only Ollama, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, a public real-model smoke command, and a rollback-only grounded-runtime proof command.
-- Consumer research now includes balanced source/edition comparison, explicit-highlight grounding, deterministic timelines, deterministic people/place/concept mention extraction, and measured lexical-retrieval evaluation over canonical evidence.
-- Consumer library portability now includes versioned manifests, deterministic dry-run/apply, rights-gated byte export/import, bounded `.bukmatika` transport, archive hardening, and export omission transparency.
-- The grounded proof command existing is not proof that an installed model passed it. Phase 5 stays open until the command is actually executed successfully against a real local model and that exact release-candidate result is recorded.
-- Semantic retrieval now has a measured motivation but remains unapproved. The next retrieval slice must inspect PostgreSQL query normalization/construction and ranked lexical fallback first; only a material gap that survives those fixes may justify one canonical embedding-provider interface.
-- Do not advance to delegated autonomy merely because local synthesis works. A recorded real grounded-answer runtime proof and the remaining Phase 5 product acceptance gates come first.
+- Consumer research includes selected-book lexical retrieval, grounded Q&A, balanced source/edition comparison, explicit-highlight grounding, deterministic timelines, deterministic people/place/concept mention extraction, and measured retrieval evaluation over canonical evidence.
+- Consumer library portability includes versioned manifests, deterministic dry-run/apply, rights-gated byte export/import, bounded `.bukmatika` transport, archive hardening, and export omission transparency.
+- Bounded Level 2 read-only delegation is live for explicitly selected `research.search` steps only. It requires principal-owned consent, exact per-run approval, explicit start, immutable selection/budget fingerprints, finite runtime/retry/attempt ceilings, stop/revoke controls, current-state/policy/context revalidation, durable PostgreSQL dispatch, claim leases, restart recovery, and audit evidence.
+- The Level 2 lane is not standing permission. The model cannot approve, start, expand, reorder, rebudget, or silently replan delegated work.
+- Level 3, delegated writes, autonomous acquisition, consequential delegation, standing approvals, arbitrary tool/code/shell/SQL/filesystem access, and open-ended scheduler agents remain closed.
+- The grounded proof command existing is not proof that an installed model passed it. Phase 5 still carries a release-evidence gate until `bukmatika-grounded-ai-proof` is actually executed successfully against a real installed local model and recorded for the exact release candidate.
+- Retrieval quality work remains independent of autonomy expansion. Improve measured lexical/semantic research quality only where evidence proves a gap; do not add infrastructure simply because the Level 2 control spine now exists.
 
 ## Phase 0 - Foundation
 
@@ -88,7 +90,7 @@ Phase 4 remains deliberately conservative in this sheet until each consumer surf
 
 ## Phase 5 - Adaptive research intelligence
 
-Goal: introduce one bounded AI orchestration system that becomes more useful through evidence while remaining inspectable, reversible, and optional.
+Goal: introduce one bounded AI orchestration system that becomes more useful through evidence while remaining inspectable, reversible, optional, and unable to self-authorize.
 
 ### AI foundation
 
@@ -104,6 +106,9 @@ Goal: introduce one bounded AI orchestration system that becomes more useful thr
 - [x] Consumer-editable local model configuration/setup flow.
 - [x] Real-runtime smoke command requiring readiness plus actual structured model generation.
 - [x] Transactional grounded-runtime proof command over canonical persisted evidence, plan/audit/ledger verification, and rollback validation.
+- [x] Bounded Level 2 read-only delegation authority for `research.search` with consent, exact approval/start, budgets, stop/revoke, durable dispatch, restart/concurrency recovery, and audit evidence.
+- [x] Consumer planning front door from selected books and research question to a bounded delegation proposal.
+- [x] Shared capability argument/context contracts preflighted before approval and revalidated before permit/runtime execution.
 - [ ] Recorded successful real local-runtime grounded-answer release proof against an installed model.
 
 ### Learning
@@ -137,11 +142,12 @@ Goal: introduce one bounded AI orchestration system that becomes more useful thr
 - [x] Explicit preferences.
 - [x] Inferred preferences with confidence/evidence.
 - [x] Active goals.
-- [ ] Delegated tasks.
+- [x] Bounded Level 2 delegated-task status and controls.
 - [x] Activity ledger.
 - [x] Local provider/model readiness and recovery surface.
 - [x] Per-profile local model selection.
-- [ ] Per-feature autonomy controls.
+- [x] Explicit Level 2 read-only consent plus approve/reject/start/stop controls.
+- [ ] Broader per-feature autonomy controls beyond the proven Level 2 research lane.
 - [x] Export/delete personalization data.
 - [x] Disable AI while preserving normal library operation.
 
@@ -152,33 +158,51 @@ Acceptance:
 - explicit user preferences outrank inferred claims;
 - a corrected/deleted learned claim stops influencing behavior;
 - AI-disabled mode leaves discovery, acquisition, cataloging, library, and reading functional;
-- no independent agent memory or provider SDK appears outside the canonical orchestration/model boundary.
+- no independent agent memory or provider SDK appears outside the canonical orchestration/model boundary;
+- a Level 2 delegation cannot widen its selected context, authority, capability set, or budgets after approval;
+- stop/revoke/AI-off and stale-worker fencing remain effective across restart and concurrency.
 
-### Phase 5 exit gate before Phase 6
+### Phase 5 exit gate before broader autonomy expansion
 
-Phase 6 remains closed until all of the following are true:
+Broader autonomy remains closed until all applicable gates are proven for the proposed expansion. The current read-only `research.search` Level 2 lane is already proven and does not grant authority to any future capability.
+
+For the remaining Phase 5 product/release work:
 
 1. the local provider reports actual runtime/model readiness rather than configuration presence;
 2. a consumer can understand, configure, and recover from unconfigured, runtime-offline, invalid-runtime, and missing-model states without gaining control over provider routing;
 3. the reader falls back to ordinary evidence retrieval if readiness changes between status inspection and execution;
 4. one real installed Ollama model completes the grounded-answer path against canonical persisted evidence, with the proof result recorded for the exact release candidate;
-5. citation validation, AI-off behavior, ownership isolation, privacy minimization, activity-ledger projection, and rollback-clean proof data remain green on the exact release candidate;
+5. citation validation, AI-off behavior, ownership isolation, privacy minimization, activity-ledger projection, delegation fencing, and rollback-clean proof data remain green on the exact release candidate;
 6. no new agent, memory, graph, embedding, or orchestration subsystem is introduced unless a remaining product requirement proves it necessary.
 
-## Phase 6 - Bounded delegated autonomy
+## Phase 6 - Autonomy expansion, separately gated
 
-Goal: permit opt-in standing goals only after the reactive/suggestive system is trustworthy.
+Goal: evaluate capabilities beyond the proven Level 2 read-only research lane without inheriting authority from it.
 
-- [ ] Autonomy Levels 0-3 with Level 0-1 default.
-- [ ] Delegation scopes and capability allowlists.
-- [ ] Resource/token/network/OCR budgets.
-- [ ] Approval rules by action consequence.
-- [ ] Reversible-action framework and undo evidence.
-- [ ] Stop/pause delegated goal control.
-- [ ] Sparse proactive intelligence for high-value events.
-- [ ] Adversarial tests proving rights/safety/privacy rules outrank delegation.
+### Proven foundation
 
-Acceptance: a delegated goal can never expand its own authority, exceed declared resource boundaries, or bypass user/rights/security policy.
+- [x] Level 0 reactive and Level 1 suggestive policy model.
+- [x] Level 2 explicit principal consent for bounded read-only delegation.
+- [x] Exact delegation scope and fingerprint binding.
+- [x] Fixed runtime/retry/attempt budgets outside model control.
+- [x] Exact per-run approval and explicit start.
+- [x] Durable stop/revoke and AI-off kill-switch behavior.
+- [x] Durable attempt claims, stale-worker fencing, restart recovery, and PostgreSQL dispatch.
+- [x] Adversarial tests proving current policy/state/context and capability contracts are rechecked before delegated work.
+
+### Still closed
+
+- [ ] Any second delegated capability until it independently defines and proves its argument/context contract and authority boundary.
+- [ ] Delegated durable writes.
+- [ ] Standing approvals or capability-wide permission.
+- [ ] Dynamic autonomous replanning or self-expanded task scope.
+- [ ] Consequential or non-reversible delegated actions.
+- [ ] Autonomous acquisition.
+- [ ] Level 3 authority.
+- [ ] Sparse proactive intelligence that creates or starts delegated work without an explicit bounded user action.
+- [ ] Arbitrary code, shell, SQL, filesystem, or unrestricted network tools.
+
+Acceptance for any future expansion: the delegated capability can never expand its own authority, exceed declared resource boundaries, bypass user/rights/security/privacy policy, or inherit approval from a different capability or previous run. Reversibility/undo authority, approval scope, stop behavior, recovery behavior, and adversarial proof must be explicit before merge.
 
 ## Phase 7 - Interop + market readiness
 

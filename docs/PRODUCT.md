@@ -64,7 +64,7 @@ Library organization combines explicit collections with smart shelves:
 - Needs metadata review
 - Needs OCR
 
-The AI may suggest organization, identify duplicate editions, or create a proposed research collection. Durable or bulk organization follows the user's autonomy settings and remains reversible.
+The AI may suggest organization, identify duplicate editions, or create a proposed research collection. Durable or bulk organization follows deterministic policy and the user's explicit approval controls. It is not implicitly authorized by a research delegation or learned preference.
 
 ### Reader
 
@@ -78,6 +78,8 @@ Research mode operates only on text that belongs to the user library or is other
 
 The AI can maintain durable goals across sessions, such as building a collection, comparing translations, identifying contradictory historical accounts, or filling known gaps in a bibliography.
 
+Research also contains Bukmatika's first bounded Level 2 delegation lane. A user can take a research question and explicitly selected owned books, draft a model-generated plan, inspect the deterministic policy decisions, select eligible read-only `research.search` steps, set finite budgets, create an exact approval request, approve or reject it, explicitly start it, monitor it, and stop it. Approval is scoped to that exact bounded run rather than to the capability forever.
+
 ### AI & Personalization
 
 A dedicated control center makes the adaptive system visible and governable.
@@ -88,10 +90,12 @@ It includes:
 - explicit preferences
 - inferred preferences with confidence and evidence
 - active research/reading goals
-- delegated tasks
+- bounded delegated tasks and their status
+- explicit Level 2 read-only consent and revoke control
+- exact delegation approve/reject/start/stop controls
 - AI activity ledger
 - corrections and undo history
-- per-feature autonomy controls
+- scoped autonomy controls
 - pause learning
 - clear learned behavior by scope
 - forget individual learned claims
@@ -107,6 +111,8 @@ The product must be able to answer questions such as:
 > What have you learned about how I research?
 
 > Forget that I prefer modern translations.
+
+> What exactly did I approve this delegated research run to do?
 
 ## Adaptive AI experience
 
@@ -132,14 +138,16 @@ Preferences may differ by task. A user may prefer clean EPUB for ordinary readin
 
 ### Bounded autonomy
 
-Bukmatika begins primarily reactive and suggestive. More autonomous behavior is opt-in and scoped.
+Bukmatika separates personalization from authority. Learning what a user prefers does not silently grant permission to act.
 
-- **Reactive:** do only what the user directly requests.
-- **Suggestive:** propose useful searches, organization, related works, or research steps.
-- **Assisted:** automatically perform explicitly allowed reversible low-risk actions.
-- **Delegated:** execute a bounded standing goal under capability, resource, and approval limits.
+- **Level 0, Reactive:** perform work only in direct response to the user, within deterministic policy.
+- **Level 1, Suggestive:** propose useful searches, organization, related works, research steps, or reversible preference changes. Durable actions remain separately controlled.
+- **Level 2, Bounded delegated:** execute only an explicitly selected, exact, finite delegated plan after current Level 2 consent, exact per-run approval, and explicit start. The current production lane is read-only `research.search` over explicitly selected owned books.
+- **Level 3, Reserved:** broader delegation such as standing goals, dynamic replanning, delegated writes, or consequential capabilities remains closed until separately designed and proven.
 
-Rights, safety, privacy, and acquisition controls always outrank learned preferences or delegated goals.
+Level 2 consent is not standing capability permission. The model cannot approve, start, expand, reorder, rebudget, or silently replan its own delegated work. Every delegated run has fixed runtime/retry/attempt ceilings, current policy/state/context revalidation, durable stop/revoke behavior, and inspectable audit evidence.
+
+Rights, safety, privacy, ownership, acquisition controls, capability contracts, and user approval always outrank learned preferences or delegated goals.
 
 ## Differentiators
 
@@ -150,6 +158,8 @@ The user asks for a body of knowledge, not a filename. Bukmatika can fan the req
 ### Personal research architect
 
 Bukmatika can maintain goals, learn how the user works, plan across discovery/library/reader/research capabilities, and improve through outcomes. This is one canonical adaptive system rather than separate chatbots hidden in each screen.
+
+Its autonomy is also inspectable. A bounded delegated research run is represented by durable plan, policy, consent, approval, budget, attempt, dispatch, stop, and outcome state instead of an opaque background agent.
 
 ### Rights-aware acquisition
 
@@ -195,13 +205,16 @@ Personalization changes candidate ordering using inspectable signals rather than
 - Confidence, scope, provenance, and decay for learned preferences.
 - User-visible AI activity ledger.
 - Goal continuity across sessions.
-- Per-feature autonomy controls.
+- Broader per-feature autonomy controls beyond the proven Level 2 research lane.
 - One canonical model/provider gateway.
 - Context minimization for remote model calls.
-- Evaluation for recommendation quality, grounding, correction rate, and unnecessary model usage.
+- Evaluation for recommendation quality, grounding, correction rate, unnecessary model usage, and delegated-run reliability.
+- Separate design and proof before adding any second delegated capability, delegated write, Level 3 authority, or standing approval.
 
 ## Product guardrails
 
 Bukmatika does not defeat DRM, authentication, paywalls, lending controls, CAPTCHAs, or technical access restrictions. It does not infer download permission from a search-engine result or a file extension. Unknown rights remain unknown until trustworthy evidence changes that state.
 
 The AI does not become a second catalog, rights authority, download authority, or hidden user-control plane. User corrections outrank learned behavior, learned preferences are inspectable and reversible, and the core library remains functional with AI disabled.
+
+A delegation cannot authorize itself. Model output is always a proposal until deterministic policy and the applicable user-control gates permit it. Current Level 2 is deliberately read-only and cannot silently grow into acquisition, durable writes, arbitrary tools, or broader agent authority.

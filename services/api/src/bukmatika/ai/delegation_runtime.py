@@ -22,6 +22,7 @@ from bukmatika.ai.delegation_domain import (
     DelegationStepUnavailable,
     DelegationStopRequested,
 )
+from bukmatika.ai.delegation_results import record_delegated_execution_result
 from bukmatika.ai.execution import (
     CapabilityExecutionResponse,
     CapabilityExecutorRegistry,
@@ -199,6 +200,7 @@ class DelegationRuntimeService:
             principal_id=principal_id,
             claim=claim,
             completion=DelegationAttemptCompletion(succeeded=True),
+            execution=execution,
         )
         return DelegationRuntimeResult(
             claim=claim,
@@ -326,6 +328,7 @@ class DelegationRuntimeService:
         principal_id: UUID,
         claim: DelegationAttemptClaim,
         completion: DelegationAttemptCompletion,
+        execution: CapabilityExecutionResponse | None = None,
     ) -> DelegationResponse:
         permit = claim.permit
         async with self._session_scope() as database_session:
@@ -359,6 +362,15 @@ class DelegationRuntimeService:
 
             event_type = SemanticEventType.AI_DELEGATION_ATTEMPT_FAILED
             if completion.succeeded:
+                if execution is None:
+                    raise PlanIntegrityError("Successful delegated attempt is missing its result")
+                if execution.plan_id != permit.plan_id or execution.step_id != permit.step_id:
+                    raise PlanIntegrityError("Delegated execution result does not match its permit")
+                await record_delegated_execution_result(
+                    database_session,
+                    attempt=attempt,
+                    execution=execution,
+                )
                 attempt.status = "completed"
                 attempt.finished_at = now
                 delegation.current_step_index += 1

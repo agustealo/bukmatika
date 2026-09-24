@@ -21,7 +21,10 @@ from bukmatika.persistence import session_scope
 from bukmatika.persistence.delegation_control import DelegationControlRepository
 from bukmatika.persistence.delegation_models import AIDelegation
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
-from bukmatika.persistence.personalization import PersonalizationRepository, lock_personalization_state
+from bukmatika.persistence.personalization import (
+    PersonalizationRepository,
+    lock_personalization_state,
+)
 from bukmatika.persistence.personalization_models import UserModel
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
@@ -269,7 +272,7 @@ def _delegation_item(delegation: AIDelegation) -> ActiveDelegationControlItem:
 
 
 __all__ = [
-    "DelegationOperatorControlService",
     "LEVEL2_DELEGATION_CONSENT_POLICY_VERSION",
+    "DelegationOperatorControlService",
     "revoke_level2_consent_in_session",
 ]

@@ -2,15 +2,16 @@
 
 The roadmap is organized by vertical slices. A slice is complete only when the real user path works end-to-end.
 
-## Current engineering checkpoint - 2026-09-22
+## Current engineering checkpoint - 2026-09-23
 
-- Base entering the current slice: `main@031d7528281cf7fa78c66b52f260d4347d878cc7` after merged PR #36.
-- PR #36 exact head `f3f9d0d606450b3d1208e10758b0c2300701050b` passed Quality #168 before merge, including API Ruff, strict MyPy, Alembic migrations, the full PostgreSQL suite, web typecheck, and production web build.
-- Grounded reader research is live behind the canonical `ModelGateway` with a loopback-only Ollama provider, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, a public real-model smoke command, and a rollback-only grounded-runtime proof command.
-- Active slice: make local model selection consumer-editable without turning provider routing into mutable browser state. Profile selection is principal-owned; Ollama address/timeouts remain installation-controlled and loopback-only.
-- Consumer setup can inherit the installation default, disable model use for one profile, or select an installed Ollama model without API restart. Installed-model discovery is metadata-only and AI-off mode performs zero runtime probes.
+- Current production base entering this slice: `main@82f9a35d085fe8969e87eefde6ab3949c3252ef2` after merged PR #59.
+- PR #59 exact head `fbf72c28a84028479af2e639c5330efe8c6edd24` passed Quality #319 before merge, including API Ruff, strict MyPy, Alembic migrations, the full PostgreSQL suite, web typecheck, and production web build. Post-merge Quality #320 passed on production `main`.
+- Grounded reader research is live behind the canonical `ModelGateway` with loopback-only Ollama, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, a public real-model smoke command, and a rollback-only grounded-runtime proof command.
+- Consumer research now includes balanced source/edition comparison, explicit-highlight grounding, deterministic timelines, and deterministic people/place/concept mention extraction over the same finite canonical evidence bundle.
+- Consumer library portability now includes versioned manifests, deterministic dry-run/apply, rights-gated byte export/import, bounded `.bukmatika` transport, archive hardening, and export omission transparency.
 - The grounded proof command existing is not proof that an installed model passed it. Phase 5 stays open until the command is actually executed successfully against a real local model and that exact release-candidate result is recorded.
-- Do not advance to delegated autonomy merely because local synthesis works. A recorded real grounded-answer runtime proof and the remaining Phase 5 research surfaces come first.
+- Semantic retrieval remains unproven. The active slice adds a canonical lexical-recall evaluation harness first; embeddings are not justified unless representative measured recall demonstrates a material gap after PostgreSQL query/ranking fixes.
+- Do not advance to delegated autonomy merely because local synthesis works. A recorded real grounded-answer runtime proof and the remaining Phase 5 product acceptance gates come first.
 
 ## Phase 0 - Foundation
 
@@ -118,10 +119,11 @@ Goal: introduce one bounded AI orchestration system that becomes more useful thr
 
 - [x] Search within one book.
 - [x] Cross-book lexical retrieval.
-- [ ] Semantic retrieval with one canonical embedding-provider interface.
+- [x] Deterministic lexical-recall evaluation harness over canonical expected evidence.
+- [ ] Semantic retrieval with one canonical embedding-provider interface, only if representative measured recall proves a material gap.
 - [x] Grounded book Q&A with page/section citations.
-- [ ] Compare sources/editions.
-- [ ] Timeline/entity/concept views derived from canonical documents.
+- [x] Compare sources/editions.
+- [x] Timeline/entity/concept views derived from canonical evidence.
 - [x] Reader-aware AI context.
 - [x] Active research goals spanning sessions.
 - [ ] Explainable personalized discovery/recommendations.

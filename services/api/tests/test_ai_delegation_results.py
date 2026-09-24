@@ -17,6 +17,8 @@ from bukmatika.ai.domain import CapabilityName
 from bukmatika.persistence.delegation_models import AIDelegationAttempt
 from bukmatika.persistence.delegation_results import DelegationResultRepository
 
+EXPECTED_USER_REQUEST = "Run one bounded delegated research step."
+
 
 async def test_recent_outcomes_preserve_successful_completed_receipt(
     session: AsyncSession,
@@ -57,6 +59,7 @@ async def test_recent_outcomes_preserve_successful_completed_receipt(
     assert outcome.status is DelegationStatus.COMPLETED
     assert outcome.available is True
     assert outcome.query == "projection success"
+    assert outcome.user_request is None
     assert outcome.completed_at == outcome.outcome_at
     assert outcome.failure_code is None
     assert outcome.attempt_error_code is None
@@ -92,6 +95,7 @@ async def test_recent_outcomes_surface_terminal_failure_codes(session: AsyncSess
     assert outcome.available is False
     assert outcome.failure_code == "DELEGATED_SEARCH_FAILED"
     assert outcome.attempt_error_code == "DELEGATED_SEARCH_FAILED"
+    assert outcome.user_request == EXPECTED_USER_REQUEST
     assert outcome.completed_at == outcome.outcome_at
 
 
@@ -128,6 +132,7 @@ async def test_recent_outcomes_keep_rejected_without_attempt(session: AsyncSessi
     assert outcome.status is DelegationStatus.REJECTED
     assert outcome.attempt_id is None
     assert outcome.step_id is None
+    assert outcome.user_request == EXPECTED_USER_REQUEST
     assert outcome.available is False
     assert outcome.completed_at is None
 

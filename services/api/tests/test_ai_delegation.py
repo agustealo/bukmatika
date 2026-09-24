@@ -12,13 +12,14 @@ from bukmatika.ai.delegation import DelegationControlService
 from bukmatika.ai.delegation_domain import (
     DelegationApprovalDecision,
     DelegationApprovalRequest,
+    DelegationAttemptCompletion,
     DelegationBudgetExceeded,
     DelegationConflict,
     DelegationExecutionDisabled,
-    DelegationInvalid,
     DelegationNotFound,
     DelegationProposalRequest,
     DelegationStatus,
+    DelegationStepUnavailable,
     DelegationStopRequested,
 )
 from bukmatika.ai.domain import CapabilityName, PlanProposal, PlanStep
@@ -188,13 +189,12 @@ async def test_only_explicitly_delegatable_read_only_capabilities_can_enter_cont
     )
     service = DelegationControlService(session_scope_factory=_scope(session))
 
-    with pytest.raises(Exception) as captured:
+    with pytest.raises(DelegationStepUnavailable):
         await service.propose(
             principal_id=principal.id,
             plan_id=plan.id,
             request=_proposal("catalog"),
         )
-    assert getattr(captured.value, "code", None) == "DELEGATION_STEP_UNAVAILABLE"
 
 
 async def test_public_level_one_cannot_activate_and_attempt_permit_never_executes_capability(
@@ -325,7 +325,10 @@ async def test_total_attempt_budget_exhaustion_is_durable_before_error_surfaces(
         principal_id=principal.id,
         delegation_id=proposed.delegation_id,
         attempt_id=permit.attempt_id,
-        completion={"succeeded": False, "error_code": "PROBE_FAILURE"},  # type: ignore[arg-type]
+        completion=DelegationAttemptCompletion(
+            succeeded=False,
+            error_code="PROBE_FAILURE",
+        ),
     )
     assert after_failure.status is DelegationStatus.RUNNING
 

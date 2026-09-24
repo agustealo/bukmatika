@@ -86,6 +86,25 @@ class DiscoverySourceStatus(BaseModel):
     result_count: int = Field(ge=0)
 
 
+class DiscoveryPersonalizationSignal(BaseModel):
+    preference_claim_id: UUID
+    key: Literal["format.preferred"]
+    value: str
+    source: Literal["explicit", "inferred"]
+    confidence: Annotated[float, Field(ge=0, le=1)]
+    evidence_count: int = Field(ge=0)
+    score_delta: Annotated[float, Field(gt=0, le=0.04)]
+    reason: str
+
+
+class DiscoveryPersonalizationExplanation(BaseModel):
+    source: str
+    source_record_id: str
+    neutral_score: float = Field(ge=0)
+    final_score: float = Field(ge=0)
+    signals: list[DiscoveryPersonalizationSignal] = Field(min_length=1)
+
+
 class DiscoveryResponse(BaseModel):
     session_id: UUID
     elapsed_ms: int = Field(ge=0)
@@ -94,6 +113,7 @@ class DiscoveryResponse(BaseModel):
     sources_queried: list[str]
     source_errors: dict[str, str] = Field(default_factory=dict)
     source_status: dict[str, DiscoverySourceStatus] = Field(default_factory=dict)
+    personalization: list[DiscoveryPersonalizationExplanation] = Field(default_factory=list)
 
 
 class CatalogSearchItem(BaseModel):

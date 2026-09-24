@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from bukmatika.ai.delegation_domain import DelegationStatus
 from bukmatika.research.domain import ResearchPassageResponse
 
 
@@ -29,10 +30,14 @@ class DelegatedResearchSearchReceipt(BaseModel):
 
 class DelegationRecentResult(BaseModel):
     delegation_id: UUID
-    attempt_id: UUID
-    step_id: str
-    capability: str
-    completed_at: datetime
+    attempt_id: UUID | None = None
+    step_id: str | None = None
+    capability: str | None = None
+    status: DelegationStatus = DelegationStatus.COMPLETED
+    outcome_at: datetime
+    completed_at: datetime | None = None
+    failure_code: str | None = None
+    attempt_error_code: str | None = None
     available: bool
     unavailable_reason: str | None = None
     query: str | None = None

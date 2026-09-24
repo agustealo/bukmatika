@@ -94,6 +94,13 @@ class DelegationAttemptPermit(BaseModel):
     authorized_at: datetime
 
 
+class DelegationAttemptClaim(BaseModel):
+    permit: DelegationAttemptPermit
+    claim_token: UUID
+    claimed_at: datetime
+    claim_expires_at: datetime
+
+
 class DelegationAttemptCompletion(BaseModel):
     succeeded: bool
     error_code: str | None = Field(default=None, max_length=128)
@@ -137,3 +144,7 @@ class DelegationStopRequested(RuntimeError):
 
 class DelegationStepUnavailable(RuntimeError):
     code = "DELEGATION_STEP_UNAVAILABLE"
+
+
+class DelegationAttemptClaimExpired(RuntimeError):
+    code = "DELEGATION_ATTEMPT_CLAIM_EXPIRED"

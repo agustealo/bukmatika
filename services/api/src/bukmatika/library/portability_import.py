@@ -1,5 +1,6 @@
 from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
+from math import isclose
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,7 @@ from bukmatika.persistence import session_scope
 from bukmatika.persistence.document_models import Document, DocumentSection
 from bukmatika.persistence.library_portability_import import LibraryImportPlanningRepository
 from bukmatika.persistence.models import Edition
+from bukmatika.reader.progress import canonical_progress_fraction, canonical_reading_status
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -509,6 +511,22 @@ class LibraryPortabilityImportPlanner:
             )
             return plan
 
+        progress_conflicts = await self._progress_conflicts(
+            repository,
+            document=document,
+            reading=reading,
+        )
+        if progress_conflicts:
+            detail = "; ".join(progress_conflicts)
+            plan, _ = self._conflict_plan(
+                target="reading_state",
+                source_id=reading.source_reading_state_id,
+                code="reading_progress_incompatible",
+                detail=detail,
+                conflicts=conflicts,
+            )
+            return plan
+
         existing = None
         if library_entry_plan.destination_id is not None:
             existing = await repository.reading_state(
@@ -529,7 +547,7 @@ class LibraryPortabilityImportPlanner:
             source_id=reading.source_reading_state_id,
             action="apply",
             destination_id=existing.id if existing is not None else None,
-            reason="Exact document coordinates are compatible and local state is not newer",
+            reason="Exact document coordinates and canonical reader progress are compatible",
         )
 
     async def _organization_plans(
@@ -681,6 +699,55 @@ class LibraryPortabilityImportPlanner:
                 problems.append(f"section {ordinal} is absent locally")
                 continue
             problems.extend(self._section_coordinate_problems(section, coordinate_checks))
+        return problems
+
+    async def _progress_conflicts(
+        self,
+        repository: LibraryImportPlanningRepository,
+        *,
+        document: Document,
+        reading: PortableReadingState,
+    ) -> list[str]:
+        if reading.status == "unread" and isclose(
+            reading.progress_fraction,
+            0.0,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            return []
+        if reading.position is None:
+            return ["non-unread reader state requires a canonical position"]
+
+        section = await repository.section_by_ordinal(
+            document_id=document.id,
+            ordinal=reading.position.section_ordinal,
+        )
+        if section is None:
+            return [f"section {reading.position.section_ordinal} is absent locally"]
+
+        char_offset = reading.position.char_offset or 0
+        expected_fraction = canonical_progress_fraction(
+            section_count=document.section_count,
+            section_ordinal=section.ordinal,
+            section_text_length=len(section.text),
+            char_offset=char_offset,
+        )
+        expected_status = canonical_reading_status(expected_fraction)
+        problems: list[str] = []
+        if not isclose(
+            reading.progress_fraction,
+            expected_fraction,
+            rel_tol=1e-9,
+            abs_tol=1e-12,
+        ):
+            problems.append(
+                "portable progress fraction disagrees with canonical section/offset position"
+            )
+        if reading.status != expected_status:
+            problems.append(
+                f"portable reading status {reading.status!r} disagrees with "
+                f"canonical status {expected_status!r}"
+            )
         return problems
 
     @staticmethod

@@ -2,8 +2,10 @@ from typing import Literal
 
 import httpx
 
+from bukmatika.ai.embedding_gateway import EmbeddingGateway, UnconfiguredEmbeddingGateway
 from bukmatika.ai.gateway import ModelGateway, UnconfiguredModelGateway
 from bukmatika.ai.ollama import OllamaLocalGateway
+from bukmatika.ai.ollama_embedding import OllamaLocalEmbeddingGateway
 from bukmatika.config import Settings
 
 ModelProviderSelection = Literal["none", "ollama"]
@@ -43,6 +45,26 @@ def build_selected_model_gateway(
         base_url=settings.ollama_base_url,
         model=normalized_model,
         timeout_seconds=settings.model_timeout_seconds,
+        readiness_timeout_seconds=settings.model_readiness_timeout_seconds,
+    )
+
+
+def build_embedding_gateway(
+    *,
+    settings: Settings,
+    client: httpx.AsyncClient,
+) -> EmbeddingGateway:
+    """Construct the installation-default embedding gateway, fail-closed when unconfigured."""
+    if settings.model_provider != "ollama":
+        return UnconfiguredEmbeddingGateway()
+    normalized_model = (settings.ollama_embedding_model or "").strip()
+    if not normalized_model:
+        return UnconfiguredEmbeddingGateway()
+    return OllamaLocalEmbeddingGateway(
+        client=client,
+        base_url=settings.ollama_base_url,
+        model=normalized_model,
+        timeout_seconds=settings.embedding_timeout_seconds,
         readiness_timeout_seconds=settings.model_readiness_timeout_seconds,
     )
 

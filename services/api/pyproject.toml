@@ -29,6 +29,7 @@ bukmatika-ai-smoke = "bukmatika.ai.smoke:main"
 bukmatika-grounded-ai-proof = "bukmatika.ai.grounded_smoke:main"
 bukmatika-ocr-worker = "bukmatika.processing.worker:main"
 bukmatika-research-recall-eval = "bukmatika.research.recall_eval:main"
+bukmatika-semantic-recall-burn = "bukmatika.research.semantic_recall_burn:main"
 
 [project.optional-dependencies]
 dev = [

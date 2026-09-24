@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from test_ai_delegation_runtime import _SearchExecutor, _plan, _principal, _runtime, _scope, _step
+from test_ai_delegation_runtime import _plan, _principal, _runtime, _scope, _SearchExecutor, _step
 
 from bukmatika.ai.delegation import DelegationControlService
 from bukmatika.ai.delegation_control import DelegationOperatorControlService

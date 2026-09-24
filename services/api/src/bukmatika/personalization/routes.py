@@ -28,7 +28,11 @@ from bukmatika.personalization.portability_domain import (
     PersonalizationResetRequest,
     PersonalizationResetResponse,
 )
-from bukmatika.personalization.service import PersonalizationService, PreferenceClaimNotFound
+from bukmatika.personalization.service import (
+    AutonomyLevel2ConsentRequired,
+    PersonalizationService,
+    PreferenceClaimNotFound,
+)
 
 router = APIRouter(prefix="/v1/personalization", tags=["personalization"])
 _personalization_service = PersonalizationService()
@@ -161,10 +165,16 @@ async def update_personalization_settings(
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[PersonalizationService, Depends(personalization_service)],
 ) -> PersonalizationProfileResponse:
-    return await service.update_settings(
-        principal_id=identity.principal_id,
-        update=update,
-    )
+    try:
+        return await service.update_settings(
+            principal_id=identity.principal_id,
+            update=update,
+        )
+    except AutonomyLevel2ConsentRequired as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code},
+        ) from exc
 
 
 @router.post("/context", response_model=ContextManifest)

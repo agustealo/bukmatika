@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     acquisition_worker_poll_seconds: float = Field(default=0.5, gt=0, le=30)
     acquisition_job_lease_seconds: float = Field(default=180.0, ge=30, le=3600)
     acquisition_job_heartbeat_seconds: float = Field(default=30.0, ge=5, le=300)
+    delegation_worker_enabled: bool = True
+    delegation_worker_poll_seconds: float = Field(default=0.5, gt=0, le=30)
+    delegation_job_lease_seconds: float = Field(default=120.0, gt=60, le=3600)
+    delegation_job_heartbeat_seconds: float = Field(default=20.0, ge=5, le=300)
+    delegation_job_max_attempts: int = Field(default=3, ge=1, le=10)
+    delegation_retry_seconds: float = Field(default=1.0, gt=0, le=60)
     archive_max_members: int = Field(default=20_000, ge=1, le=100_000)
     archive_max_uncompressed_bytes: int = Field(
         default=2_147_483_648,

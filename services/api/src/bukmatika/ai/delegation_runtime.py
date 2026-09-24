@@ -29,6 +29,7 @@ from bukmatika.ai.execution import (
 )
 from bukmatika.ai.policy import POLICY_VERSION, ActionDecisionValue
 from bukmatika.persistence import session_scope
+from bukmatika.persistence.delegation_models import AIDelegationAttempt
 from bukmatika.persistence.delegations import DelegationRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.execution import ExecutionRepository, PlanIntegrityError
@@ -282,7 +283,9 @@ class DelegationRuntimeService:
                     and attempt.claim_expires_at is not None
                     and attempt.claim_expires_at > now
                 ):
-                    raise DelegationConflict("Delegated attempt already has an active runtime claim")
+                    raise DelegationConflict(
+                        "Delegated attempt already has an active runtime claim"
+                    )
                 token = uuid4()
                 expires_at = now + timedelta(seconds=self._claim_lease_seconds)
                 if expires_at > runtime_deadline:
@@ -410,6 +413,7 @@ class DelegationRuntimeService:
         principal_id: UUID,
         delegation_id: UUID,
     ) -> DelegationResponse:
+        already_stopped = False
         async with self._session_scope() as database_session:
             repository = DelegationRepository(database_session)
             delegation = await repository.get(
@@ -418,43 +422,48 @@ class DelegationRuntimeService:
                 lock=True,
             )
             if delegation.status == DelegationStatus.STOPPED.value:
-                return await self._control.get(
+                already_stopped = True
+            elif delegation.status != DelegationStatus.STOP_REQUESTED.value:
+                raise DelegationConflict("Delegation is not awaiting stop acknowledgement")
+            else:
+                active = await repository.active_attempt(
                     principal_id=principal_id,
                     delegation_id=delegation_id,
+                    lock=True,
                 )
-            if delegation.status != DelegationStatus.STOP_REQUESTED.value:
-                raise DelegationConflict("Delegation is not awaiting stop acknowledgement")
-            active = await repository.active_attempt(
+                if active is not None:
+                    now = datetime.now(UTC)
+                    if (
+                        active.claim_token is not None
+                        and active.claim_expires_at is not None
+                        and active.claim_expires_at > now
+                    ):
+                        raise DelegationConflict(
+                            "Active delegated execution must settle before stop"
+                        )
+                    active.status = "cancelled"
+                    active.error_code = STOP_ERROR_CODE
+                    active.finished_at = now
+                    self._clear_claim(active)
+                    await database_session.flush()
+                    await InteractionEventRepository(database_session).record(
+                        SemanticEventType.AI_DELEGATION_ATTEMPT_CANCELLED,
+                        principal_id=principal_id,
+                        entity_type="ai_delegation",
+                        entity_id=delegation.id,
+                        context={
+                            "plan_id": str(delegation.plan_id),
+                            "attempt_id": str(active.id),
+                            "step_id": active.step_id,
+                            "attempt_number": active.attempt_number,
+                            "error_code": STOP_ERROR_CODE,
+                        },
+                    )
+        if already_stopped:
+            return await self._control.get(
                 principal_id=principal_id,
                 delegation_id=delegation_id,
-                lock=True,
             )
-            if active is not None:
-                now = datetime.now(UTC)
-                if (
-                    active.claim_token is not None
-                    and active.claim_expires_at is not None
-                    and active.claim_expires_at > now
-                ):
-                    raise DelegationConflict("Active delegated execution must settle before stop")
-                active.status = "cancelled"
-                active.error_code = STOP_ERROR_CODE
-                active.finished_at = now
-                self._clear_claim(active)
-                await database_session.flush()
-                await InteractionEventRepository(database_session).record(
-                    SemanticEventType.AI_DELEGATION_ATTEMPT_CANCELLED,
-                    principal_id=principal_id,
-                    entity_type="ai_delegation",
-                    entity_id=delegation.id,
-                    context={
-                        "plan_id": str(delegation.plan_id),
-                        "attempt_id": str(active.id),
-                        "step_id": active.step_id,
-                        "attempt_number": active.attempt_number,
-                        "error_code": STOP_ERROR_CODE,
-                    },
-                )
         return await self._control.acknowledge_stop(
             principal_id=principal_id,
             delegation_id=delegation_id,
@@ -479,7 +488,9 @@ class DelegationRuntimeService:
                     delegation_id=delegation_id,
                 )
                 if delegation.status == DelegationStatus.STOP_REQUESTED.value:
-                    raise DelegationStopRequested("Delegation stop has been requested") from None
+                    raise DelegationStopRequested(
+                        "Delegation stop has been requested"
+                    ) from None
                 active = await repository.active_attempt(
                     principal_id=principal_id,
                     delegation_id=delegation_id,
@@ -497,8 +508,7 @@ class DelegationRuntimeService:
                 )
 
     @staticmethod
-    def _clear_claim(attempt: object) -> None:
-        # The concrete ORM object is deliberately duck-typed here to keep claim clearing centralized.
-        setattr(attempt, "claim_token", None)
-        setattr(attempt, "claimed_at", None)
-        setattr(attempt, "claim_expires_at", None)
+    def _clear_claim(attempt: AIDelegationAttempt) -> None:
+        attempt.claim_token = None
+        attempt.claimed_at = None
+        attempt.claim_expires_at = None

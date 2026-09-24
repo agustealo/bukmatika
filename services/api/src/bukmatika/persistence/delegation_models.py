@@ -106,6 +106,11 @@ class AIDelegationAttempt(Base):
             name="ck_ai_delegation_attempt_status",
         ),
         CheckConstraint("attempt_number >= 1", name="ck_ai_delegation_attempt_number"),
+        CheckConstraint(
+            "(claim_token IS NULL AND claimed_at IS NULL AND claim_expires_at IS NULL) OR "
+            "(claim_token IS NOT NULL AND claimed_at IS NOT NULL AND claim_expires_at IS NOT NULL)",
+            name="ck_ai_delegation_attempt_claim_consistency",
+        ),
         UniqueConstraint(
             "delegation_id",
             "step_id",
@@ -134,4 +139,7 @@ class AIDelegationAttempt(Base):
     authorized_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    claim_token: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

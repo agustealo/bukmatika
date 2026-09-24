@@ -2,14 +2,14 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from test_library_portability_apply import _manifest as _apply_manifest
+from test_library_portability_apply import _scope as _apply_scope
 from test_library_portability_apply import (
-    _manifest as _apply_manifest,
-    _scope as _apply_scope,
     _seed_destination as _seed_apply_destination,
 )
+from test_library_portability_import import _manifest as _plan_manifest
+from test_library_portability_import import _scope as _plan_scope
 from test_library_portability_import import (
-    _manifest as _plan_manifest,
-    _scope as _plan_scope,
     _seed_destination as _seed_plan_destination,
 )
 

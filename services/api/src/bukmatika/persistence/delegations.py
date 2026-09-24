@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bukmatika.ai.delegation_domain import DelegationNotFound
+from bukmatika.ai.delegation_domain import DelegationConflict, DelegationNotFound
 from bukmatika.persistence.delegation_models import (
     AIDelegation,
     AIDelegationApproval,
@@ -188,6 +188,7 @@ class DelegationRepository:
         principal_id: UUID,
         delegation_id: UUID,
         attempt_id: UUID,
+        claim_token: UUID | None = None,
     ) -> AIDelegationAttempt:
         attempt = await self._session.scalar(
             select(AIDelegationAttempt)
@@ -200,4 +201,8 @@ class DelegationRepository:
         )
         if attempt is None:
             raise DelegationNotFound("Delegated attempt is unavailable")
+        if attempt.claim_token != claim_token:
+            if attempt.claim_token is not None:
+                raise DelegationConflict("Delegated attempt is owned by another runtime claim")
+            raise DelegationConflict("Delegated attempt has no matching runtime claim")
         return attempt

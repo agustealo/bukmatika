@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID
 
 from pydantic import BaseModel, JsonValue, ValidationError
@@ -14,6 +14,10 @@ from bukmatika.ai.approval_domain import (
     action_step_fingerprint,
 )
 from bukmatika.ai.capabilities import CapabilityRegistry, CapabilityRisk
+from bukmatika.ai.capability_contracts import (
+    CapabilityArgumentContractRegistry,
+    CapabilityArgumentsInvalid,
+)
 from bukmatika.ai.domain import CapabilityName
 from bukmatika.ai.gateway import (
     ModelDataClassification,
@@ -67,10 +71,6 @@ class CapabilityExecutorUnavailable(RuntimeError):
     code = "CAPABILITY_EXECUTOR_UNAVAILABLE"
 
 
-class CapabilityArgumentsInvalid(ValueError):
-    code = "CAPABILITY_ARGUMENTS_INVALID"
-
-
 class CapabilityExecutor(Protocol):
     capability: CapabilityName
 
@@ -87,8 +87,14 @@ class CapabilityExecutor(Protocol):
 class ResearchSearchExecutor:
     capability = CapabilityName.RESEARCH_SEARCH
 
-    def __init__(self, service: ResearchService | None = None) -> None:
+    def __init__(
+        self,
+        service: ResearchService | None = None,
+        *,
+        contract_registry: CapabilityArgumentContractRegistry | None = None,
+    ) -> None:
         self._service = service or ResearchService()
+        self._contracts = contract_registry or CapabilityArgumentContractRegistry()
 
     async def execute(
         self,
@@ -99,18 +105,14 @@ class ResearchSearchExecutor:
         context: ContextManifest,
     ) -> BaseModel:
         del action_decision_id
-        try:
-            request = ResearchSearchRequest.model_validate(arguments)
-        except ValidationError as exc:
-            raise CapabilityArgumentsInvalid("Invalid research.search arguments") from exc
-
-        selected_entry_ids = {entry.library_entry_id for entry in context.library_entries}
-        requested_entry_ids = set(request.library_entry_ids)
-        if not requested_entry_ids.issubset(selected_entry_ids):
-            raise CapabilityArgumentsInvalid(
-                "research.search library entries must be selected in the persisted context"
-            )
-
+        request = cast(
+            ResearchSearchRequest,
+            self._contracts.validate(
+                capability=self.capability,
+                arguments=arguments,
+                context=context,
+            ),
+        )
         return await self._service.search(principal_id=principal_id, request=request)
 
 

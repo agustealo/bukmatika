@@ -134,14 +134,16 @@ class DelegationRepository:
         *,
         principal_id: UUID,
         delegation_id: UUID,
+        lock: bool = False,
     ) -> AIDelegationAttempt | None:
-        return await self._session.scalar(
-            select(AIDelegationAttempt).where(
-                AIDelegationAttempt.principal_id == principal_id,
-                AIDelegationAttempt.delegation_id == delegation_id,
-                AIDelegationAttempt.status == "authorized",
-            )
+        statement = select(AIDelegationAttempt).where(
+            AIDelegationAttempt.principal_id == principal_id,
+            AIDelegationAttempt.delegation_id == delegation_id,
+            AIDelegationAttempt.status == "authorized",
         )
+        if lock:
+            statement = statement.with_for_update()
+        return await self._session.scalar(statement)
 
     async def step_attempt_count(
         self,

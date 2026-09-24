@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
 from bukmatika.ai.delegation_domain import DelegationStatus
 
@@ -20,14 +20,30 @@ class DelegationConsentRequest(BaseModel):
     action: DelegationConsentAction
 
 
+class DelegationReviewLibraryEntry(BaseModel):
+    library_entry_id: UUID
+    title: str
+
+
+class DelegationReviewStep(BaseModel):
+    step_id: str
+    capability: str
+    arguments: dict[str, JsonValue]
+    rationale: str
+
+
 class ActiveDelegationControlItem(BaseModel):
     delegation_id: UUID
     plan_id: UUID
     status: DelegationStatus
+    user_request: str
+    library_entries: list[DelegationReviewLibraryEntry]
+    steps: list[DelegationReviewStep]
     step_ids: list[str]
     current_step_index: int
     remaining_steps: int
     attempts_used: int
+    max_retries_per_step: int
     max_total_attempts: int
     remaining_attempts: int
     max_runtime_seconds: int

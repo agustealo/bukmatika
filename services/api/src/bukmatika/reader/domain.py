@@ -82,7 +82,6 @@ class ReaderDocumentResponse(BaseModel):
 class ReadingProgressUpdate(BaseModel):
     section_id: UUID
     char_offset: int = Field(ge=0)
-    progress_fraction: float = Field(ge=0, le=1)
 
 
 class BookmarkCreate(BaseModel):
@@ -106,3 +105,7 @@ class HighlightCreate(BaseModel):
 
 class HighlightNoteUpdate(BaseModel):
     note: str | None = Field(default=None, max_length=4_000)
+
+    @model_validator(mode="after")
+    def normalize_note(self) -> "HighlightNoteUpdate":
+        return self

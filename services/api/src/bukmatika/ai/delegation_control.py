@@ -16,13 +16,13 @@ from bukmatika.ai.delegation_control_domain import (
     DelegationConsentUnavailable,
     DelegationControlStatusResponse,
 )
+from bukmatika.ai.delegation_dispatch import enqueue_delegation_job_in_session
 from bukmatika.ai.delegation_domain import (
     DelegationConflict,
     DelegationExecutionDisabled,
     DelegationResponse,
     DelegationStatus,
 )
-from bukmatika.ai.delegation_jobs import enqueue_delegation_job_in_session
 from bukmatika.config import Settings, get_settings
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.delegation_control import DelegationControlRepository

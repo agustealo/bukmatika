@@ -38,13 +38,14 @@ from bukmatika.domain import (
     DiscoveryResponse,
     SearchIntent,
 )
-from bukmatika.identity import router as identity_router
+from bukmatika.identity import AuthenticatedPrincipal, optional_principal, router as identity_router
 from bukmatika.library import router as library_router
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.acquisition import AcquisitionStateConflict
 from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.search import CatalogSearchRepository
+from bukmatika.personalization.discovery import discovery_ranking_profile_for_principal
 from bukmatika.personalization.routes import router as personalization_router
 from bukmatika.processing import (
     AssetNotStored,
@@ -210,8 +211,14 @@ def document_processing_service(request: Request) -> DocumentProcessingService:
 async def discover(
     intent: SearchIntent,
     service: Annotated[DiscoveryService, Depends(discovery_service)],
+    identity: Annotated[AuthenticatedPrincipal | None, Depends(optional_principal)],
 ) -> DiscoveryResponse:
     search_session = service.create_session()
+    ranking_profile = None
+    if identity is not None:
+        ranking_profile = await discovery_ranking_profile_for_principal(
+            principal_id=identity.principal_id
+        )
     submitted_context = {
         "session_id": str(search_session.id),
         "intent": intent.model_dump(mode="json"),
@@ -219,21 +226,28 @@ async def discover(
     async with session_scope() as database_session:
         await InteractionEventRepository(database_session).record(
             SemanticEventType.DISCOVERY_SEARCH_SUBMITTED,
+            principal_id=identity.principal_id if identity is not None else None,
             context=submitted_context,
         )
 
     try:
-        batch = await service.discover(intent, search_session)
+        batch = await service.discover(
+            intent,
+            search_session,
+            ranking_profile=ranking_profile,
+        )
         async with session_scope() as database_session:
             resolver = CatalogResolver(CatalogRepository(database_session))
             for record in batch.records:
                 await resolver.ingest(record)
             await InteractionEventRepository(database_session).record(
                 SemanticEventType.DISCOVERY_SEARCH_COMPLETED,
+                principal_id=identity.principal_id if identity is not None else None,
                 context={
                     "session_id": str(search_session.id),
                     "result_count": len(batch.response.candidates),
                     "persisted_record_count": len(batch.records),
+                    "personalized_result_count": len(batch.response.personalization),
                     "sources_queried": batch.response.sources_queried,
                     "source_errors": batch.response.source_errors,
                     "elapsed_ms": batch.response.elapsed_ms,
@@ -244,6 +258,7 @@ async def discover(
         async with session_scope() as database_session:
             await InteractionEventRepository(database_session).record(
                 SemanticEventType.DISCOVERY_SEARCH_FAILED,
+                principal_id=identity.principal_id if identity is not None else None,
                 context={
                     "session_id": str(search_session.id),
                     "error_type": type(exc).__name__,

@@ -10,9 +10,14 @@ from bukmatika.ai.delegation_control_domain import (
     DelegationConsentUnavailable,
     DelegationControlStatusResponse,
 )
-from bukmatika.ai.delegation_domain import DelegationNotFound
+from bukmatika.ai.delegation_domain import DelegationNotFound, DelegationStatus
+from bukmatika.ai.delegation_result_domain import DelegationRecentResult
 from bukmatika.identity import AuthenticatedPrincipal
-from bukmatika.personalization.routes import decide_delegation_consent, start_delegation
+from bukmatika.personalization.routes import (
+    decide_delegation_consent,
+    delegation_recent_results,
+    start_delegation,
+)
 
 
 def _identity() -> AuthenticatedPrincipal:
@@ -44,6 +49,26 @@ class _ConsentCaptureService:
         )
 
 
+class _OutcomeCaptureService:
+    def __init__(self) -> None:
+        self.principal_id: UUID | None = None
+        self.delegation_id = uuid4()
+        self.outcome_at = datetime.now(UTC)
+
+    async def recent(self, *, principal_id: UUID) -> list[DelegationRecentResult]:
+        self.principal_id = principal_id
+        return [
+            DelegationRecentResult(
+                delegation_id=self.delegation_id,
+                status=DelegationStatus.FAILED,
+                outcome_at=self.outcome_at,
+                completed_at=self.outcome_at,
+                failure_code="DELEGATED_SEARCH_FAILED",
+                available=False,
+            )
+        ]
+
+
 class _ConsentUnavailableService:
     async def decide_consent(self, **kwargs):  # type: ignore[no-untyped-def]
         del kwargs
@@ -71,6 +96,22 @@ async def test_consent_route_forwards_exact_authenticated_principal() -> None:
     assert service.request == request
     assert response.level2_enabled is True
     assert response.autonomy_level == 2
+
+
+async def test_delegation_outcome_route_forwards_authenticated_principal() -> None:
+    identity = _identity()
+    service = _OutcomeCaptureService()
+
+    response = await delegation_recent_results(
+        identity=identity,
+        service=service,  # type: ignore[arg-type]
+    )
+
+    assert service.principal_id == identity.principal_id
+    assert len(response) == 1
+    assert response[0].delegation_id == service.delegation_id
+    assert response[0].status is DelegationStatus.FAILED
+    assert response[0].failure_code == "DELEGATED_SEARCH_FAILED"
 
 
 async def test_consent_route_maps_unavailable_to_conflict() -> None:

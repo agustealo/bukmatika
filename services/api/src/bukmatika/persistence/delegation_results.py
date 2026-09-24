@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bukmatika.persistence.delegation_models import AIDelegationAttempt
+from bukmatika.persistence.delegation_models import AIDelegation, AIDelegationAttempt
 from bukmatika.persistence.delegation_result_models import AIDelegationAttemptResult
+
+_TERMINAL_NONRESULT_STATUSES = ("rejected", "stopped", "failed", "cancelled")
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,8 +16,14 @@ class StoredDelegationResult:
     attempt: AIDelegationAttempt
 
 
+@dataclass(frozen=True, slots=True)
+class StoredTerminalDelegation:
+    delegation: AIDelegation
+    attempt: AIDelegationAttempt | None
+
+
 class DelegationResultRepository:
-    """Durable principal-scoped result receipts for completed delegated attempts."""
+    """Durable principal-scoped result receipts and terminal delegation outcomes."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -81,3 +89,59 @@ class DelegationResultRepository:
             )
         ).all()
         return [StoredDelegationResult(result=result, attempt=attempt) for result, attempt in rows]
+
+    async def recent_terminal(
+        self,
+        *,
+        principal_id: UUID,
+        limit: int,
+    ) -> list[StoredTerminalDelegation]:
+        terminal_at = func.coalesce(
+            AIDelegation.completed_at,
+            AIDelegation.stopped_at,
+            AIDelegation.updated_at,
+        )
+        delegations = list(
+            (
+                await self._session.scalars(
+                    select(AIDelegation)
+                    .where(
+                        AIDelegation.principal_id == principal_id,
+                        AIDelegation.status.in_(_TERMINAL_NONRESULT_STATUSES),
+                    )
+                    .order_by(terminal_at.desc(), AIDelegation.id.desc())
+                    .limit(limit)
+                )
+            ).all()
+        )
+        if not delegations:
+            return []
+
+        delegation_ids = [delegation.id for delegation in delegations]
+        attempts = list(
+            (
+                await self._session.scalars(
+                    select(AIDelegationAttempt)
+                    .where(
+                        AIDelegationAttempt.principal_id == principal_id,
+                        AIDelegationAttempt.delegation_id.in_(delegation_ids),
+                    )
+                    .order_by(
+                        AIDelegationAttempt.delegation_id,
+                        AIDelegationAttempt.finished_at.desc().nullslast(),
+                        AIDelegationAttempt.authorized_at.desc(),
+                        AIDelegationAttempt.id.desc(),
+                    )
+                )
+            ).all()
+        )
+        latest_attempt: dict[UUID, AIDelegationAttempt] = {}
+        for attempt in attempts:
+            latest_attempt.setdefault(attempt.delegation_id, attempt)
+        return [
+            StoredTerminalDelegation(
+                delegation=delegation,
+                attempt=latest_attempt.get(delegation.id),
+            )
+            for delegation in delegations
+        ]

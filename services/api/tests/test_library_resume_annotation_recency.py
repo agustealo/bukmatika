@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.library import LibraryService
 from bukmatika.persistence.document_models import Document, DocumentSection
+from bukmatika.persistence.library import LibraryRepository
+from bukmatika.persistence.library_resume import LibraryResumeRepository
 from bukmatika.persistence.models import Asset, Edition, LibraryEntry, Principal, StoredObject, Work
 from bukmatika.persistence.reader_models import ReadingState
 from bukmatika.persistence.readers import ReaderRepository
@@ -197,3 +199,46 @@ async def test_annotation_only_state_does_not_override_actual_library_resume(
     assert item.readable_format == "PDF"
     assert item.progress_fraction == 0.5
     assert item.reading_status == "reading"
+
+
+async def test_annotation_only_state_is_not_a_resume_candidate(
+    session: AsyncSession,
+) -> None:
+    (
+        principal,
+        entry,
+        _read_document,
+        _read_section,
+        annotation_document,
+        annotation_section,
+    ) = await _seed_two_document_work(session)
+
+    reader_repository = ReaderRepository(session)
+    annotation_access = await reader_repository.require_access(
+        principal.id,
+        entry.id,
+        annotation_document.id,
+    )
+    await reader_repository.add_bookmark(
+        access=annotation_access,
+        section_id=annotation_section.id,
+        char_offset=0,
+        label="Reference only",
+    )
+
+    resume = await LibraryResumeRepository(session).latest_for_entry(entry)
+    assert resume is None
+
+    fallback = await LibraryRepository(session).readable_document_for_entry(entry)
+    assert fallback is not None
+    fallback_document, fallback_asset = fallback
+
+    library = await LibraryService(session_scope_factory=_scope(session)).list_library(
+        principal_id=principal.id
+    )
+    assert len(library.items) == 1
+    item = library.items[0]
+    assert item.readable_document_id == fallback_document.id
+    assert item.readable_format == fallback_asset.format
+    assert item.progress_fraction is None
+    assert item.reading_status is None

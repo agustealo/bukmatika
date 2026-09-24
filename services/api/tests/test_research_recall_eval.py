@@ -231,6 +231,37 @@ async def test_recall_evaluation_rejects_expected_chunk_outside_selected_owned_b
         await ResearchRecallEvaluator(session_scope_factory=_scope(session)).evaluate(suite)
 
 
+async def test_recall_evaluation_rejects_cross_principal_library_selection(
+    session: AsyncSession,
+) -> None:
+    owner = Principal(kind="local", external_subject="recall-principal-owner")
+    intruder = Principal(kind="local", external_subject="recall-principal-intruder")
+    session.add_all([owner, intruder])
+    await session.flush()
+    entry, document, section, chunk = await _seed_book(
+        session,
+        principal=owner,
+        suffix="foreign-owner",
+        text="Private shipping ledgers describe Atlantic merchant routes.",
+    )
+    suite = ResearchRecallSuite(
+        principal_id=intruder.id,
+        minimum_case_recall=1.0,
+        minimum_macro_recall=1.0,
+        cases=[
+            ResearchRecallCase(
+                case_id="cross-principal-selection",
+                query="shipping ledgers",
+                library_entry_ids=[entry.id],
+                expected=[_target(document, section, chunk)],
+            )
+        ],
+    )
+
+    with pytest.raises(ResearchRecallSuiteInvalid, match="unavailable to this principal"):
+        await ResearchRecallEvaluator(session_scope_factory=_scope(session)).evaluate(suite)
+
+
 async def test_recall_evaluation_rejects_stale_expected_coordinates(session: AsyncSession) -> None:
     principal = Principal(kind="local", external_subject="recall-stale-owner")
     session.add(principal)

@@ -33,7 +33,6 @@ from bukmatika.reader.domain import ReadingProgressUpdate
 from bukmatika.research import ResearchService
 from bukmatika.research.domain import ResearchSearchRequest
 
-
 BOOK_TEXT = (
     "Mariners mapped obsidian navigation routes across the old world.\n\n"
     "A second passage records agricultural exchange and navigation evidence."

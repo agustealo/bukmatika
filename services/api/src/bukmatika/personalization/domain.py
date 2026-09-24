@@ -80,7 +80,8 @@ class PreferenceClaimResponse(BaseModel):
 class PersonalizationSettingsUpdate(BaseModel):
     ai_enabled: bool
     learning_enabled: bool
-    autonomy_level: int = Field(ge=0, le=1)
+    autonomy_level: int = Field(ge=0, le=2)
+    level_2_consent: bool = False
 
 
 class PersonalizationProfileResponse(BaseModel):

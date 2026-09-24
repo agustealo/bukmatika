@@ -6,6 +6,7 @@ from bukmatika.ai.gateway import (
     ModelDataClassification,
     ModelProviderIdentity,
     ModelProviderReadiness,
+    ModelReadinessState,
 )
 
 MAX_EMBEDDING_INPUTS = 32
@@ -88,8 +89,6 @@ class UnconfiguredEmbeddingGateway:
         return None
 
     async def readiness(self) -> ModelProviderReadiness:
-        from bukmatika.ai.gateway import ModelReadinessState
-
         return ModelProviderReadiness(
             state=ModelReadinessState.UNCONFIGURED,
             configured=False,

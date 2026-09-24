@@ -356,7 +356,7 @@ class DelegationControlService:
                         delegation_id=delegation.id,
                         plan_id=delegation.plan_id,
                         step_id=step_id,
-                        attempt_number=previous_attempts + 0,
+                        attempt_number=attempt.attempt_number,
                         delegation_fingerprint=delegation.delegation_fingerprint,
                         authorized_at=attempt.authorized_at,
                     )

@@ -1,8 +1,9 @@
-from collections.abc import Iterable
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import and_, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.ai.delegation_result_domain import (
@@ -12,13 +13,39 @@ from bukmatika.ai.delegation_result_domain import (
 )
 from bukmatika.ai.domain import CapabilityName
 from bukmatika.ai.execution import CapabilityExecutionResponse
+from bukmatika.persistence import session_scope
 from bukmatika.persistence.delegation_models import AIDelegationAttempt
 from bukmatika.persistence.delegation_results import DelegationResultRepository
 from bukmatika.persistence.document_models import Document, DocumentChunk, DocumentSection
 from bukmatika.persistence.models import Asset, Edition, LibraryEntry, Work
 from bukmatika.research.domain import ResearchPassageResponse, ResearchSearchResponse
 
+SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 RECENT_DELEGATION_RESULT_LIMIT = 8
+
+
+class DelegationResultProjectionService:
+    """Hydrate bounded delegated result receipts from current canonical research truth."""
+
+    def __init__(
+        self,
+        *,
+        session_scope_factory: SessionScopeFactory = session_scope,
+    ) -> None:
+        self._session_scope = session_scope_factory
+
+    async def recent(
+        self,
+        *,
+        principal_id: UUID,
+        limit: int = RECENT_DELEGATION_RESULT_LIMIT,
+    ) -> list[DelegationRecentResult]:
+        async with self._session_scope() as database_session:
+            return await recent_delegation_results(
+                database_session,
+                principal_id=principal_id,
+                limit=limit,
+            )
 
 
 async def record_delegated_execution_result(
@@ -196,6 +223,7 @@ async def _hydrate_passages(
 
 __all__ = [
     "RECENT_DELEGATION_RESULT_LIMIT",
+    "DelegationResultProjectionService",
     "recent_delegation_results",
     "record_delegated_execution_result",
 ]

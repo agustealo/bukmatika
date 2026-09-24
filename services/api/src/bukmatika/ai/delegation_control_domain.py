@@ -36,7 +36,8 @@ class ActiveDelegationControlItem(BaseModel):
     delegation_id: UUID
     plan_id: UUID
     status: DelegationStatus
-    user_request: str
+    review_valid: bool
+    user_request: str | None = None
     library_entries: list[DelegationReviewLibraryEntry]
     steps: list[DelegationReviewStep]
     step_ids: list[str]

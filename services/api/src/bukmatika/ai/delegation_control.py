@@ -19,7 +19,6 @@ from bukmatika.ai.delegation_control_domain import (
 from bukmatika.ai.delegation_domain import DelegationResponse, DelegationStatus
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.delegation_control import DelegationControlRepository
-from bukmatika.persistence.delegation_control_models import AIDelegationConsent
 from bukmatika.persistence.delegation_models import AIDelegation
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.personalization import PersonalizationRepository, lock_personalization_state
@@ -186,8 +185,7 @@ async def revoke_level2_consent_in_session(
     previous = await repository.consent(principal_id=principal_id, lock=True)
     was_active = previous is not None and previous.status == "active"
     consent, changed = await repository.revoke_consent_and_stop_active(
-        principal_id=principal_id,
-        reason=reason,
+        principal_id=principal_id
     )
     events = InteractionEventRepository(database_session)
     if was_active and consent is not None:

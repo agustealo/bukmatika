@@ -69,9 +69,7 @@ class DelegationControlRepository:
         self,
         *,
         principal_id: UUID,
-        reason: str,
     ) -> tuple[AIDelegationConsent | None, list[AIDelegation]]:
-        del reason
         consent = await self.consent(principal_id=principal_id, lock=True)
         now = datetime.now(UTC)
         if consent is not None and consent.status == "active":

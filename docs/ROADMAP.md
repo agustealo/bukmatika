@@ -4,13 +4,14 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 
 ## Current engineering checkpoint - 2026-09-23
 
-- Current production base entering this slice: `main@82f9a35d085fe8969e87eefde6ab3949c3252ef2` after merged PR #59.
-- PR #59 exact head `fbf72c28a84028479af2e639c5330efe8c6edd24` passed Quality #319 before merge, including API Ruff, strict MyPy, Alembic migrations, the full PostgreSQL suite, web typecheck, and production web build. Post-merge Quality #320 passed on production `main`.
+- Current production base entering this slice: `main@78119817051ac13ec872564ecbce2391861aeecf` after merged PR #60.
+- PR #60 exact head `cdefd51841a6ecb5edfd884f3af15deb3009f0d5` passed Quality #326 before merge, and post-merge Quality #327 passed on production `main`.
+- PR #61 adds the representative public-domain recall burn over the shipped canonical evaluator. Quality #330 on candidate `ed551aee90d82e9975da6695ba6386c3817fb51d` established 8/8 rank-1 lexical-native recall, 0/4 natural-paraphrase recall, and 8/12 overall micro recall, macro recall, and MRR while all quality gates remained green.
 - Grounded reader research is live behind the canonical `ModelGateway` with loopback-only Ollama, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, a public real-model smoke command, and a rollback-only grounded-runtime proof command.
-- Consumer research now includes balanced source/edition comparison, explicit-highlight grounding, deterministic timelines, and deterministic people/place/concept mention extraction over the same finite canonical evidence bundle.
+- Consumer research now includes balanced source/edition comparison, explicit-highlight grounding, deterministic timelines, deterministic people/place/concept mention extraction, and measured lexical-retrieval evaluation over canonical evidence.
 - Consumer library portability now includes versioned manifests, deterministic dry-run/apply, rights-gated byte export/import, bounded `.bukmatika` transport, archive hardening, and export omission transparency.
 - The grounded proof command existing is not proof that an installed model passed it. Phase 5 stays open until the command is actually executed successfully against a real local model and that exact release-candidate result is recorded.
-- Semantic retrieval remains unproven. The active slice adds a canonical lexical-recall evaluation harness first; embeddings are not justified unless representative measured recall demonstrates a material gap after PostgreSQL query/ranking fixes.
+- Semantic retrieval now has a measured motivation but remains unapproved. The next retrieval slice must inspect PostgreSQL query normalization/construction and ranked lexical fallback first; only a material gap that survives those fixes may justify one canonical embedding-provider interface.
 - Do not advance to delegated autonomy merely because local synthesis works. A recorded real grounded-answer runtime proof and the remaining Phase 5 product acceptance gates come first.
 
 ## Phase 0 - Foundation
@@ -120,7 +121,9 @@ Goal: introduce one bounded AI orchestration system that becomes more useful thr
 - [x] Search within one book.
 - [x] Cross-book lexical retrieval.
 - [x] Deterministic lexical-recall evaluation harness over canonical expected evidence.
-- [ ] Semantic retrieval with one canonical embedding-provider interface, only if representative measured recall proves a material gap.
+- [x] Representative public-domain lexical/paraphrase recall baseline through the production parser, chunker, and PostgreSQL research path.
+- [ ] PostgreSQL query-construction/ranked-fallback improvements measured against the representative baseline.
+- [ ] Semantic retrieval with one canonical embedding-provider interface, only if representative measured recall still proves a material gap after PostgreSQL retrieval fixes.
 - [x] Grounded book Q&A with page/section citations.
 - [x] Compare sources/editions.
 - [x] Timeline/entity/concept views derived from canonical evidence.

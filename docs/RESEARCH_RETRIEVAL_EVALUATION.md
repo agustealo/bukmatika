@@ -37,6 +37,31 @@ Run an authored suite with:
 
 `bukmatika-research-recall-eval path/to/suite.json`
 
+## Representative public-domain baseline
+
+The first representative burn uses four real public-domain works sourced from Project Gutenberg and passes them through Bukmatika's built-in TXT parser, canonical chunker, principal-owned catalog records, and production PostgreSQL retrieval path:
+
+- Thomas Paine, *Common Sense* (1776), Project Gutenberg #147.
+- Frederick Douglass, *Narrative of the Life of Frederick Douglass, an American Slave* (1845), Project Gutenberg #23.
+- Mary Wollstonecraft, *A Vindication of the Rights of Woman* (1792), Project Gutenberg #3420.
+- W. E. B. Du Bois, *The Souls of Black Folk* (1903), Project Gutenberg #408.
+
+The suite contains 12 research queries. Eight are lexical-native queries whose relevant wording is present in the source text. Four are natural paraphrases whose concepts are present but whose wording does not satisfy the current `websearch_to_tsquery('simple', ...)` match contract.
+
+Quality #330 on exact candidate head `ed551aee90d82e9975da6695ba6386c3817fb51d` established the baseline:
+
+- lexical-native recall: **8/8**, with every expected passage at rank 1;
+- natural-paraphrase recall: **0/4**;
+- micro recall: **8/12 (0.6667)**;
+- macro recall: **8/12 (0.6667)**;
+- mean reciprocal rank: **8/12 (0.6667)**;
+- full API suite: **326 passed**;
+- API Ruff, strict MyPy, Alembic migration chain, web typecheck, and production web build: **green**.
+
+This is measured evidence of a meaningful paraphrase-recall gap. It is not evidence that chunk identity, ownership fencing, source provenance, or lexical ranking are broken, and it does not by itself justify a vector database.
+
+The next retrieval slice must first inspect improvements that keep PostgreSQL and the canonical research repository authoritative, especially query normalization/construction and ranked lexical fallback behavior. Any improvement must rerun this same corpus so gains and regressions are visible rather than anecdotal.
+
 ## Semantic retrieval gate
 
 A failed suite is evidence of a lexical retrieval gap, not automatic permission to add a vector database. First inspect missed queries for fixable normalization, query construction, ranking, chunking, or metadata problems inside the existing PostgreSQL path.

@@ -95,7 +95,7 @@ async def test_recent_outcomes_surface_terminal_failure_codes(session: AsyncSess
     assert outcome.completed_at == outcome.outcome_at
 
 
-async def test_recent_outcomes_keep_rejected_proposal_without_attempt(session: AsyncSession) -> None:
+async def test_recent_outcomes_keep_rejected_without_attempt(session: AsyncSession) -> None:
     principal = await _principal(session, "result-projection-rejected")
     plan = await _plan(
         session,

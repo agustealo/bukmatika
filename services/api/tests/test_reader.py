@@ -163,7 +163,7 @@ async def test_reader_paginates_sections_and_persists_progress(
     assert reopened.reading_state.char_offset == 7
 
 
-async def test_reader_progress_ignores_legacy_client_fraction_and_does_not_finish_at_last_section_start(
+async def test_reader_ignores_client_fraction_at_last_section_start(
     session: AsyncSession,
 ) -> None:
     entry, document, sections = await _seed_reader_document(session, suffix="progress-authority")

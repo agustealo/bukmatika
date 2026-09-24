@@ -311,7 +311,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="bukmatika-research-recall-eval",
         description=(
-            "Measure canonical PostgreSQL lexical retrieval recall against explicit evidence targets."
+            "Measure canonical PostgreSQL lexical retrieval recall "
+            "against explicit evidence targets."
         ),
     )
     parser.add_argument("suite", type=Path, help="Path to a recall-suite JSON file")

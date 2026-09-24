@@ -22,6 +22,7 @@ from bukmatika.acquisition.jobs import (
     AcquisitionQueueService,
 )
 from bukmatika.acquisition.storage import LocalObjectStore
+from bukmatika.ai.delegation_jobs import DelegationJobWorker
 from bukmatika.ai.factory import build_model_gateway
 from bukmatika.ai.routes import router as ai_router
 from bukmatika.catalog import CatalogResolver
@@ -141,15 +142,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         object_store,
         settings,
     )
-    worker_task: asyncio.Task[None] | None = None
+    worker_tasks: list[asyncio.Task[None]] = []
     if settings.acquisition_worker_enabled:
-        worker = AcquisitionJobWorker(acquisition_executor, settings)
-        worker_task = asyncio.create_task(worker.run(), name="bukmatika-acquisition-worker")
+        acquisition_worker = AcquisitionJobWorker(acquisition_executor, settings)
+        worker_tasks.append(
+            asyncio.create_task(
+                acquisition_worker.run(),
+                name="bukmatika-acquisition-worker",
+            )
+        )
+    if settings.delegation_worker_enabled:
+        delegation_worker = DelegationJobWorker(settings)
+        worker_tasks.append(
+            asyncio.create_task(
+                delegation_worker.run(),
+                name="bukmatika-delegation-worker",
+            )
+        )
     try:
         yield
     finally:
-        if worker_task is not None:
+        for worker_task in worker_tasks:
             worker_task.cancel()
+        for worker_task in worker_tasks:
             with suppress(asyncio.CancelledError):
                 await worker_task
         await model_client.aclose()

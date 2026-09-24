@@ -104,12 +104,12 @@ async def recent_delegation_results(
     )
 
     results: list[DelegationRecentResult] = []
-    for item in stored:
-        finished_at = item.attempt.finished_at
+    for stored_result in stored:
+        finished_at = stored_result.attempt.finished_at
         if finished_at is None:
             continue
         try:
-            receipt = DelegatedResearchSearchReceipt.model_validate(item.result.receipt)
+            receipt = DelegatedResearchSearchReceipt.model_validate(stored_result.result.receipt)
             passages = await _hydrate_passages(
                 database_session,
                 principal_id=principal_id,
@@ -118,10 +118,10 @@ async def recent_delegation_results(
         except (ValidationError, LookupError, ValueError):
             results.append(
                 DelegationRecentResult(
-                    delegation_id=item.attempt.delegation_id,
-                    attempt_id=item.attempt.id,
-                    step_id=item.attempt.step_id,
-                    capability=item.result.capability,
+                    delegation_id=stored_result.attempt.delegation_id,
+                    attempt_id=stored_result.attempt.id,
+                    step_id=stored_result.attempt.step_id,
+                    capability=stored_result.result.capability,
                     status=DelegationStatus.COMPLETED,
                     outcome_at=finished_at,
                     completed_at=finished_at,
@@ -134,10 +134,10 @@ async def recent_delegation_results(
             continue
         results.append(
             DelegationRecentResult(
-                delegation_id=item.attempt.delegation_id,
-                attempt_id=item.attempt.id,
-                step_id=item.attempt.step_id,
-                capability=item.result.capability,
+                delegation_id=stored_result.attempt.delegation_id,
+                attempt_id=stored_result.attempt.id,
+                step_id=stored_result.attempt.step_id,
+                capability=stored_result.result.capability,
                 status=DelegationStatus.COMPLETED,
                 outcome_at=finished_at,
                 completed_at=finished_at,
@@ -148,9 +148,9 @@ async def recent_delegation_results(
             )
         )
 
-    for item in terminal:
-        delegation = item.delegation
-        attempt = item.attempt
+    for terminal_result in terminal:
+        delegation = terminal_result.delegation
+        attempt = terminal_result.attempt
         results.append(
             DelegationRecentResult(
                 delegation_id=delegation.id,
@@ -165,7 +165,7 @@ async def recent_delegation_results(
             )
         )
 
-    results.sort(key=lambda item: item.outcome_at, reverse=True)
+    results.sort(key=lambda result: result.outcome_at, reverse=True)
     return results[:bounded_limit]
 
 

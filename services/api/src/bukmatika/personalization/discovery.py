@@ -1,15 +1,32 @@
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime
+from typing import Literal, cast
 from uuid import UUID
 
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.discovery.ranking import (
     DiscoveryFormatPreference,
     DiscoveryRankingProfile,
 )
+from bukmatika.persistence import session_scope
+from bukmatika.persistence.personalization import PersonalizationRepository
 from bukmatika.persistence.personalization_models import PreferenceClaim
 from bukmatika.personalization.domain import PreferenceInfluence, PreferenceKey, PreferenceScopeType
+
+SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+
+
+async def discovery_ranking_profile_for_principal(
+    *,
+    principal_id: UUID,
+    session_scope_factory: SessionScopeFactory = session_scope,
+) -> DiscoveryRankingProfile:
+    async with session_scope_factory() as database_session:
+        claims = await PersonalizationRepository(database_session).active_claims(principal_id)
+    return build_discovery_ranking_profile(claims)
 
 
 def build_discovery_ranking_profile(
@@ -63,11 +80,14 @@ def build_discovery_ranking_profile(
         format_preference=DiscoveryFormatPreference(
             claim_id=claim.id,
             format=selected[5],
-            source=claim.source,  # type: ignore[arg-type]
+            source=cast(Literal["explicit", "inferred"], claim.source),
             confidence=max(0.0, min(1.0, claim.confidence)),
             evidence_count=max(0, claim.evidence_count),
         )
     )
 
 
-__all__ = ["build_discovery_ranking_profile"]
+__all__ = [
+    "build_discovery_ranking_profile",
+    "discovery_ranking_profile_for_principal",
+]

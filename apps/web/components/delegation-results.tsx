@@ -74,7 +74,7 @@ export function DelegationResults() {
     <section className={styles.panel} aria-labelledby="delegation-results-title">
       <div className={styles.headingRow}>
         <div>
-          <p className={styles.eyebrow}>07 · Completed work</p>
+          <p className={styles.eyebrow}>Completed work</p>
           <h2 id="delegation-results-title">Recent delegation results</h2>
           <p className={styles.intro}>
             Completed read-only searches stay inspectable here. Source text is loaded from your

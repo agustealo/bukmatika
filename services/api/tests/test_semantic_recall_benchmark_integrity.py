@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import bukmatika.research.semantic_recall_burn as semantic_recall_burn
 from bukmatika.config import Settings
 from bukmatika.persistence.models import Principal
 from bukmatika.research.recall_eval import ResearchRecallSuiteInvalid
@@ -14,7 +16,6 @@ from bukmatika.research.semantic_domain import (
     ResearchSemanticSearchRequest,
     ResearchSemanticSearchResponse,
 )
-import bukmatika.research.semantic_recall_burn as semantic_recall_burn
 
 
 class _CutoffProbeService:
@@ -24,7 +25,7 @@ class _CutoffProbeService:
     async def search(
         self,
         *,
-        principal_id,  # type: ignore[no-untyped-def]
+        principal_id: UUID,
         request: ResearchSemanticSearchRequest,
     ) -> ResearchSemanticSearchResponse:
         del principal_id

@@ -1,11 +1,13 @@
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import ValidationError
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.ai.delegation_domain import DelegationStatus
 from bukmatika.ai.delegation_result_domain import (
     DelegatedResearchPassageReceipt,
     DelegatedResearchSearchReceipt,
@@ -14,7 +16,7 @@ from bukmatika.ai.delegation_result_domain import (
 from bukmatika.ai.domain import CapabilityName
 from bukmatika.ai.execution import CapabilityExecutionResponse
 from bukmatika.persistence import session_scope
-from bukmatika.persistence.delegation_models import AIDelegationAttempt
+from bukmatika.persistence.delegation_models import AIDelegation, AIDelegationAttempt
 from bukmatika.persistence.delegation_results import DelegationResultRepository
 from bukmatika.persistence.document_models import Document, DocumentChunk, DocumentSection
 from bukmatika.persistence.models import Asset, Edition, LibraryEntry, Work
@@ -25,7 +27,7 @@ RECENT_DELEGATION_RESULT_LIMIT = 8
 
 
 class DelegationResultProjectionService:
-    """Hydrate bounded delegated result receipts from current canonical research truth."""
+    """Project bounded recent delegation outcomes from canonical durable truth."""
 
     def __init__(
         self,
@@ -88,10 +90,19 @@ async def recent_delegation_results(
     principal_id: UUID,
     limit: int = RECENT_DELEGATION_RESULT_LIMIT,
 ) -> list[DelegationRecentResult]:
-    stored = await DelegationResultRepository(database_session).recent_completed(
+    if limit < 1:
+        return []
+    bounded_limit = min(limit, RECENT_DELEGATION_RESULT_LIMIT)
+    repository = DelegationResultRepository(database_session)
+    stored = await repository.recent_completed(
         principal_id=principal_id,
-        limit=limit,
+        limit=bounded_limit,
     )
+    terminal = await repository.recent_terminal(
+        principal_id=principal_id,
+        limit=bounded_limit,
+    )
+
     results: list[DelegationRecentResult] = []
     for item in stored:
         finished_at = item.attempt.finished_at
@@ -111,6 +122,8 @@ async def recent_delegation_results(
                     attempt_id=item.attempt.id,
                     step_id=item.attempt.step_id,
                     capability=item.result.capability,
+                    status=DelegationStatus.COMPLETED,
+                    outcome_at=finished_at,
                     completed_at=finished_at,
                     available=False,
                     unavailable_reason=(
@@ -125,6 +138,8 @@ async def recent_delegation_results(
                 attempt_id=item.attempt.id,
                 step_id=item.attempt.step_id,
                 capability=item.result.capability,
+                status=DelegationStatus.COMPLETED,
+                outcome_at=finished_at,
                 completed_at=finished_at,
                 available=True,
                 query=receipt.query,
@@ -132,7 +147,30 @@ async def recent_delegation_results(
                 passages=passages,
             )
         )
-    return results
+
+    for item in terminal:
+        delegation = item.delegation
+        attempt = item.attempt
+        results.append(
+            DelegationRecentResult(
+                delegation_id=delegation.id,
+                attempt_id=attempt.id if attempt is not None else None,
+                step_id=attempt.step_id if attempt is not None else None,
+                status=DelegationStatus(delegation.status),
+                outcome_at=_terminal_outcome_at(delegation),
+                completed_at=delegation.completed_at,
+                failure_code=delegation.failure_code,
+                attempt_error_code=attempt.error_code if attempt is not None else None,
+                available=False,
+            )
+        )
+
+    results.sort(key=lambda item: item.outcome_at, reverse=True)
+    return results[:bounded_limit]
+
+
+def _terminal_outcome_at(delegation: AIDelegation) -> datetime:
+    return delegation.completed_at or delegation.stopped_at or delegation.updated_at
 
 
 async def _hydrate_passages(

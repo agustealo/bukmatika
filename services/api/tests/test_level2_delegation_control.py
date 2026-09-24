@@ -1,8 +1,6 @@
-from uuid import uuid4
-
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_ai_delegation import _approve, _plan, _principal, _proposal, _scope, _step
 
@@ -21,6 +19,7 @@ from bukmatika.persistence.delegation_control_models import AIDelegationConsent
 from bukmatika.persistence.delegation_models import AIDelegation
 from bukmatika.persistence.personalization_models import UserModel
 from bukmatika.personalization.domain import PersonalizationSettingsUpdate
+from bukmatika.personalization.portability import PersonalizationPortabilityService
 from bukmatika.personalization.service import PersonalizationService
 
 
@@ -198,7 +197,85 @@ async def test_disabling_ai_revokes_consent_and_cancels_not_started_delegation(
     assert delegation.stopped_at is not None
 
 
-async def test_generic_settings_cannot_grant_level_two() -> None:
+async def test_level_zero_settings_edit_does_not_cancel_unconsented_proposal(
+    session: AsyncSession,
+) -> None:
+    principal = await _principal(session, "level0-settings")
+    plan = await _plan(
+        session,
+        principal_id=principal.id,
+        steps=[_step(CapabilityName.RESEARCH_SEARCH)],
+    )
+    control = DelegationControlService(session_scope_factory=_scope(session))
+    proposed = await control.propose(
+        principal_id=principal.id,
+        plan_id=plan.id,
+        request=_proposal("research"),
+    )
+
+    personalization = PersonalizationService(session_scope_factory=_scope(session))
+    await personalization.update_settings(
+        principal_id=principal.id,
+        update=PersonalizationSettingsUpdate(
+            ai_enabled=True,
+            learning_enabled=False,
+            autonomy_level=0,
+        ),
+    )
+
+    unchanged = await control.get(
+        principal_id=principal.id,
+        delegation_id=proposed.delegation_id,
+    )
+    assert unchanged.status is DelegationStatus.PROPOSED
+
+
+async def test_personalization_reset_destroys_level_two_consent_and_delegation_state(
+    session: AsyncSession,
+) -> None:
+    principal = await _principal(session, "level2-reset")
+    plan = await _plan(
+        session,
+        principal_id=principal.id,
+        steps=[_step(CapabilityName.RESEARCH_SEARCH)],
+    )
+    control = DelegationControlService(session_scope_factory=_scope(session))
+    operator = DelegationOperatorControlService(
+        session_scope_factory=_scope(session),
+        delegation_service=control,
+    )
+    proposed = await control.propose(
+        principal_id=principal.id,
+        plan_id=plan.id,
+        request=_proposal("research"),
+    )
+    await _approve(control, principal_id=principal.id, delegation_id=proposed.delegation_id)
+    await operator.decide_consent(
+        principal_id=principal.id,
+        request=DelegationConsentRequest(action=DelegationConsentAction.GRANT),
+    )
+    await operator.start(
+        principal_id=principal.id,
+        delegation_id=proposed.delegation_id,
+    )
+
+    reset = await PersonalizationPortabilityService(
+        session_scope_factory=_scope(session)
+    ).reset(principal_id=principal.id)
+
+    assert reset.ai_enabled is True
+    assert reset.autonomy_level == 0
+    assert await session.scalar(
+        select(func.count(AIDelegationConsent.id)).where(
+            AIDelegationConsent.principal_id == principal.id
+        )
+    ) == 0
+    assert await session.scalar(
+        select(func.count(AIDelegation.id)).where(AIDelegation.principal_id == principal.id)
+    ) == 0
+
+
+def test_generic_settings_cannot_grant_level_two() -> None:
     with pytest.raises(ValidationError):
         PersonalizationSettingsUpdate(
             ai_enabled=True,
@@ -216,7 +293,6 @@ def test_level_two_control_routes_are_explicit_and_no_scheduler_surface_exists()
     assert "/v1/personalization/delegations/{delegation_id}/run" not in paths
     assert "/v1/personalization/delegations/{delegation_id}/schedule" not in paths
     assert "/v1/personalization/delegation-worker" not in paths
-    assert str(uuid4()) not in paths
 
 
 async def test_explicit_consent_requires_ai_enabled(session: AsyncSession) -> None:

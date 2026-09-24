@@ -26,7 +26,7 @@ from bukmatika.ai.delegation_runtime import (
     DelegationRuntimeService,
 )
 from bukmatika.ai.domain import CapabilityName, PlanProposal, PlanStep
-from bukmatika.ai.execution import CapabilityExecutorRegistry
+from bukmatika.ai.execution import CapabilityExecutionResponse, CapabilityExecutorRegistry
 from bukmatika.ai.policy import ActionPolicy
 from bukmatika.persistence.action_models import ActionExecutionReceipt
 from bukmatika.persistence.delegation_models import AIDelegation, AIDelegationAttempt
@@ -35,6 +35,7 @@ from bukmatika.persistence.personalization import PersonalizationRepository
 from bukmatika.persistence.personalization_models import Plan, UserModel
 from bukmatika.persistence.plans import PlanRepository
 from bukmatika.personalization.domain import ContextLibraryEntry, ContextManifest, ContextTask
+from bukmatika.research.domain import ResearchSearchResponse
 
 RUNTIME_ENTRY_ID = UUID(int=301)
 RUNTIME_WORK_ID = UUID(int=302)
@@ -48,6 +49,23 @@ def _scope(session: AsyncSession):  # type: ignore[no-untyped-def]
         yield session
 
     return scope
+
+
+def _search_response() -> ResearchSearchResponse:
+    return ResearchSearchResponse(
+        query="delegated runtime evidence",
+        selected_library_entry_ids=[RUNTIME_ENTRY_ID],
+        passages=[],
+    )
+
+
+def _successful_execution(permit: DelegationAttemptPermit) -> CapabilityExecutionResponse:
+    return CapabilityExecutionResponse(
+        plan_id=permit.plan_id,
+        step_id=permit.step_id,
+        capability=CapabilityName.RESEARCH_SEARCH,
+        output=_search_response().model_dump(mode="json"),
+    )
 
 
 class _SearchOutput(BaseModel):
@@ -69,12 +87,17 @@ class _SearchExecutor:
         arguments: dict[str, JsonValue],
         context: ContextManifest,
     ) -> BaseModel:
-        del principal_id, action_decision_id, arguments
+        del principal_id, action_decision_id
+        assert arguments == {
+            "query": "delegated runtime evidence",
+            "library_entry_ids": [str(RUNTIME_ENTRY_ID)],
+            "limit": 5,
+        }
         assert context.autonomy_level == 2
         self.calls += 1
         if self.delay_seconds:
             await asyncio.sleep(self.delay_seconds)
-        return _SearchOutput(marker="executed")
+        return _search_response()
 
 
 class _CatalogExecutor:
@@ -241,7 +264,7 @@ async def test_runtime_consumes_one_permit_through_canonical_executor_and_settle
 
     assert executor.calls == 1
     assert result.execution.capability is CapabilityName.RESEARCH_SEARCH
-    assert result.execution.output == {"marker": "executed"}
+    assert result.execution.output == _search_response().model_dump(mode="json")
     assert result.delegation.status is DelegationStatus.COMPLETED
     attempt = await session.get(AIDelegationAttempt, result.claim.permit.attempt_id)
     assert attempt is not None
@@ -297,6 +320,7 @@ async def test_runtime_reclaims_expired_lease_without_spending_another_attempt(
         principal_id=principal.id,
         claim=second,
         completion=DelegationAttemptCompletion(succeeded=True),
+        execution=_successful_execution(permit),
     )
     assert completed.status is DelegationStatus.COMPLETED
 
@@ -326,6 +350,7 @@ async def test_claimed_attempt_cannot_bypass_runtime_token_through_control_servi
         principal_id=principal.id,
         claim=claim,
         completion=DelegationAttemptCompletion(succeeded=True),
+        execution=_successful_execution(permit),
     )
     assert settled.status is DelegationStatus.COMPLETED
 

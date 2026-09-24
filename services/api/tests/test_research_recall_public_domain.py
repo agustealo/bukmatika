@@ -255,7 +255,7 @@ def _target_for_phrase(book: SeededBook, phrase: str) -> ResearchRecallTarget:
     )
 
 
-async def test_public_domain_recall_baseline_measures_lexical_strength_and_paraphrase_gap(
+async def test_public_domain_recall_preserves_lexical_hits_and_recovers_paraphrases(
     session: AsyncSession,
     tmp_path: Path,
 ) -> None:
@@ -398,8 +398,8 @@ async def test_public_domain_recall_baseline_measures_lexical_strength_and_parap
     suite = ResearchRecallSuite(
         principal_id=principal.id,
         cases=cases,
-        minimum_case_recall=0.0,
-        minimum_macro_recall=0.60,
+        minimum_case_recall=1.0,
+        minimum_macro_recall=1.0,
     )
 
     result = await ResearchRecallEvaluator(session_scope_factory=_scope(session)).evaluate(suite)
@@ -411,7 +411,8 @@ async def test_public_domain_recall_baseline_measures_lexical_strength_and_parap
     assert result.passed is True
     assert all(by_case[case_id].recall == 1.0 for case_id in lexical_case_ids)
     assert all(by_case[case_id].first_relevant_rank == 1 for case_id in lexical_case_ids)
-    assert all(by_case[case_id].recall == 0.0 for case_id in paraphrase_case_ids)
-    assert result.micro_recall == 8 / 12
-    assert result.macro_recall == 8 / 12
-    assert result.mean_reciprocal_rank == 8 / 12
+    assert all(by_case[case_id].recall == 1.0 for case_id in paraphrase_case_ids)
+    assert all(by_case[case_id].first_relevant_rank == 1 for case_id in paraphrase_case_ids)
+    assert result.micro_recall == 1.0
+    assert result.macro_recall == 1.0
+    assert result.mean_reciprocal_rank == 1.0

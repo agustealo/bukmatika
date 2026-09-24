@@ -3,6 +3,7 @@ import json
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
@@ -38,7 +39,7 @@ from bukmatika.research.representative_benchmark import (
 from bukmatika.research.semantic import ResearchSemanticIntegrityError, SemanticResearchService
 from bukmatika.research.semantic_domain import ResearchSemanticSearchRequest
 
-_PAINES_SEMANTIC_CASE_ID = "paine-natural-paraphrase"
+_PAINE_SEMANTIC_CASE_ID = "paine-natural-paraphrase"
 
 
 class SemanticRecallCaseComparison(BaseModel):
@@ -159,7 +160,7 @@ def compare_retrieval_evaluations(
         if semantic_case.reciprocal_rank < lexical_case.reciprocal_rank:
             rank_regressed_case_ids.append(case_id)
 
-    paine = semantic_by_case.get(_PAINES_SEMANTIC_CASE_ID)
+    paine = semantic_by_case.get(_PAINE_SEMANTIC_CASE_ID)
     if paine is None:
         raise ResearchRecallSuiteInvalid("Representative semantic evaluation is missing the Paine case")
     paine_recovered = (
@@ -193,54 +194,58 @@ async def run_semantic_recall_burn(
     gateway: EmbeddingGateway | None = None,
 ) -> SemanticRecallBurnResult:
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
-    async with httpx.AsyncClient(follow_redirects=False, trust_env=False) as client:
-        embedding_gateway = gateway or build_embedding_gateway(settings=settings, client=client)
-        readiness = await embedding_gateway.readiness()
-        if not readiness.ready or readiness.identity is None:
-            raise EmbeddingProviderNotReady(readiness)
+    try:
+        async with httpx.AsyncClient(follow_redirects=False, trust_env=False) as client:
+            embedding_gateway = gateway or build_embedding_gateway(settings=settings, client=client)
+            readiness = await embedding_gateway.readiness()
+            if not readiness.ready or readiness.identity is None:
+                raise EmbeddingProviderNotReady(readiness)
 
-        async with engine.connect() as connection:
-            transaction = await connection.begin()
-            session = AsyncSession(bind=connection, expire_on_commit=False)
-            try:
-                principal = Principal(
-                    kind="benchmark",
-                    external_subject=f"semantic-recall-burn:{uuid4()}",
-                )
-                session.add(principal)
-                await session.flush()
+            async with engine.connect() as connection:
+                transaction = await connection.begin()
+                session = AsyncSession(bind=connection, expire_on_commit=False)
+                try:
+                    principal = Principal(
+                        kind="benchmark",
+                        external_subject=f"semantic-recall-burn:{uuid4()}",
+                    )
+                    session.add(principal)
+                    await session.flush()
 
-                @asynccontextmanager
-                async def same_session_scope() -> AsyncIterator[AsyncSession]:
-                    yield session
+                    @asynccontextmanager
+                    async def same_session_scope() -> AsyncIterator[AsyncSession]:
+                        yield session
 
-                with TemporaryDirectory(prefix="bukmatika-semantic-recall-") as scratch:
-                    suite = await seed_representative_public_domain_benchmark(
-                        session,
-                        principal=principal,
-                        scratch_dir=__import__("pathlib").Path(scratch),
-                    )
-                    lexical = await ResearchRecallEvaluator(
-                        session_scope_factory=same_session_scope
-                    ).evaluate(suite)
-                    semantic_service = SemanticResearchService(
-                        gateway=embedding_gateway,
-                        settings=settings,
-                        session_scope_factory=same_session_scope,
-                    )
-                    semantic = await SemanticRecallEvaluator(
-                        service=semantic_service,
-                        session=session,
-                    ).evaluate(suite)
-                    return compare_retrieval_evaluations(
-                        provider=readiness.identity,
-                        lexical=lexical,
-                        semantic=semantic,
-                    )
-            finally:
-                await session.close()
-                await transaction.rollback()
-    await engine.dispose()
+                    with TemporaryDirectory(prefix="bukmatika-semantic-recall-") as scratch:
+                        suite = await seed_representative_public_domain_benchmark(
+                            session,
+                            principal=principal,
+                            scratch_dir=Path(scratch),
+                        )
+                        lexical = await ResearchRecallEvaluator(
+                            session_scope_factory=same_session_scope
+                        ).evaluate(suite)
+                        semantic_service = SemanticResearchService(
+                            gateway=embedding_gateway,
+                            settings=settings,
+                            session_scope_factory=same_session_scope,
+                        )
+                        semantic = await SemanticRecallEvaluator(
+                            service=semantic_service,
+                            session=session,
+                        ).evaluate(suite)
+                        result = compare_retrieval_evaluations(
+                            provider=readiness.identity,
+                            lexical=lexical,
+                            semantic=semantic,
+                        )
+                finally:
+                    if transaction.is_active:
+                        await transaction.rollback()
+                    await session.close()
+                return result
+    finally:
+        await engine.dispose()
 
 
 def main() -> None:

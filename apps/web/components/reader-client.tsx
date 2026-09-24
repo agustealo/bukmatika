@@ -219,11 +219,13 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
         const visible = entries
           .filter((entry) => entry.isIntersecting)
           .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top);
-        const paragraph = visible[0]?.target;
-        if (!(paragraph instanceof HTMLElement)) return;
-        const sectionId = paragraph.getAttribute("data-reader-section-id");
-        const rawOffset = paragraph.getAttribute("data-reader-char-start");
-        const charOffset = Number(rawOffset);
+        const target = visible[0]?.target;
+        if (!(target instanceof HTMLElement)) return;
+        const sectionId =
+          target.getAttribute("data-reader-section-id") ??
+          target.closest("[data-reader-section-id]")?.getAttribute("data-reader-section-id");
+        const rawOffset = target.getAttribute("data-reader-char-start");
+        const charOffset = rawOffset === null ? 0 : Number(rawOffset);
         if (!sectionId || !Number.isInteger(charOffset) || charOffset < 0) return;
         setActivePosition((current) =>
           current.sectionId === sectionId && current.charOffset === charOffset
@@ -236,7 +238,12 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
     for (const section of sections) {
       const element = documentElement(section.section_id);
       if (!element) continue;
-      for (const paragraph of element.querySelectorAll("[data-reader-char-start]")) {
+      const paragraphs = element.querySelectorAll("[data-reader-char-start]");
+      if (paragraphs.length === 0) {
+        observer.observe(element);
+        continue;
+      }
+      for (const paragraph of paragraphs) {
         observer.observe(paragraph);
       }
     }
@@ -549,7 +556,6 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
                 {paragraphsWithOffsets(section.text).map((paragraph) => (
                   <p
                     className="reader-paragraph"
-                    data-reader-section-id={section.section_id}
                     data-reader-char-start={paragraph.charStart}
                     key={`${section.section_id}:${paragraph.key}`}
                   >

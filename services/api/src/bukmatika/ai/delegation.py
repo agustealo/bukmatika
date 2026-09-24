@@ -27,7 +27,7 @@ from bukmatika.ai.delegation_domain import (
     DelegationStopRequested,
 )
 from bukmatika.ai.domain import PlanStep
-from bukmatika.ai.policy import ActionDecisionValue
+from bukmatika.ai.policy import ActionDecisionValue, POLICY_VERSION
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.delegation_models import AIDelegation, AIDelegationApproval
 from bukmatika.persistence.delegations import DelegationPlanBundle, DelegationRepository
@@ -37,6 +37,7 @@ from bukmatika.persistence.personalization_models import UserModel
 from bukmatika.personalization.domain import ContextManifest
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+DELEGATION_POLICY_VERSION = "ai-delegation-policy-v1"
 
 
 class DelegationControlService:
@@ -155,10 +156,7 @@ class DelegationControlService:
                 principal_id=principal_id,
                 entity_type="ai_delegation",
                 entity_id=delegation.id,
-                context={
-                    **_event_context(delegation),
-                    "decision": request.decision.value,
-                },
+                context={**_event_context(delegation), "decision": request.decision.value},
             )
             return _response(delegation, approval=approval)
 
@@ -213,7 +211,7 @@ class DelegationControlService:
         principal_id: UUID,
         delegation_id: UUID,
     ) -> DelegationResponse:
-        """Internal runtime boundary. Public settings cannot currently select autonomy Level 2."""
+        """Internal boundary. Public settings cannot currently select autonomy Level 2."""
         async with self._session_scope() as database_session:
             repository = DelegationRepository(database_session)
             delegation = await repository.get(
@@ -228,11 +226,7 @@ class DelegationControlService:
             self._require_approval(delegation, approval)
             if delegation.status != DelegationStatus.APPROVED.value:
                 raise DelegationConflict("Delegation is not ready to activate")
-            await self._revalidate_contract(
-                database_session,
-                repository=repository,
-                delegation=delegation,
-            )
+            await self._revalidate_contract(repository=repository, delegation=delegation)
             user_model = await _current_user_model(database_session, principal_id)
             if not user_model.ai_enabled or user_model.autonomy_level != 2:
                 raise DelegationExecutionDisabled(
@@ -257,6 +251,8 @@ class DelegationControlService:
         delegation_id: UUID,
     ) -> DelegationAttemptPermit:
         """Issue one durable attempt permit only. This method never invokes an executor."""
+        deferred_error: DelegationBudgetExceeded | None = None
+        permit: DelegationAttemptPermit | None = None
         async with self._session_scope() as database_session:
             repository = DelegationRepository(database_session)
             delegation = await repository.get(
@@ -273,76 +269,93 @@ class DelegationControlService:
                 delegation_id=delegation_id,
             ) is not None:
                 raise DelegationConflict("Delegation already has an active attempt permit")
-            self._enforce_runtime_budget(delegation)
-            if delegation.attempts_used >= delegation.max_total_attempts:
+
+            if _runtime_budget_expired(delegation):
+                await self._fail_budget(database_session, delegation, "runtime_budget_exhausted")
+                deferred_error = DelegationBudgetExceeded(
+                    "Delegation runtime budget is exhausted"
+                )
+            elif delegation.attempts_used >= delegation.max_total_attempts:
                 await self._fail_budget(database_session, delegation, "attempt_budget_exhausted")
-                raise DelegationBudgetExceeded("Delegation attempt budget is exhausted")
-            if delegation.current_step_index >= len(delegation.selected_step_ids):
+                deferred_error = DelegationBudgetExceeded(
+                    "Delegation attempt budget is exhausted"
+                )
+            elif delegation.current_step_index >= len(delegation.selected_step_ids):
                 raise DelegationConflict("Delegation has no remaining step to authorize")
-
-            await self._revalidate_contract(
-                database_session,
-                repository=repository,
-                delegation=delegation,
-            )
-            step_id = delegation.selected_step_ids[delegation.current_step_index]
-            state = await ExecutionRepository(database_session).load(
-                principal_id=principal_id,
-                plan_id=delegation.plan_id,
-                step_id=step_id,
-            )
-            if not state.ai_enabled or state.autonomy_level != 2:
-                raise DelegationExecutionDisabled(
-                    "Delegation requires AI enabled with explicit autonomy Level 2"
+            else:
+                await self._revalidate_contract(repository=repository, delegation=delegation)
+                step_id = delegation.selected_step_ids[delegation.current_step_index]
+                state = await ExecutionRepository(database_session).load(
+                    principal_id=principal_id,
+                    plan_id=delegation.plan_id,
+                    step_id=step_id,
                 )
-            if state.decision.decision != ActionDecisionValue.ALLOW.value:
-                raise DelegationStepUnavailable(
-                    "Delegated step is not backed by a persisted allow decision"
+                if not state.ai_enabled or state.autonomy_level != 2:
+                    raise DelegationExecutionDisabled(
+                        "Delegation requires AI enabled with explicit autonomy Level 2"
+                    )
+                if state.decision.decision != ActionDecisionValue.ALLOW.value:
+                    raise DelegationStepUnavailable(
+                        "Delegated step is not backed by a persisted allow decision"
+                    )
+                if state.decision.policy_version != POLICY_VERSION:
+                    raise DelegationStepUnavailable("Delegated step policy decision is stale")
+                self._validate_delegatable_step(state.step)
+                context = state.context.model_copy(
+                    update={
+                        "ai_enabled": state.ai_enabled,
+                        "learning_enabled": state.learning_enabled,
+                        "autonomy_level": state.autonomy_level,
+                    }
                 )
-            self._validate_delegatable_step(state.step)
-            context = state.context.model_copy(
-                update={
-                    "ai_enabled": state.ai_enabled,
-                    "learning_enabled": state.learning_enabled,
-                    "autonomy_level": state.autonomy_level,
-                }
-            )
-            self._require_delegation_policy(state.step, context)
+                self._require_delegation_policy(state.step, context)
 
-            previous_attempts = await repository.step_attempt_count(
-                principal_id=principal_id,
-                delegation_id=delegation_id,
-                step_id=step_id,
-            )
-            if previous_attempts >= delegation.max_retries_per_step + 1:
-                await self._fail_budget(database_session, delegation, "retry_budget_exhausted")
-                raise DelegationBudgetExceeded("Delegation retry budget is exhausted")
-            attempt = await repository.create_attempt(
-                delegation=delegation,
-                step_id=step_id,
-                attempt_number=previous_attempts + 1,
-            )
-            await InteractionEventRepository(database_session).record(
-                SemanticEventType.AI_DELEGATION_ATTEMPT_AUTHORIZED,
-                principal_id=principal_id,
-                entity_type="ai_delegation",
-                entity_id=delegation.id,
-                context={
-                    **_event_context(delegation),
-                    "attempt_id": str(attempt.id),
-                    "step_id": step_id,
-                    "attempt_number": attempt.attempt_number,
-                },
-            )
-            return DelegationAttemptPermit(
-                attempt_id=attempt.id,
-                delegation_id=delegation.id,
-                plan_id=delegation.plan_id,
-                step_id=step_id,
-                attempt_number=attempt.attempt_number,
-                delegation_fingerprint=delegation.delegation_fingerprint,
-                authorized_at=attempt.authorized_at,
-            )
+                previous_attempts = await repository.step_attempt_count(
+                    principal_id=principal_id,
+                    delegation_id=delegation_id,
+                    step_id=step_id,
+                )
+                if previous_attempts >= delegation.max_retries_per_step + 1:
+                    await self._fail_budget(
+                        database_session,
+                        delegation,
+                        "retry_budget_exhausted",
+                    )
+                    deferred_error = DelegationBudgetExceeded(
+                        "Delegation retry budget is exhausted"
+                    )
+                else:
+                    attempt = await repository.create_attempt(
+                        delegation=delegation,
+                        step_id=step_id,
+                        attempt_number=previous_attempts + 1,
+                    )
+                    await InteractionEventRepository(database_session).record(
+                        SemanticEventType.AI_DELEGATION_ATTEMPT_AUTHORIZED,
+                        principal_id=principal_id,
+                        entity_type="ai_delegation",
+                        entity_id=delegation.id,
+                        context={
+                            **_event_context(delegation),
+                            "attempt_id": str(attempt.id),
+                            "step_id": step_id,
+                            "attempt_number": attempt.attempt_number,
+                        },
+                    )
+                    permit = DelegationAttemptPermit(
+                        attempt_id=attempt.id,
+                        delegation_id=delegation.id,
+                        plan_id=delegation.plan_id,
+                        step_id=step_id,
+                        attempt_number=attempt.attempt_number,
+                        delegation_fingerprint=delegation.delegation_fingerprint,
+                        authorized_at=attempt.authorized_at,
+                    )
+        if deferred_error is not None:
+            raise deferred_error
+        if permit is None:
+            raise DelegationConflict("Delegation did not produce an attempt permit")
+        return permit
 
     async def complete_attempt(
         self,
@@ -371,6 +384,8 @@ class DelegationControlService:
                 DelegationStatus.STOP_REQUESTED.value,
             }:
                 raise DelegationConflict("Delegation cannot accept attempt completion")
+            if delegation.current_step_index >= len(delegation.selected_step_ids):
+                raise PlanIntegrityError("Delegation step index exceeds its bounded selection")
             expected_step = delegation.selected_step_ids[delegation.current_step_index]
             if attempt.step_id != expected_step:
                 raise PlanIntegrityError("Delegated attempt no longer matches the current step")
@@ -505,6 +520,8 @@ class DelegationControlService:
                 raise DelegationInvalid("Delegated step lacks a matching persisted decision")
             if decision.decision != ActionDecisionValue.ALLOW.value:
                 raise DelegationInvalid("Only persisted allow decisions can enter delegation")
+            if decision.policy_version != POLICY_VERSION:
+                raise DelegationInvalid("Delegated step policy decision is stale")
             if step.capability.value not in context.available_capabilities:
                 raise DelegationInvalid("Delegated capability is absent from persisted context")
             self._validate_delegatable_step(step)
@@ -529,7 +546,6 @@ class DelegationControlService:
 
     async def _revalidate_contract(
         self,
-        database_session: AsyncSession,
         *,
         repository: DelegationRepository,
         delegation: AIDelegation,
@@ -561,7 +577,6 @@ class DelegationControlService:
             != delegation.delegation_fingerprint
         ):
             raise DelegationConflict("Delegation budget or selection fingerprint is invalid")
-        del database_session
 
     def _require_approval(
         self,
@@ -572,13 +587,6 @@ class DelegationControlService:
             raise DelegationApprovalRequired("Delegation requires exact user approval")
         if approval.delegation_fingerprint != delegation.delegation_fingerprint:
             raise DelegationConflict("Delegation approval fingerprint no longer matches")
-
-    def _enforce_runtime_budget(self, delegation: AIDelegation) -> None:
-        if delegation.started_at is None:
-            raise DelegationConflict("Running delegation has no start time")
-        deadline = delegation.started_at + timedelta(seconds=delegation.max_runtime_seconds)
-        if datetime.now(UTC) > deadline:
-            raise DelegationBudgetExceeded("Delegation runtime budget is exhausted")
 
     async def _fail_budget(
         self,
@@ -606,6 +614,13 @@ async def _current_user_model(session: AsyncSession, principal_id: UUID) -> User
     if user_model is None:
         raise PlanIntegrityError("Principal has no durable user model")
     return user_model
+
+
+def _runtime_budget_expired(delegation: AIDelegation) -> bool:
+    if delegation.started_at is None:
+        raise DelegationConflict("Running delegation has no start time")
+    deadline = delegation.started_at + timedelta(seconds=delegation.max_runtime_seconds)
+    return datetime.now(UTC) > deadline
 
 
 def _plan_fingerprint(bundle: DelegationPlanBundle) -> str:
@@ -645,6 +660,7 @@ def _delegation_fingerprint(
 ) -> str:
     return _digest(
         {
+            "delegation_policy_version": DELEGATION_POLICY_VERSION,
             "plan_fingerprint": plan_fingerprint,
             "step_ids": request.step_ids,
             "max_runtime_seconds": request.max_runtime_seconds,
@@ -670,6 +686,7 @@ def _event_context(delegation: AIDelegation) -> dict[str, object]:
         "status": delegation.status,
         "step_ids": list(delegation.selected_step_ids),
         "delegation_fingerprint": delegation.delegation_fingerprint,
+        "delegation_policy_version": DELEGATION_POLICY_VERSION,
         "max_runtime_seconds": delegation.max_runtime_seconds,
         "max_retries_per_step": delegation.max_retries_per_step,
         "max_total_attempts": delegation.max_total_attempts,

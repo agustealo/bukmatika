@@ -1,11 +1,12 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence.delegation_models import AIDelegation, AIDelegationAttempt
 from bukmatika.persistence.delegation_result_models import AIDelegationAttemptResult
+from bukmatika.persistence.personalization_models import Plan
 
 _TERMINAL_NONRESULT_STATUSES = ("rejected", "stopped", "failed", "cancelled")
 
@@ -19,6 +20,7 @@ class StoredDelegationResult:
 @dataclass(frozen=True, slots=True)
 class StoredTerminalDelegation:
     delegation: AIDelegation
+    user_request: str
     attempt: AIDelegationAttempt | None
 
 
@@ -101,23 +103,29 @@ class DelegationResultRepository:
             AIDelegation.stopped_at,
             AIDelegation.updated_at,
         )
-        delegations = list(
-            (
-                await self._session.scalars(
-                    select(AIDelegation)
-                    .where(
-                        AIDelegation.principal_id == principal_id,
-                        AIDelegation.status.in_(_TERMINAL_NONRESULT_STATUSES),
-                    )
-                    .order_by(terminal_at.desc(), AIDelegation.id.desc())
-                    .limit(limit)
+        rows = (
+            await self._session.execute(
+                select(AIDelegation, Plan.user_request)
+                .join(
+                    Plan,
+                    and_(
+                        Plan.id == AIDelegation.plan_id,
+                        Plan.principal_id == AIDelegation.principal_id,
+                    ),
                 )
-            ).all()
-        )
-        if not delegations:
+                .where(
+                    AIDelegation.principal_id == principal_id,
+                    Plan.principal_id == principal_id,
+                    AIDelegation.status.in_(_TERMINAL_NONRESULT_STATUSES),
+                )
+                .order_by(terminal_at.desc(), AIDelegation.id.desc())
+                .limit(limit)
+            )
+        ).all()
+        if not rows:
             return []
 
-        delegation_ids = [delegation.id for delegation in delegations]
+        delegation_ids = [delegation.id for delegation, _ in rows]
         attempts = list(
             (
                 await self._session.scalars(
@@ -141,7 +149,8 @@ class DelegationResultRepository:
         return [
             StoredTerminalDelegation(
                 delegation=delegation,
+                user_request=user_request,
                 attempt=latest_attempt.get(delegation.id),
             )
-            for delegation in delegations
+            for delegation, user_request in rows
         ]

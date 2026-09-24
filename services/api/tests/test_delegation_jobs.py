@@ -16,6 +16,7 @@ from bukmatika.ai.delegation_domain import (
     DelegationApprovalDecision,
     DelegationApprovalRequest,
     DelegationProposalRequest,
+    DelegationResponse,
     DelegationStatus,
 )
 from bukmatika.ai.delegation_jobs import (
@@ -27,6 +28,7 @@ from bukmatika.ai.domain import CapabilityName
 from bukmatika.config import Settings
 from bukmatika.persistence.delegation_models import AIDelegation
 from bukmatika.persistence.jobs import Job, JobStatus
+from bukmatika.persistence.models import Principal
 
 
 def _settings() -> Settings:
@@ -43,7 +45,12 @@ async def _approved_level2_delegation(
     session: AsyncSession,
     *,
     suffix: str,
-) -> tuple[DelegationControlService, DelegationOperatorControlService, object, object]:
+) -> tuple[
+    DelegationControlService,
+    DelegationOperatorControlService,
+    Principal,
+    DelegationResponse,
+]:
     principal = await _principal(session, suffix)
     plan = await _plan(
         session,
@@ -214,7 +221,7 @@ async def test_failed_enqueue_rolls_back_running_transition(
             delegation_id=proposed.delegation_id,
         )
 
-    await session.expire_all()
+    session.expire_all()
     delegation = await session.get(AIDelegation, proposed.delegation_id)
     assert delegation is not None
     assert delegation.status == DelegationStatus.APPROVED.value

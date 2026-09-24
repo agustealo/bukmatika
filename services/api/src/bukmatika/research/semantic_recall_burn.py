@@ -162,7 +162,9 @@ def compare_retrieval_evaluations(
 
     paine = semantic_by_case.get(_PAINE_SEMANTIC_CASE_ID)
     if paine is None:
-        raise ResearchRecallSuiteInvalid("Representative semantic evaluation is missing the Paine case")
+        raise ResearchRecallSuiteInvalid(
+            "Representative semantic evaluation is missing the Paine case"
+        )
     paine_recovered = (
         paine.recall == 1.0
         and paine.first_relevant_rank is not None

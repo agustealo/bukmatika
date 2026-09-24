@@ -1,10 +1,12 @@
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence import session_scope
+from bukmatika.persistence.delegations import DelegationRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.personalization import (
     PersonalizationRepository,
@@ -22,6 +24,10 @@ from bukmatika.personalization.domain import (
 )
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+
+
+class AutonomyLevel2ConsentRequired(RuntimeError):
+    code = "AUTONOMY_LEVEL_2_CONSENT_REQUIRED"
 
 
 class PersonalizationService:
@@ -83,10 +89,50 @@ class PersonalizationService:
     ) -> PersonalizationProfileResponse:
         async with self._session_scope() as database_session:
             repository = PersonalizationRepository(database_session)
-            user_model = await repository.update_settings(
+            transition = await repository.update_settings_transition(
                 principal_id=principal_id,
                 update=update,
             )
+            if transition.enters_level_2 and not update.level_2_consent:
+                raise AutonomyLevel2ConsentRequired(
+                    "Explicit consent is required when enabling autonomy Level 2"
+                )
+
+            user_model = transition.user_model
+            stopped_delegation_ids: list[str] = []
+            if transition.revokes_level_2:
+                delegations = DelegationRepository(database_session)
+                running = await delegations.running_for_principal(
+                    principal_id=principal_id,
+                    lock=True,
+                )
+                now = datetime.now(UTC)
+                events = InteractionEventRepository(database_session)
+                for delegation in running:
+                    delegation.status = "stop_requested"
+                    delegation.stop_requested_at = now
+                    delegation.updated_at = now
+                    stopped_delegation_ids.append(str(delegation.id))
+                    await events.record(
+                        SemanticEventType.AI_DELEGATION_STOP_REQUESTED,
+                        principal_id=principal_id,
+                        entity_type="ai_delegation",
+                        entity_id=delegation.id,
+                        context={
+                            "plan_id": str(delegation.plan_id),
+                            "status": delegation.status,
+                            "reason": "autonomy_revoked",
+                            "autonomy_level": user_model.autonomy_level,
+                            "ai_enabled": user_model.ai_enabled,
+                            "attempts_used": delegation.attempts_used,
+                            "max_total_attempts": delegation.max_total_attempts,
+                            "current_step_index": delegation.current_step_index,
+                            "step_count": len(delegation.selected_step_ids),
+                        },
+                    )
+                if running:
+                    await database_session.flush()
+
             await InteractionEventRepository(database_session).record(
                 SemanticEventType.PERSONALIZATION_SETTINGS_UPDATED,
                 principal_id=principal_id,
@@ -96,6 +142,7 @@ class PersonalizationService:
                     "ai_enabled": user_model.ai_enabled,
                     "learning_enabled": user_model.learning_enabled,
                     "autonomy_level": user_model.autonomy_level,
+                    "delegations_stop_requested": stopped_delegation_ids,
                 },
             )
             claims = await repository.active_claims(principal_id)
@@ -162,6 +209,7 @@ def _claim_response(claim: PreferenceClaim) -> PreferenceClaimResponse:
 
 
 __all__ = [
+    "AutonomyLevel2ConsentRequired",
     "PersonalizationService",
     "PreferenceClaimNotFound",
     "set_explicit_preference_in_session",

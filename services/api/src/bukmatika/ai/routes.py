@@ -22,6 +22,17 @@ from bukmatika.ai.configuration import (
     LocalModelInventoryResponse,
     PrincipalModelRuntimeResolver,
 )
+from bukmatika.ai.delegation import DelegationControlService
+from bukmatika.ai.delegation_domain import (
+    DelegationApprovalRequest,
+    DelegationConflict,
+    DelegationExecutionDisabled,
+    DelegationInvalid,
+    DelegationNotFound,
+    DelegationProposalRequest,
+    DelegationResponse,
+    DelegationStepUnavailable,
+)
 from bukmatika.ai.execution import (
     ActionApprovalRequired,
     ActionExecutionDenied,
@@ -54,6 +65,7 @@ router = APIRouter(prefix="/v1/ai", tags=["ai"])
 _personalization_service = PersonalizationService()
 _approval_service = ApprovalService()
 _execution_coordinator = ExecutionCoordinator()
+_delegation_control_service = DelegationControlService()
 
 
 class AIAvailabilityState(StrEnum):
@@ -103,6 +115,10 @@ def approval_service() -> ApprovalService:
 
 def execution_coordinator() -> ExecutionCoordinator:
     return _execution_coordinator
+
+
+def delegation_control_service() -> DelegationControlService:
+    return _delegation_control_service
 
 
 def grounded_research_service(
@@ -209,6 +225,106 @@ async def decide_action_approval(
             detail={"code": exc.code},
         ) from exc
     except (ActionApprovalNotRequired, ActionApprovalConflict) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code},
+        ) from exc
+
+
+@router.post(
+    "/plans/{plan_id}/delegations",
+    response_model=DelegationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def propose_delegation(
+    plan_id: UUID,
+    proposal: DelegationProposalRequest,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[DelegationControlService, Depends(delegation_control_service)],
+) -> DelegationResponse:
+    try:
+        return await service.propose(
+            principal_id=identity.principal_id,
+            plan_id=plan_id,
+            request=proposal,
+        )
+    except DelegationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": exc.code},
+        ) from exc
+    except DelegationInvalid as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": exc.code},
+        ) from exc
+    except (DelegationExecutionDisabled, DelegationStepUnavailable) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code},
+        ) from exc
+
+
+@router.get("/delegations/{delegation_id}", response_model=DelegationResponse)
+async def delegation_status(
+    delegation_id: UUID,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[DelegationControlService, Depends(delegation_control_service)],
+) -> DelegationResponse:
+    try:
+        return await service.get(
+            principal_id=identity.principal_id,
+            delegation_id=delegation_id,
+        )
+    except DelegationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": exc.code},
+        ) from exc
+
+
+@router.post("/delegations/{delegation_id}/approval", response_model=DelegationResponse)
+async def decide_delegation(
+    delegation_id: UUID,
+    decision: DelegationApprovalRequest,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[DelegationControlService, Depends(delegation_control_service)],
+) -> DelegationResponse:
+    try:
+        return await service.decide(
+            principal_id=identity.principal_id,
+            delegation_id=delegation_id,
+            request=decision,
+        )
+    except DelegationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": exc.code},
+        ) from exc
+    except DelegationConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code},
+        ) from exc
+
+
+@router.post("/delegations/{delegation_id}/stop", response_model=DelegationResponse)
+async def stop_delegation(
+    delegation_id: UUID,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[DelegationControlService, Depends(delegation_control_service)],
+) -> DelegationResponse:
+    try:
+        return await service.request_stop(
+            principal_id=identity.principal_id,
+            delegation_id=delegation_id,
+        )
+    except DelegationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": exc.code},
+        ) from exc
+    except DelegationConflict as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code},

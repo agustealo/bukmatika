@@ -99,6 +99,13 @@ function requestedSectionOrdinal(): number | null {
   return Number.isInteger(value) && value >= 0 ? value : null;
 }
 
+function requestedCharOffset(): number | null {
+  const raw = new URLSearchParams(window.location.search).get("offset");
+  if (raw === null || raw.trim() === "") return null;
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 0 ? value : null;
+}
+
 export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) {
   const [document, setDocument] = useState<ReaderDocument | null>(null);
   const [sections, setSections] = useState<ReaderSection[]>([]);
@@ -142,6 +149,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
       setError(null);
       try {
         const requestedOrdinal = requestedSectionOrdinal();
+        const requestedOffset = requestedCharOffset();
         const initial = await fetchPage(
           requestedOrdinal !== null && requestedOrdinal > 0 ? requestedOrdinal - 1 : undefined,
         );
@@ -185,9 +193,13 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
         setNextAfter(visible.next_after_ordinal);
         const resumeId = visible.reading_state?.section_id;
         const targetId = requestedSectionId ?? resumeId ?? visible.sections[0]?.section_id ?? null;
+        const requestedSection =
+          requestedSectionId === null
+            ? null
+            : visible.sections.find((section) => section.section_id === requestedSectionId) ?? null;
         const targetOffset =
           requestedSectionId !== null
-            ? 0
+            ? Math.min(requestedOffset ?? 0, requestedSection?.text.length ?? 0)
             : targetId !== null && visible.reading_state?.section_id === targetId
               ? (visible.reading_state.char_offset ?? 0)
               : 0;

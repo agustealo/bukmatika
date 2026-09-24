@@ -20,6 +20,7 @@ from bukmatika.persistence.models import Base, TimestampMixin
 
 class AIDelegation(Base, TimestampMixin):
     __tablename__ = "ai_delegations"
+    __mapper_args__ = {"eager_defaults": True}
     __table_args__ = (
         CheckConstraint(
             "status IN ('proposed','approved','rejected','running','stop_requested',"

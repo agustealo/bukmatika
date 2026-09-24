@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.persistence.delegation_control_models import AIDelegationConsent
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.models import InteractionEvent
 from bukmatika.persistence.personalization import (
@@ -198,6 +199,9 @@ class PersonalizationPortabilityRepository:
         await self._session.execute(delete(Goal).where(Goal.principal_id == principal_id))
         await self._session.execute(
             delete(PreferenceClaim).where(PreferenceClaim.principal_id == principal_id)
+        )
+        await self._session.execute(
+            delete(AIDelegationConsent).where(AIDelegationConsent.principal_id == principal_id)
         )
         await self._session.execute(delete(UserModel).where(UserModel.id == current_model.id))
         await self._session.flush()

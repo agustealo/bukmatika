@@ -4,11 +4,14 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.ai.delegation_control import revoke_level2_consent_in_session
 from bukmatika.persistence import session_scope
+from bukmatika.persistence.delegation_control import DelegationControlRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.personalization import (
     PersonalizationRepository,
     PreferenceClaimNotFound,
+    lock_personalization_state,
 )
 from bukmatika.persistence.personalization_models import PreferenceClaim, UserModel
 from bukmatika.personalization.domain import (
@@ -82,7 +85,26 @@ class PersonalizationService:
         update: PersonalizationSettingsUpdate,
     ) -> PersonalizationProfileResponse:
         async with self._session_scope() as database_session:
+            await lock_personalization_state(database_session, principal_id)
             repository = PersonalizationRepository(database_session)
+            current_model = await repository.get_or_create_user_model(principal_id)
+            consent = await DelegationControlRepository(database_session).consent(
+                principal_id=principal_id
+            )
+            had_level2 = current_model.autonomy_level == 2
+            had_active_consent = consent is not None and consent.status == "active"
+            if had_level2 or had_active_consent:
+                reason = (
+                    "ai_disabled"
+                    if not update.ai_enabled
+                    else "autonomy_reduced_below_level2"
+                )
+                await revoke_level2_consent_in_session(
+                    database_session,
+                    principal_id=principal_id,
+                    reason=reason,
+                )
+
             user_model = await repository.update_settings(
                 principal_id=principal_id,
                 update=update,

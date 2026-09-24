@@ -84,6 +84,10 @@ class PersonalizationSettingsUpdate(BaseModel):
     level_2_consent: bool = False
 
 
+class AutonomyLevel2ConsentRequired(RuntimeError):
+    code = "AUTONOMY_LEVEL_2_CONSENT_REQUIRED"
+
+
 class PersonalizationProfileResponse(BaseModel):
     user_model_id: UUID
     ai_enabled: bool

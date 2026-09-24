@@ -20,6 +20,16 @@ from bukmatika.research.domain import (
     ResearchTimelinePrecision,
     ResearchTimelineResponse,
 )
+from bukmatika.research.recall_eval import (
+    ResearchRecallCase,
+    ResearchRecallCaseResult,
+    ResearchRecallEvaluation,
+    ResearchRecallEvaluator,
+    ResearchRecallRetrievedPassage,
+    ResearchRecallSuite,
+    ResearchRecallSuiteInvalid,
+    ResearchRecallTarget,
+)
 from bukmatika.research.routes import router
 from bukmatika.research.service import (
     ResearchEvidenceReferenceInvalid,
@@ -46,6 +56,14 @@ __all__ = [
     "ResearchMentionsResponse",
     "ResearchPassageResponse",
     "ResearchReaderPositionInvalid",
+    "ResearchRecallCase",
+    "ResearchRecallCaseResult",
+    "ResearchRecallEvaluation",
+    "ResearchRecallEvaluator",
+    "ResearchRecallRetrievedPassage",
+    "ResearchRecallSuite",
+    "ResearchRecallSuiteInvalid",
+    "ResearchRecallTarget",
     "ResearchSearchRequest",
     "ResearchSearchResponse",
     "ResearchSelectionDenied",

@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bukmatika.ai.delegation import DelegationControlService
+from bukmatika.ai.delegation import DelegationControlService, _event_context, _response
 from bukmatika.ai.delegation_control_domain import (
     ActiveDelegationControlItem,
     DelegationConsentAction,
@@ -16,10 +16,18 @@ from bukmatika.ai.delegation_control_domain import (
     DelegationConsentUnavailable,
     DelegationControlStatusResponse,
 )
-from bukmatika.ai.delegation_domain import DelegationResponse, DelegationStatus
+from bukmatika.ai.delegation_domain import (
+    DelegationConflict,
+    DelegationExecutionDisabled,
+    DelegationResponse,
+    DelegationStatus,
+)
+from bukmatika.ai.delegation_jobs import enqueue_delegation_job_in_session
+from bukmatika.config import Settings, get_settings
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.delegation_control import DelegationControlRepository
 from bukmatika.persistence.delegation_models import AIDelegation
+from bukmatika.persistence.delegations import DelegationRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.personalization import (
     PersonalizationRepository,
@@ -32,14 +40,16 @@ LEVEL2_DELEGATION_CONSENT_POLICY_VERSION = "ai-level2-read-only-consent-v1"
 
 
 class DelegationOperatorControlService:
-    """Principal-visible Level 2 consent/status surface. It never schedules work."""
+    """Principal-visible Level 2 consent/status and explicit durable-start surface."""
 
     def __init__(
         self,
         *,
+        settings: Settings | None = None,
         session_scope_factory: SessionScopeFactory = session_scope,
         delegation_service: DelegationControlService | None = None,
     ) -> None:
+        self._settings = settings or get_settings()
         self._session_scope = session_scope_factory
         self._delegation_service = delegation_service or DelegationControlService(
             session_scope_factory=session_scope_factory
@@ -65,15 +75,77 @@ class DelegationOperatorControlService:
         principal_id: UUID,
         delegation_id: UUID,
     ) -> DelegationResponse:
-        state = await self.status(principal_id=principal_id)
-        if not state.level2_enabled:
-            raise DelegationConsentUnavailable(
-                "Level 2 read-only delegation consent is not active"
+        async with self._session_scope() as database_session:
+            await lock_personalization_state(database_session, principal_id)
+            personalization = PersonalizationRepository(database_session)
+            await personalization.get_or_create_user_model(principal_id)
+
+            consent_repository = DelegationControlRepository(database_session)
+            consent = await consent_repository.consent(principal_id=principal_id, lock=True)
+            if (
+                consent is None
+                or consent.status != "active"
+                or consent.scope != DelegationConsentScope.READ_ONLY.value
+                or consent.policy_version != LEVEL2_DELEGATION_CONSENT_POLICY_VERSION
+            ):
+                raise DelegationConsentUnavailable(
+                    "Level 2 read-only delegation consent is not active"
+                )
+
+            repository = DelegationRepository(database_session)
+            delegation = await repository.get(
+                principal_id=principal_id,
+                delegation_id=delegation_id,
+                lock=True,
             )
-        return await self._delegation_service.activate(
-            principal_id=principal_id,
-            delegation_id=delegation_id,
-        )
+            approval = await repository.approval(
+                principal_id=principal_id,
+                delegation_id=delegation_id,
+            )
+            self._delegation_service._require_approval(delegation, approval)
+            if delegation.status not in {
+                DelegationStatus.APPROVED.value,
+                DelegationStatus.RUNNING.value,
+            }:
+                raise DelegationConflict("Delegation is not ready to start")
+
+            await self._delegation_service._revalidate_contract(
+                repository=repository,
+                delegation=delegation,
+            )
+            user_model = await database_session.scalar(
+                select(UserModel)
+                .where(UserModel.principal_id == principal_id)
+                .with_for_update()
+            )
+            if user_model is None:
+                raise DelegationConsentConflict("Principal user model is unavailable")
+            if not user_model.ai_enabled or user_model.autonomy_level != 2:
+                raise DelegationExecutionDisabled(
+                    "Delegation requires AI enabled with explicit autonomy Level 2"
+                )
+
+            if delegation.status == DelegationStatus.APPROVED.value:
+                delegation.status = DelegationStatus.RUNNING.value
+                delegation.started_at = datetime.now(UTC)
+                await database_session.flush()
+                await InteractionEventRepository(database_session).record(
+                    SemanticEventType.AI_DELEGATION_STARTED,
+                    principal_id=principal_id,
+                    entity_type="ai_delegation",
+                    entity_id=delegation.id,
+                    context=_event_context(delegation),
+                )
+            elif delegation.started_at is None:
+                raise DelegationConflict("Running delegation has no durable start time")
+
+            await enqueue_delegation_job_in_session(
+                database_session,
+                settings=self._settings,
+                principal_id=principal_id,
+                delegation_id=delegation.id,
+            )
+            return _response(delegation, approval=approval)
 
     async def _grant(self, *, principal_id: UUID) -> DelegationControlStatusResponse:
         async with self._session_scope() as database_session:

@@ -1,0 +1,294 @@
+.surface {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+  padding: clamp(1.25rem, 2vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: 1.5rem;
+  background: color-mix(in srgb, var(--surface) 92%, var(--accent) 8%);
+}
+
+.heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.8fr);
+  gap: 1.5rem;
+  align-items: end;
+}
+
+.heading h2,
+.planHeading h3 {
+  margin: 0;
+}
+
+.heading p,
+.planHeading p,
+.budgetHeading p,
+.proposalSuccess p,
+.emptyState p,
+.stepBody p,
+.stepBody small {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.eyebrow,
+.contextBar span,
+.planHeading span,
+.budgetHeading span,
+.budgetGrid span,
+.proposalSuccess span {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.contextBar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(10rem, 0.45fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.contextBar strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.contextBar button,
+.proposeAction,
+.proposalSuccess a {
+  min-height: 2.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--text);
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--background);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.contextBar button:disabled,
+.proposeAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.error,
+.notice {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface);
+}
+
+.error {
+  border-color: color-mix(in srgb, currentColor 28%, var(--line));
+}
+
+.planPanel {
+  display: grid;
+  gap: 1rem;
+}
+
+.planHeading {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.planHeading code {
+  max-width: 20rem;
+  padding: 0.4rem 0.6rem;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.steps {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr);
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.step[data-eligible="true"] {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+}
+
+.stepIndex {
+  display: grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.stepBody {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.stepTopline {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.stepTopline > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.stepTopline > div span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: capitalize;
+}
+
+.decision {
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.decision[data-decision="allow"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.stepToggle {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  font-size: 0.85rem;
+}
+
+.stepToggle input {
+  margin-top: 0.15rem;
+}
+
+.budgetPanel {
+  display: grid;
+  gap: 1rem;
+  padding-top: 0.25rem;
+}
+
+.budgetHeading {
+  display: grid;
+  grid-template-columns: minmax(0, 0.6fr) minmax(18rem, 1fr);
+  gap: 1rem;
+  align-items: end;
+}
+
+.budgetGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.budgetGrid label,
+.budgetGrid > div {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.budgetGrid select {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--background);
+  color: var(--text);
+  font: inherit;
+}
+
+.proposeAction {
+  justify-self: start;
+}
+
+.proposalSuccess {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.proposalSuccess strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.proposalSuccess a {
+  flex: 0 0 auto;
+}
+
+.emptyState {
+  padding: 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 1rem;
+}
+
+.emptyState strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+@media (max-width: 860px) {
+  .heading,
+  .budgetHeading,
+  .contextBar,
+  .budgetGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .contextBar button,
+  .proposeAction {
+    justify-self: start;
+  }
+
+  .planHeading,
+  .proposalSuccess {
+    flex-direction: column;
+  }
+}

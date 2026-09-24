@@ -10,6 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.persistence.document_models import Document, DocumentSection
 from bukmatika.persistence.models import Asset, Edition, LibraryEntry
 from bukmatika.persistence.reader_models import Bookmark, Highlight, ReadingState
+from bukmatika.reader_progress import (
+    CanonicalReaderProgressError,
+    canonical_progress_fraction,
+    canonical_reading_status,
+)
 
 
 class ReaderAccessDenied(LookupError):
@@ -203,13 +208,17 @@ class ReaderRepository:
             section_id=section_id,
             char_offset=char_offset,
         )
-        progress_fraction = _canonical_progress_fraction(
-            document=access.document,
-            section=section,
-            char_offset=char_offset,
-        )
+        try:
+            progress_fraction = canonical_progress_fraction(
+                section_count=access.document.section_count,
+                section_ordinal=section.ordinal,
+                section_text_length=len(section.text),
+                char_offset=char_offset,
+            )
+        except CanonicalReaderProgressError as exc:
+            raise ReaderPositionInvalid(str(exc)) from exc
         now = datetime.now(UTC)
-        status = _reading_status(progress_fraction)
+        status = canonical_reading_status(progress_fraction)
         statement = (
             insert(ReadingState)
             .values(
@@ -471,28 +480,3 @@ class ReaderRepository:
         if section is None:
             raise ReaderPositionInvalid("Reader position references a section outside the document")
         return section
-
-
-def _canonical_progress_fraction(
-    *,
-    document: Document,
-    section: DocumentSection,
-    char_offset: int,
-) -> float:
-    section_count = document.section_count
-    if section_count < 1 or section.ordinal < 0 or section.ordinal >= section_count:
-        raise ReaderPositionInvalid("Reader section ordinal is outside the document bounds")
-
-    text_length = len(section.text)
-    if section.ordinal == section_count - 1 and char_offset == text_length:
-        return 1.0
-
-    within_section = 0.0 if text_length == 0 else char_offset / text_length
-    progress = (section.ordinal + within_section) / section_count
-    return min(1.0, max(0.0, progress))
-
-
-def _reading_status(progress_fraction: float) -> str:
-    if progress_fraction >= 1:
-        return "finished"
-    return "reading"

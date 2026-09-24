@@ -45,6 +45,8 @@ from bukmatika.persistence.models import (
 )
 from bukmatika.persistence.reader_models import Bookmark, Highlight, ReadingState
 
+SECTION_TEXT = "Portable chapter text for coordinate validation."
+
 
 def _scope(session: AsyncSession):  # type: ignore[no-untyped-def]
     @asynccontextmanager
@@ -172,13 +174,12 @@ async def _seed_destination(
     )
     session.add(document)
     await session.flush()
-    section_text = "Portable chapter text for coordinate validation."
     section = DocumentSection(
         document_id=document.id,
         ordinal=0,
         heading="Chapter one",
         locator={"spine_index": 0, "href": "chapter.xhtml"},
-        text=section_text,
+        text=SECTION_TEXT,
     )
     session.add(section)
     await session.flush()
@@ -188,8 +189,8 @@ async def _seed_destination(
             section_id=section.id,
             ordinal=0,
             char_start=0,
-            char_end=len(section_text),
-            text=section_text,
+            char_end=len(SECTION_TEXT),
+            text=SECTION_TEXT,
         )
     )
     await session.flush()
@@ -247,7 +248,7 @@ def _manifest(
             parser_version="1",
         ),
         status="reading",
-        progress_fraction=0.4,
+        progress_fraction=5 / len(SECTION_TEXT),
         position=PortableReadingPosition(
             section_ordinal=0,
             char_offset=5,
@@ -355,7 +356,7 @@ async def test_import_apply_is_transactional_and_idempotent(session: AsyncSessio
         )
     )
     assert state is not None
-    assert state.progress_fraction == 0.4
+    assert state.progress_fraction == 5 / len(SECTION_TEXT)
     assert state.updated_at == now
     assert await session.scalar(
         select(func.count()).select_from(Bookmark).where(Bookmark.reading_state_id == state.id)
@@ -376,6 +377,34 @@ async def test_import_apply_is_transactional_and_idempotent(session: AsyncSessio
     assert await session.scalar(select(func.count()).select_from(LibrarySmartShelf)) == 1
     assert await session.scalar(select(func.count()).select_from(Bookmark)) == 1
     assert await session.scalar(select(func.count()).select_from(Highlight)) == 1
+
+
+async def test_import_apply_rejects_reader_progress_that_disagrees_with_position(
+    session: AsyncSession,
+) -> None:
+    principal, _, document, _ = await _seed_destination(session, suffix="progress-conflict")
+    manifest = _manifest(
+        suffix="progress-conflict",
+        document_sha=document.source_sha256,
+        reading_updated_at=datetime.now(UTC),
+    )
+    reading = manifest.entries[0].reading_states[0]
+    reading.status = "finished"
+    reading.progress_fraction = 1.0
+
+    result = await LibraryPortabilityImportApplier(
+        session_scope_factory=_scope(session)
+    ).apply(principal_id=principal.id, manifest=manifest)
+
+    assert result.committed is False
+    assert result.plan.can_apply is False
+    assert any(
+        conflict.code == "reading_progress_incompatible" for conflict in result.plan.conflicts
+    )
+    assert await session.scalar(select(func.count()).select_from(ReadingState)) == 0
+    assert await session.scalar(select(func.count()).select_from(LibraryCollection)) == 0
+    assert await session.scalar(select(func.count()).select_from(LibraryTag)) == 0
+    assert await session.scalar(select(func.count()).select_from(LibrarySmartShelf)) == 0
 
 
 async def test_import_apply_rolls_back_when_local_bookmark_is_newer(

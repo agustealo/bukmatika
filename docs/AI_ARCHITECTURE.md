@@ -234,29 +234,42 @@ Start with a handful of useful optional choices, then learn gradually. The first
 
 ## Autonomy ladder
 
-Personalization and autonomy are separate controls.
+Personalization and autonomy are separate controls. An autonomy level never grants broad standing tool permission. Every material action remains constrained by capability registration, deterministic policy, current user state, ownership, privacy, rights, and any action-specific approval contract.
 
 ### Level 0 - Reactive
 
-AI acts only when directly asked.
+AI acts only when directly asked. Read-only actions may execute when deterministic policy allows them. Durable or consequential actions remain separately approval-gated or unavailable.
 
 ### Level 1 - Suggestive
 
-AI proposes searches, collections, metadata fixes, reading paths, or related works. User approves actions.
+AI may propose useful searches, organization, metadata changes, reading paths, related works, or reversible preference changes. The user remains the operator for durable actions. Level 1 does not authorize background delegation.
 
-### Level 2 - Assisted
+### Level 2 - Bounded delegated
 
-AI may perform reversible low-risk organization actions under explicit standing preferences, while clearly reporting them.
+Level 2 is the first delegated-autonomy lane. It is opt-in, principal-owned, finite, inspectable, and fail-closed.
 
-### Level 3 - Delegated
+Current production scope is intentionally narrow: only explicitly selected, read-only `research.search` steps may be delegated. A Level 2 run requires all of the following:
 
-User can delegate bounded goals such as:
+- AI remains enabled for the principal;
+- explicit current Level 2 read-only consent;
+- a persisted principal-owned plan;
+- deterministic persisted `allow` decisions for every selected step;
+- capability arguments that validate against the persisted selected-book context;
+- an exact fingerprinted delegation proposal;
+- explicit user approval of that exact proposal and its budgets;
+- explicit user start;
+- fixed runtime, retry, and total-attempt ceilings outside model control;
+- current policy, consent, AI state, ownership/context, capability contract, and budget revalidation before material execution;
+- durable PostgreSQL dispatch and attempt-claim ownership;
+- user-visible stop/revoke controls and durable audit evidence.
 
-> Keep this collection organized by century and flag newly discovered public-domain primary sources.
+Level 2 consent is **not** standing capability permission. The model cannot approve, start, expand, reorder, rebudget, or silently replan its delegated work. Revoking Level 2 consent or disabling AI acts as a kill switch. Consequential, non-reversible, and durable-write capabilities are not delegatable in this lane.
 
-Delegation must have defined scope, allowed capabilities, budget/resource limits, and an easy stop control.
+### Level 3 - Reserved / closed
 
-The product should begin at Levels 0-1. Higher autonomy ships only after audit logging, undo, policy controls, and user-facing activity history exist.
+Level 3 is reserved for any future broader delegation model, such as dynamic replanning, standing goals, delegated writes, or other authority that exceeds the proven Level 2 read-only contract.
+
+Level 3 is not implemented. It must not inherit authority merely because Level 2 exists. Any future Level 3 design requires separate capability contracts, approval semantics, undo authority, resource ceilings, stop behavior, recovery behavior, audit evidence, and adversarial acceptance proof.
 
 ## Consequence policy
 
@@ -387,7 +400,7 @@ Examples:
 - a book the user is reading references another work already in their library;
 - a newly discovered authorized source matches an explicitly tracked topic.
 
-No proactive network acquisition occurs without the applicable autonomy and rights policies.
+No proactive network acquisition occurs without the applicable autonomy and rights policies. No proactive behavior may silently promote itself into a Level 2 delegation.
 
 ## Privacy architecture
 
@@ -426,7 +439,9 @@ Measure:
 - policy-denied action attempts;
 - grounded citation validity;
 - unnecessary model-call rate;
-- action rollback rate.
+- action rollback rate;
+- delegated attempt/lease recovery correctness;
+- delegation budget and stop-control violations, target: zero.
 
 ### Trust
 
@@ -435,18 +450,22 @@ Measure:
 - percentage of recommendations with inspectable reasons;
 - unauthorized autonomy incidents, target: zero.
 
-## Initial implementation sequence
+## Implementation sequence and current boundary
 
-1. Define persistence for `UserModel`, `PreferenceClaim`, `InteractionEvent`, `Goal`, `Plan`, `ActionDecision`, and `OutcomeEvent`.
-2. Add the canonical event vocabulary and event writer to product domains.
-3. Implement explicit preference management before inference.
-4. Implement deterministic context assembly.
-5. Introduce `ModelGateway` and one planner contract.
-6. Add Level 0-1 AI orchestration using discovery and library capabilities.
-7. Implement outcome collection and confidence-based preference inference.
-8. Ship the AI & Personalization control center and activity ledger.
-9. Add reader-aware research assistance.
-10. Only then evaluate bounded delegated autonomy.
+The implementation sequence is cumulative rather than aspirational history:
+
+1. Define persistence for `UserModel`, `PreferenceClaim`, `InteractionEvent`, `Goal`, `Plan`, `ActionDecision`, and `OutcomeEvent`. **Complete.**
+2. Add the canonical event vocabulary and event writer to product domains. **Complete.**
+3. Implement explicit preference management before inference. **Complete.**
+4. Implement deterministic context assembly. **Complete.**
+5. Introduce `ModelGateway` and one planner contract. **Complete.**
+6. Add Level 0-1 AI orchestration using typed product capabilities. **Complete.**
+7. Implement outcome collection and confidence-based preference inference. **Complete.**
+8. Ship the AI & Personalization control center and activity ledger. **Complete.**
+9. Add reader-aware grounded research assistance. **Complete for the current grounded research lane.**
+10. Prove bounded Level 2 read-only delegation with consent, exact approval, stop, budgets, restart/concurrency recovery, durable dispatch, and consumer planning. **Complete for `research.search`.**
+11. Improve research/planning quality and consumer polish without broadening delegated authority by default. **Current work.**
+12. Evaluate any additional delegated capability independently against capability-contract, reversibility/undo, approval, budget, stop, recovery, and adversarial-proof requirements. **Closed until separately proven.**
 
 ## Non-negotiable invariants
 
@@ -459,3 +478,7 @@ Measure:
 - Core reading/library features work when AI is disabled.
 - One orchestration authority, one model gateway, one preference authority.
 - No production fake memories, fake recommendations, or mock AI behavior.
+- Model output never authorizes itself.
+- Level 2 consent never becomes standing capability permission.
+- Delegated execution is limited to explicitly delegatable capabilities with valid argument/context contracts and current deterministic policy approval.
+- Level 3 and delegated writes remain closed until separately designed and proven.

@@ -77,6 +77,8 @@ class DelegationOperatorControlService:
             await lock_personalization_state(database_session, principal_id)
             personalization = PersonalizationRepository(database_session)
             await personalization.get_or_create_user_model(principal_id)
+            repository = DelegationControlRepository(database_session)
+            consent = await repository.consent(principal_id=principal_id, lock=True)
             user_model = await database_session.scalar(
                 select(UserModel)
                 .where(UserModel.principal_id == principal_id)
@@ -89,8 +91,6 @@ class DelegationOperatorControlService:
                     "AI must be enabled before Level 2 delegation consent can be granted"
                 )
 
-            repository = DelegationControlRepository(database_session)
-            consent = await repository.consent(principal_id=principal_id, lock=True)
             if consent is not None and consent.status == "active":
                 if (
                     consent.policy_version == LEVEL2_DELEGATION_CONSENT_POLICY_VERSION
@@ -150,6 +150,11 @@ class DelegationOperatorControlService:
             await lock_personalization_state(database_session, principal_id)
             personalization = PersonalizationRepository(database_session)
             await personalization.get_or_create_user_model(principal_id)
+            prior_level = await revoke_level2_consent_in_session(
+                database_session,
+                principal_id=principal_id,
+                reason=reason,
+            )
             user_model = await database_session.scalar(
                 select(UserModel)
                 .where(UserModel.principal_id == principal_id)
@@ -157,20 +162,10 @@ class DelegationOperatorControlService:
             )
             if user_model is None:
                 raise DelegationConsentConflict("Principal user model is unavailable")
-            repository = DelegationControlRepository(database_session)
-            consent = await repository.consent(principal_id=principal_id, lock=True)
             if user_model.autonomy_level == 2:
-                user_model.autonomy_level = (
-                    consent.prior_autonomy_level
-                    if consent is not None and consent.status == "active"
-                    else 1
-                )
+                user_model.autonomy_level = prior_level if prior_level is not None else 1
                 user_model.updated_at = datetime.now(UTC)
-            await revoke_level2_consent_in_session(
-                database_session,
-                principal_id=principal_id,
-                reason=reason,
-            )
+                await database_session.flush()
             return await _status_in_session(database_session, principal_id=principal_id)
 
 
@@ -179,11 +174,12 @@ async def revoke_level2_consent_in_session(
     *,
     principal_id: UUID,
     reason: str,
-) -> None:
+) -> int | None:
     """Revoke Level 2 consent and stop nonterminal delegation work in the caller transaction."""
     repository = DelegationControlRepository(database_session)
     previous = await repository.consent(principal_id=principal_id, lock=True)
     was_active = previous is not None and previous.status == "active"
+    prior_level = previous.prior_autonomy_level if was_active and previous is not None else None
     consent, changed = await repository.revoke_consent_and_stop_active(
         principal_id=principal_id
     )
@@ -212,6 +208,7 @@ async def revoke_level2_consent_in_session(
                 "reason": reason,
             },
         )
+    return prior_level
 
 
 async def _status_in_session(

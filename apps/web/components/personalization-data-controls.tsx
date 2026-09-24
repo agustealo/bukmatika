@@ -78,7 +78,7 @@ export function PersonalizationDataControls() {
     <section className={styles.dataSurface} aria-labelledby="data-controls-heading">
       <div className={styles.sectionHeading}>
         <div>
-          <span className={styles.sectionIndex}>06</span>
+          <span className={styles.sectionIndex}>07</span>
           <h2 id="data-controls-heading">Your personalization data</h2>
         </div>
         <p>

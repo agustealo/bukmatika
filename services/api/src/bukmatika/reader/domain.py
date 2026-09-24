@@ -82,7 +82,6 @@ class ReaderDocumentResponse(BaseModel):
 class ReadingProgressUpdate(BaseModel):
     section_id: UUID
     char_offset: int = Field(ge=0)
-    progress_fraction: float = Field(ge=0, le=1)
 
 
 class BookmarkCreate(BaseModel):

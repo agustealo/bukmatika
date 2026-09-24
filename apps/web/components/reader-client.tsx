@@ -76,6 +76,7 @@ type ReaderPosition = {
 };
 
 const PAGE_SIZE = 12;
+const READING_BAND = { rootMargin: "-18% 0px -62% 0px", threshold: [0, 0.25, 0.5] };
 
 function readerUrl(libraryEntryId: string, documentId: string, after?: number): string {
   const base = `/v1/library/${libraryEntryId}/documents/${documentId}/reader`;
@@ -123,6 +124,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastPersistedPosition = useRef<string | null>(null);
+  const documentEndVisible = useRef(false);
 
   const basePath = useMemo(
     () => `/v1/library/${libraryEntryId}/documents/${documentId}`,
@@ -226,51 +228,75 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
 
   useEffect(() => {
     if (sections.length === 0) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top);
-        const target = visible[0]?.target;
-        if (!(target instanceof HTMLElement)) return;
-        const sectionId =
-          target.getAttribute("data-reader-section-id") ??
-          target.closest("[data-reader-section-id]")?.getAttribute("data-reader-section-id");
-        const rawOffset = target.getAttribute("data-reader-char-start");
-        const charOffset = rawOffset === null ? 0 : Number(rawOffset);
-        if (!sectionId || !Number.isInteger(charOffset) || charOffset < 0) return;
-        setActivePosition((current) =>
-          current.sectionId === sectionId && current.charOffset === charOffset
-            ? current
-            : { sectionId, charOffset },
-        );
-      },
-      { rootMargin: "-18% 0px -62% 0px", threshold: [0, 0.25, 0.5] },
-    );
+    documentEndVisible.current = false;
+
+    const paragraphObserver = new IntersectionObserver((entries) => {
+      if (documentEndVisible.current) return;
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top);
+      const target = visible[0]?.target;
+      if (!(target instanceof HTMLElement)) return;
+      const sectionId =
+        target.getAttribute("data-reader-section-id") ??
+        target.closest("[data-reader-section-id]")?.getAttribute("data-reader-section-id");
+      const rawOffset = target.getAttribute("data-reader-char-start");
+      const charOffset = rawOffset === null ? 0 : Number(rawOffset);
+      if (!sectionId || !Number.isInteger(charOffset) || charOffset < 0) return;
+      setActivePosition((current) =>
+        current.sectionId === sectionId && current.charOffset === charOffset
+          ? current
+          : { sectionId, charOffset },
+      );
+    }, READING_BAND);
+
     for (const section of sections) {
       const element = documentElement(section.section_id);
       if (!element) continue;
       const paragraphs = element.querySelectorAll("[data-reader-char-start]");
       if (paragraphs.length === 0) {
-        observer.observe(element);
+        paragraphObserver.observe(element);
         continue;
       }
       for (const paragraph of paragraphs) {
-        observer.observe(paragraph);
+        paragraphObserver.observe(paragraph);
       }
     }
-    return () => observer.disconnect();
-  }, [sections]);
+
+    const endObserver = new IntersectionObserver((entries) => {
+      const visible = entries.some((entry) => entry.isIntersecting);
+      documentEndVisible.current = visible;
+      if (!visible || document === null) return;
+      const finalSection = sections.find(
+        (section) => section.ordinal === document.section_count - 1,
+      );
+      if (!finalSection) return;
+      setActivePosition({
+        sectionId: finalSection.section_id,
+        charOffset: finalSection.text.length,
+      });
+    }, READING_BAND);
+
+    if (nextAfter === null) {
+      const endElement = documentEndElement();
+      if (endElement) endObserver.observe(endElement);
+    }
+
+    return () => {
+      paragraphObserver.disconnect();
+      endObserver.disconnect();
+      documentEndVisible.current = false;
+    };
+  }, [document, nextAfter, sections]);
 
   useEffect(() => {
     const { sectionId, charOffset } = activePosition;
-    if (!sectionId || !document) return;
+    if (!sectionId) return;
     const positionKey = `${sectionId}:${charOffset}`;
     if (lastPersistedPosition.current === positionKey) return;
     const section = sections.find((item) => item.section_id === sectionId);
     if (!section) return;
     const timer = window.setTimeout(async () => {
-      const progress = Math.min(1, (section.ordinal + 1) / document.section_count);
       try {
         const response = await apiFetch(`${basePath}/progress`, {
           method: "POST",
@@ -278,7 +304,6 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
           body: JSON.stringify({
             section_id: section.section_id,
             char_offset: charOffset,
-            progress_fraction: progress,
           }),
         });
         if (!response.ok) return;
@@ -290,7 +315,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
       }
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [activePosition, basePath, document, sections]);
+  }, [activePosition, basePath, sections]);
 
   async function loadMore() {
     if (nextAfter === null || loadingMore) return;
@@ -588,7 +613,9 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
               {loadingMore ? "Loading…" : "Continue reading"}
             </button>
           ) : (
-            <p className="reader-end">End of processed text.</p>
+            <p className="reader-end" data-reader-document-end="true">
+              End of processed text.
+            </p>
           )}
         </article>
       </div>
@@ -680,6 +707,10 @@ function closestElement(node: Node, selector: string): Element | null {
 
 function documentElement(sectionId: string): HTMLElement | null {
   return document.getElementById(`reader-section-${sectionId}`);
+}
+
+function documentEndElement(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-reader-document-end]");
 }
 
 function readerPositionElement(sectionId: string, charOffset: number): HTMLElement | null {

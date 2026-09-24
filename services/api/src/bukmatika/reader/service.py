@@ -134,7 +134,6 @@ class ReaderService:
                 access=access,
                 section_id=update.section_id,
                 char_offset=update.char_offset,
-                progress_fraction=update.progress_fraction,
             )
             await InteractionEventRepository(database_session).record(
                 SemanticEventType.READING_PROGRESS_UPDATED,
@@ -143,9 +142,9 @@ class ReaderService:
                 entity_id=document_id,
                 context={
                     "library_entry_id": str(library_entry_id),
-                    "section_id": str(update.section_id),
-                    "char_offset": update.char_offset,
-                    "progress_fraction": update.progress_fraction,
+                    "section_id": str(state.section_id),
+                    "char_offset": state.char_offset,
+                    "progress_fraction": state.progress_fraction,
                 },
             )
             response = _state_response(state)

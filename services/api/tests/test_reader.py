@@ -141,10 +141,11 @@ async def test_reader_paginates_sections_and_persists_progress(
         update=ReadingProgressUpdate(
             section_id=sections[1].id,
             char_offset=7,
-            progress_fraction=0.5,
         ),
     )
+    expected_progress = (sections[1].ordinal + 7 / len(sections[1].text)) / document.section_count
     assert saved.status == "reading"
+    assert saved.progress_fraction == pytest.approx(expected_progress)
     assert saved.locator == {"page": 2, "section": 2}
 
     session.expire_all()
@@ -158,8 +159,94 @@ async def test_reader_paginates_sections_and_persists_progress(
     assert [item.ordinal for item in reopened.sections] == [2]
     assert reopened.next_after_ordinal is None
     assert reopened.reading_state is not None
-    assert reopened.reading_state.progress_fraction == 0.5
+    assert reopened.reading_state.progress_fraction == pytest.approx(expected_progress)
     assert reopened.reading_state.char_offset == 7
+
+
+async def test_reader_ignores_client_fraction_at_last_section_start(
+    session: AsyncSession,
+) -> None:
+    entry, document, sections = await _seed_reader_document(session, suffix="progress-authority")
+    service = ReaderService(session_scope_factory=_scope(session))
+    final_section = sections[-1]
+    update = ReadingProgressUpdate.model_validate(
+        {
+            "section_id": final_section.id,
+            "char_offset": 0,
+            "progress_fraction": 1.0,
+        }
+    )
+
+    saved = await service.save_progress(
+        principal_id=entry.principal_id,
+        library_entry_id=entry.id,
+        document_id=document.id,
+        update=update,
+    )
+
+    assert saved.status == "reading"
+    assert saved.progress_fraction == pytest.approx(final_section.ordinal / document.section_count)
+    assert saved.progress_fraction < 1.0
+
+
+async def test_reader_finishes_only_at_document_end_and_position_updates_remain_reversible(
+    session: AsyncSession,
+) -> None:
+    entry, document, sections = await _seed_reader_document(session, suffix="completion")
+    service = ReaderService(session_scope_factory=_scope(session))
+    final_section = sections[-1]
+
+    finished = await service.save_progress(
+        principal_id=entry.principal_id,
+        library_entry_id=entry.id,
+        document_id=document.id,
+        update=ReadingProgressUpdate(
+            section_id=final_section.id,
+            char_offset=len(final_section.text),
+        ),
+    )
+    assert finished.status == "finished"
+    assert finished.progress_fraction == 1.0
+
+    moved_back = await service.save_progress(
+        principal_id=entry.principal_id,
+        library_entry_id=entry.id,
+        document_id=document.id,
+        update=ReadingProgressUpdate(section_id=sections[0].id, char_offset=0),
+    )
+    assert moved_back.status == "reading"
+    assert moved_back.progress_fraction == 0.0
+    assert moved_back.section_id == sections[0].id
+    assert moved_back.char_offset == 0
+
+
+async def test_annotation_state_does_not_claim_reading_progress(
+    session: AsyncSession,
+) -> None:
+    entry, document, sections = await _seed_reader_document(session, suffix="annotation-state")
+    service = ReaderService(session_scope_factory=_scope(session))
+    final_section = sections[-1]
+
+    await service.add_bookmark(
+        principal_id=entry.principal_id,
+        library_entry_id=entry.id,
+        document_id=document.id,
+        create=BookmarkCreate(
+            section_id=final_section.id,
+            char_offset=len(final_section.text),
+            label="Reference only",
+        ),
+    )
+
+    state = await session.scalar(
+        select(ReadingState).where(
+            ReadingState.library_entry_id == entry.id,
+            ReadingState.document_id == document.id,
+        )
+    )
+    assert state is not None
+    assert state.status == "unread"
+    assert state.progress_fraction == 0.0
 
 
 async def test_reader_rejects_document_outside_library_entry(session: AsyncSession) -> None:
@@ -224,7 +311,6 @@ async def test_progress_rejects_offset_outside_section(session: AsyncSession) ->
             update=ReadingProgressUpdate(
                 section_id=sections[0].id,
                 char_offset=len(sections[0].text) + 1,
-                progress_fraction=0.1,
             ),
         )
 

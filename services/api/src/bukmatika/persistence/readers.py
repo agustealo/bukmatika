@@ -188,11 +188,15 @@ class ReaderRepository:
         access: ReaderAccess,
         section_id: UUID,
         char_offset: int,
-        progress_fraction: float,
     ) -> ReadingState:
         section = await self._validated_section(
             document_id=access.document.id,
             section_id=section_id,
+            char_offset=char_offset,
+        )
+        progress_fraction = _canonical_progress_fraction(
+            document=access.document,
+            section=section,
             char_offset=char_offset,
         )
         now = datetime.now(UTC)
@@ -396,12 +400,32 @@ class ReaderRepository:
         state = await self.state_for(access.library_entry_id, access.document.id)
         if state is not None:
             return state
-        return await self.save_progress(
-            access=access,
-            section_id=section.id,
-            char_offset=char_offset,
-            progress_fraction=0.0,
+
+        now = datetime.now(UTC)
+        statement = (
+            insert(ReadingState)
+            .values(
+                library_entry_id=access.library_entry_id,
+                document_id=access.document.id,
+                status="unread",
+                progress_fraction=0.0,
+                section_id=section.id,
+                section_ordinal=section.ordinal,
+                char_offset=char_offset,
+                locator=section.locator,
+                last_read_at=now,
+            )
+            .on_conflict_do_nothing(constraint="uq_reading_state_library_document")
+            .returning(ReadingState)
         )
+        created = (await self._session.execute(statement)).scalar_one_or_none()
+        if created is not None:
+            return created
+
+        state = await self.state_for(access.library_entry_id, access.document.id)
+        if state is None:
+            raise RuntimeError("Reading state disappeared during annotation creation")
+        return state
 
     async def _validated_section(
         self,
@@ -440,9 +464,26 @@ class ReaderRepository:
         return section
 
 
+def _canonical_progress_fraction(
+    *,
+    document: Document,
+    section: DocumentSection,
+    char_offset: int,
+) -> float:
+    section_count = document.section_count
+    if section_count < 1 or section.ordinal < 0 or section.ordinal >= section_count:
+        raise ReaderPositionInvalid("Reader section ordinal is outside the document bounds")
+
+    text_length = len(section.text)
+    if section.ordinal == section_count - 1 and char_offset == text_length:
+        return 1.0
+
+    within_section = 0.0 if text_length == 0 else char_offset / text_length
+    progress = (section.ordinal + within_section) / section_count
+    return min(1.0, max(0.0, progress))
+
+
 def _reading_status(progress_fraction: float) -> str:
-    if progress_fraction <= 0:
-        return "unread"
     if progress_fraction >= 1:
         return "finished"
     return "reading"

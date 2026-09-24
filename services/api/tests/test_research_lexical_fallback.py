@@ -112,13 +112,15 @@ def test_fallback_query_is_bounded_normalized_and_syntax_safe() -> None:
         "delta",
         "epsilon",
         "zeta",
-        "eta",
         "theta",
         "iota",
         "kappa",
         "lambda",
-        "mu",
     ]
+    assert _fallback_websearch_query("to the women become rational partners") == (
+        "women OR become OR rational OR partners"
+    )
+    assert _fallback_websearch_query("war law") == "war OR law"
     assert _fallback_websearch_query("single") is None
     assert _fallback_websearch_query('"exact phrase" other') is None
     assert _fallback_websearch_query("alpha OR beta") is None

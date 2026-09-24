@@ -38,6 +38,7 @@ class DelegationRecentResult(BaseModel):
     completed_at: datetime | None = None
     failure_code: str | None = None
     attempt_error_code: str | None = None
+    user_request: str | None = None
     available: bool
     unavailable_reason: str | None = None
     query: str | None = None

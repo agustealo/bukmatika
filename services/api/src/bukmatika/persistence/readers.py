@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.persistence.document_models import Document, DocumentSection
 from bukmatika.persistence.models import Asset, Edition, LibraryEntry
 from bukmatika.persistence.reader_models import Bookmark, Highlight, ReadingState
-from bukmatika.reader.progress import (
+from bukmatika.reader_progress import (
     CanonicalReaderProgressError,
     canonical_progress_fraction,
     canonical_reading_status,

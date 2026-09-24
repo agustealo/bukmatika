@@ -50,6 +50,7 @@ class SemanticEventType(StrEnum):
     AI_DELEGATION_ATTEMPT_CLAIMED = "ai.delegation_attempt_claimed"
     AI_DELEGATION_ATTEMPT_COMPLETED = "ai.delegation_attempt_completed"
     AI_DELEGATION_ATTEMPT_FAILED = "ai.delegation_attempt_failed"
+    AI_DELEGATION_ATTEMPT_CANCELLED = "ai.delegation_attempt_cancelled"
     AI_DELEGATION_BUDGET_EXHAUSTED = "ai.delegation_budget_exhausted"
     READER_OPENED = "reader.opened"
     READING_PROGRESS_UPDATED = "reader.progress_updated"

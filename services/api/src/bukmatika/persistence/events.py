@@ -47,6 +47,7 @@ class SemanticEventType(StrEnum):
     AI_DELEGATION_STOP_REQUESTED = "ai.delegation_stop_requested"
     AI_DELEGATION_STOPPED = "ai.delegation_stopped"
     AI_DELEGATION_ATTEMPT_AUTHORIZED = "ai.delegation_attempt_authorized"
+    AI_DELEGATION_ATTEMPT_CLAIMED = "ai.delegation_attempt_claimed"
     AI_DELEGATION_ATTEMPT_COMPLETED = "ai.delegation_attempt_completed"
     AI_DELEGATION_ATTEMPT_FAILED = "ai.delegation_attempt_failed"
     AI_DELEGATION_BUDGET_EXHAUSTED = "ai.delegation_budget_exhausted"

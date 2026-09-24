@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence.document_models import Document
@@ -16,7 +16,7 @@ class LibraryResume:
 
 
 class LibraryResumeRepository:
-    """Read projection selecting the actual most recent reader state for a LibraryEntry."""
+    """Read projection selecting the most recent actual reading state for a LibraryEntry."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -30,6 +30,11 @@ class LibraryResumeRepository:
             .where(
                 ReadingState.library_entry_id == entry.id,
                 Edition.work_id == entry.work_id,
+                or_(
+                    ReadingState.last_read_at.is_not(None),
+                    ReadingState.status != "unread",
+                    ReadingState.progress_fraction > 0,
+                ),
             )
         )
         if entry.edition_id is not None:

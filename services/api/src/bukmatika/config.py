@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     ollama_model: str | None = None
     model_timeout_seconds: float = Field(default=45.0, gt=0, le=60)
     model_readiness_timeout_seconds: float = Field(default=2.5, gt=0, le=10)
+    embedding_provider: Literal["none", "ollama"] = "none"
+    ollama_embedding_model: str | None = None
+    embedding_timeout_seconds: float = Field(default=30.0, gt=0, le=60)
+    semantic_search_max_chunks: int = Field(default=256, ge=1, le=2_000)
+    semantic_search_batch_size: int = Field(default=24, ge=1, le=32)
 
 
 @lru_cache

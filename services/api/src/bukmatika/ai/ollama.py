@@ -60,7 +60,7 @@ class OllamaLocalGateway(ModelGateway):
         if readiness_timeout_seconds <= 0 or readiness_timeout_seconds > 10:
             raise ValueError("Ollama readiness timeout must be between 0 and 10 seconds")
         self._client = client
-        self._base_url = _validate_loopback_base_url(base_url)
+        self._base_url = validate_ollama_loopback_base_url(base_url)
         self._timeout_seconds = timeout_seconds
         self._readiness_timeout_seconds = readiness_timeout_seconds
         self._identity = ModelProviderIdentity(
@@ -81,7 +81,7 @@ class OllamaLocalGateway(ModelGateway):
         )
         if inventory.state is not ModelReadinessState.READY:
             return self._readiness(inventory.state, ready=False)
-        requested_aliases = _model_aliases(self._identity.model)
+        requested_aliases = ollama_model_aliases(self._identity.model)
         if set(inventory.models).isdisjoint(requested_aliases):
             return self._readiness(ModelReadinessState.MODEL_MISSING, ready=False)
         return self._readiness(ModelReadinessState.READY, ready=True)
@@ -153,7 +153,7 @@ async def inspect_ollama_models(
     """Inspect only loopback Ollama model metadata; never sends user or book content."""
     if timeout_seconds <= 0 or timeout_seconds > 10:
         raise ValueError("Ollama readiness timeout must be between 0 and 10 seconds")
-    normalized_base_url = _validate_loopback_base_url(base_url)
+    normalized_base_url = validate_ollama_loopback_base_url(base_url)
     try:
         response = await client.get(
             f"{normalized_base_url}/api/tags",
@@ -188,7 +188,7 @@ async def inspect_ollama_models(
     )
 
 
-def _model_aliases(model: str) -> set[str]:
+def ollama_model_aliases(model: str) -> set[str]:
     """Return names Ollama may report for the exact requested model selection."""
     if model.endswith(":latest"):
         return {model, model.removesuffix(":latest")}
@@ -217,7 +217,7 @@ def _system_prompt(task: ModelTask) -> str:
     )
 
 
-def _validate_loopback_base_url(value: str) -> str:
+def validate_ollama_loopback_base_url(value: str) -> str:
     candidate = value.strip().rstrip("/")
     parsed = urlsplit(candidate)
     if parsed.scheme != "http":

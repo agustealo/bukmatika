@@ -31,6 +31,15 @@ from bukmatika.research.recall_eval import (
     ResearchRecallTarget,
 )
 from bukmatika.research.routes import router
+from bukmatika.research.semantic import (
+    ResearchSemanticDisabled,
+    ResearchSemanticIntegrityError,
+    SemanticResearchService,
+)
+from bukmatika.research.semantic_domain import (
+    ResearchSemanticSearchRequest,
+    ResearchSemanticSearchResponse,
+)
 from bukmatika.research.service import (
     ResearchEvidenceReferenceInvalid,
     ResearchReaderPositionInvalid,
@@ -67,9 +76,14 @@ __all__ = [
     "ResearchSearchRequest",
     "ResearchSearchResponse",
     "ResearchSelectionDenied",
+    "ResearchSemanticDisabled",
+    "ResearchSemanticIntegrityError",
+    "ResearchSemanticSearchRequest",
+    "ResearchSemanticSearchResponse",
     "ResearchService",
     "ResearchTimelineItem",
     "ResearchTimelinePrecision",
     "ResearchTimelineResponse",
+    "SemanticResearchService",
     "router",
 ]

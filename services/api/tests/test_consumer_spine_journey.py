@@ -14,9 +14,6 @@ from bukmatika.acquisition.service import AcquisitionService
 from bukmatika.acquisition.storage import LocalObjectStore
 from bukmatika.catalog import CatalogResolver
 from bukmatika.config import Settings
-from bukmatika.discovery.base import DiscoveredRecord
-from bukmatika.discovery.registry import ProviderRegistration, ProviderRegistry
-from bukmatika.discovery.service import DiscoveryService
 from bukmatika.domain import (
     DiscoveredAsset,
     DiscoveryCandidate,
@@ -24,14 +21,13 @@ from bukmatika.domain import (
     RightsState,
     SearchIntent,
 )
+from bukmatika.discovery.base import DiscoveredRecord
+from bukmatika.discovery.registry import ProviderRegistration, ProviderRegistry
+from bukmatika.discovery.service import DiscoveryService
 from bukmatika.library import LibraryService
 from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.models import Asset, Principal
-from bukmatika.processing import (
-    DocumentProcessingService,
-    ParserRegistry,
-    TextDocumentParser,
-)
+from bukmatika.processing import DocumentProcessingService, ParserRegistry, TextDocumentParser
 from bukmatika.reader import ReaderService
 from bukmatika.reader.domain import ReadingProgressUpdate
 from bukmatika.research import ResearchService

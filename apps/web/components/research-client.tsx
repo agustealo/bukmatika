@@ -87,7 +87,10 @@ function selectionLabel(count: number): string {
 }
 
 function passageReaderHref(passage: ResearchPassage): string {
-  const params = new URLSearchParams({ section: String(passage.section_ordinal) });
+  const params = new URLSearchParams({
+    section: String(passage.section_ordinal),
+    offset: String(passage.char_start),
+  });
   return `/read/${passage.library_entry_id}/${passage.document_id}?${params.toString()}#reader-section-${passage.section_id}`;
 }
 

@@ -2,6 +2,7 @@ import asyncio
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
+from test_ai_delegation_runtime import _successful_execution
 
 from bukmatika.ai.capabilities import CapabilityRegistry
 from bukmatika.ai.delegation import DelegationControlService
@@ -150,6 +151,7 @@ async def test_two_runtime_sessions_cannot_claim_the_same_permit() -> None:
             principal_id=principal_id,
             claim=claims[0],
             completion=DelegationAttemptCompletion(succeeded=True),
+            execution=_successful_execution(permit),
         )
         assert completed.status is DelegationStatus.COMPLETED
 

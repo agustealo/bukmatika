@@ -12,6 +12,7 @@ from bukmatika.ai.delegation_control_domain import (
     DelegationConsentAction,
     DelegationConsentRequest,
 )
+from bukmatika.ai.delegation_dispatch import DELEGATION_JOB_TYPE, delegation_job_dedupe_key
 from bukmatika.ai.delegation_domain import (
     DelegationApprovalDecision,
     DelegationApprovalRequest,
@@ -19,11 +20,7 @@ from bukmatika.ai.delegation_domain import (
     DelegationResponse,
     DelegationStatus,
 )
-from bukmatika.ai.delegation_jobs import (
-    DELEGATION_JOB_TYPE,
-    DelegationJobWorker,
-    delegation_job_dedupe_key,
-)
+from bukmatika.ai.delegation_jobs import DelegationJobWorker
 from bukmatika.ai.domain import CapabilityName
 from bukmatika.config import Settings
 from bukmatika.persistence.delegation_models import AIDelegation

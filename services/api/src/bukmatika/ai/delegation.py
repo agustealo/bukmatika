@@ -10,6 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.ai.capabilities import CapabilityRegistry, CapabilityRisk
+from bukmatika.ai.capability_contracts import (
+    CapabilityArgumentContractRegistry,
+    CapabilityArgumentsInvalid,
+    CapabilityContractUnavailable,
+)
 from bukmatika.ai.delegation_domain import (
     DelegationApprovalDecision,
     DelegationApprovalRequest,
@@ -47,9 +52,11 @@ class DelegationControlService:
         self,
         *,
         registry: CapabilityRegistry | None = None,
+        contract_registry: CapabilityArgumentContractRegistry | None = None,
         session_scope_factory: SessionScopeFactory = session_scope,
     ) -> None:
         self._registry = registry or CapabilityRegistry()
+        self._contracts = contract_registry or CapabilityArgumentContractRegistry()
         self._session_scope = session_scope_factory
 
     async def propose(
@@ -525,6 +532,7 @@ class DelegationControlService:
             if step.capability.value not in context.available_capabilities:
                 raise DelegationInvalid("Delegated capability is absent from persisted context")
             self._validate_delegatable_step(step)
+            self._validate_capability_contract(step, context)
 
     def _validate_delegatable_step(self, step: PlanStep) -> None:
         spec = self._registry.get(step.capability)
@@ -537,12 +545,29 @@ class DelegationControlService:
         if not spec.reversible or spec.undo_authority != "none_required":
             raise DelegationStepUnavailable("Delegated capability lacks a valid undo contract")
 
+    def _validate_capability_contract(
+        self,
+        step: PlanStep,
+        context: ContextManifest,
+    ) -> None:
+        try:
+            self._contracts.validate(
+                capability=step.capability,
+                arguments=step.arguments,
+                context=context,
+            )
+        except (CapabilityArgumentsInvalid, CapabilityContractUnavailable) as exc:
+            raise DelegationInvalid(
+                "Delegated step arguments are invalid for the persisted context"
+            ) from exc
+
     def _require_delegation_policy(self, step: PlanStep, context: ContextManifest) -> None:
         if not context.ai_enabled or context.autonomy_level != 2:
             raise DelegationExecutionDisabled("Delegation policy requires autonomy Level 2")
         if step.capability.value not in context.available_capabilities:
             raise DelegationStepUnavailable("Delegated capability is no longer available")
         self._validate_delegatable_step(step)
+        self._validate_capability_contract(step, context)
 
     async def _revalidate_contract(
         self,

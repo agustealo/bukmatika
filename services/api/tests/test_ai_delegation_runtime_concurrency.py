@@ -23,7 +23,9 @@ from bukmatika.persistence.models import Principal
 from bukmatika.persistence.personalization import PersonalizationRepository
 from bukmatika.persistence.personalization_models import UserModel
 from bukmatika.persistence.plans import PlanRepository
-from bukmatika.personalization.domain import ContextManifest, ContextTask
+from bukmatika.personalization.domain import ContextLibraryEntry, ContextManifest, ContextTask
+
+CONCURRENCY_ENTRY_ID = UUID(int=401)
 
 
 async def _committed_running_delegation() -> tuple[
@@ -45,7 +47,16 @@ async def _committed_running_delegation() -> tuple[
             model_context_ready=True,
             preferences=[],
             goal=None,
-            library_entries=[],
+            library_entries=[
+                ContextLibraryEntry(
+                    library_entry_id=CONCURRENCY_ENTRY_ID,
+                    work_id=UUID(int=402),
+                    edition_id=UUID(int=403),
+                    title="Delegation concurrency contract book",
+                    document_ids=[UUID(int=404)],
+                    inclusion_reason="Explicitly selected for concurrency proof.",
+                )
+            ],
             available_capabilities=[CapabilityName.RESEARCH_SEARCH.value],
             exclusion_reasons=[],
         )
@@ -54,7 +65,7 @@ async def _committed_running_delegation() -> tuple[
             capability=CapabilityName.RESEARCH_SEARCH,
             arguments={
                 "query": "claim concurrency evidence",
-                "library_entry_ids": [],
+                "library_entry_ids": [str(CONCURRENCY_ENTRY_ID)],
                 "limit": 5,
             },
             rationale="Prove one runtime can own a delegated permit at a time.",

@@ -34,7 +34,12 @@ from bukmatika.persistence.models import InteractionEvent, Principal
 from bukmatika.persistence.personalization import PersonalizationRepository
 from bukmatika.persistence.personalization_models import Plan, UserModel
 from bukmatika.persistence.plans import PlanRepository
-from bukmatika.personalization.domain import ContextManifest, ContextTask
+from bukmatika.personalization.domain import ContextLibraryEntry, ContextManifest, ContextTask
+
+RUNTIME_ENTRY_ID = UUID(int=301)
+RUNTIME_WORK_ID = UUID(int=302)
+RUNTIME_EDITION_ID = UUID(int=303)
+RUNTIME_DOCUMENT_ID = UUID(int=304)
 
 
 def _scope(session: AsyncSession):  # type: ignore[no-untyped-def]
@@ -96,6 +101,20 @@ async def _principal(session: AsyncSession, suffix: str) -> Principal:
 
 
 def _context(*capabilities: CapabilityName) -> ContextManifest:
+    selected_research_entries = (
+        [
+            ContextLibraryEntry(
+                library_entry_id=RUNTIME_ENTRY_ID,
+                work_id=RUNTIME_WORK_ID,
+                edition_id=RUNTIME_EDITION_ID,
+                title="Delegation runtime contract book",
+                document_ids=[RUNTIME_DOCUMENT_ID],
+                inclusion_reason="Explicitly selected for delegated runtime research.",
+            )
+        ]
+        if CapabilityName.RESEARCH_SEARCH in capabilities
+        else []
+    )
     return ContextManifest(
         task=ContextTask.RESEARCH,
         ai_enabled=True,
@@ -104,7 +123,7 @@ def _context(*capabilities: CapabilityName) -> ContextManifest:
         model_context_ready=True,
         preferences=[],
         goal=None,
-        library_entries=[],
+        library_entries=selected_research_entries,
         available_capabilities=[capability.value for capability in capabilities],
         exclusion_reasons=[],
     )
@@ -116,7 +135,7 @@ def _step(capability: CapabilityName, *, step_id: str = "research") -> PlanStep:
         capability=capability,
         arguments={
             "query": "delegated runtime evidence",
-            "library_entry_ids": [],
+            "library_entry_ids": [str(RUNTIME_ENTRY_ID)],
             "limit": 5,
         },
         rationale="Exercise one bounded delegated runtime attempt.",

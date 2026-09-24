@@ -36,6 +36,24 @@ class OwnedLibraryContext:
     document_ids: tuple[UUID, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class PersonalizationSettingsTransition:
+    user_model: UserModel
+    previous_ai_enabled: bool
+    previous_autonomy_level: int
+
+    @property
+    def enters_level_2(self) -> bool:
+        return self.previous_autonomy_level < 2 <= self.user_model.autonomy_level
+
+    @property
+    def revokes_level_2(self) -> bool:
+        return (
+            (self.previous_ai_enabled and not self.user_model.ai_enabled)
+            or (self.previous_autonomy_level >= 2 and self.user_model.autonomy_level < 2)
+        )
+
+
 async def lock_personalization_state(session: AsyncSession, principal_id: UUID) -> None:
     """Serialize principal-scoped personalization mutations for the current transaction."""
     await session.execute(
@@ -139,7 +157,7 @@ class PersonalizationRepository:
                     Work.canonical_title,
                     Document.id,
                 )
-                .join(Work, Work.id == LibraryEntry.work_id)
+                .join(Work, Work.work_id == LibraryEntry.work_id)
                 .outerjoin(
                     Edition,
                     and_(
@@ -254,13 +272,32 @@ class PersonalizationRepository:
         principal_id: UUID,
         update: PersonalizationSettingsUpdate,
     ) -> UserModel:
+        return (
+            await self.update_settings_transition(
+                principal_id=principal_id,
+                update=update,
+            )
+        ).user_model
+
+    async def update_settings_transition(
+        self,
+        *,
+        principal_id: UUID,
+        update: PersonalizationSettingsUpdate,
+    ) -> PersonalizationSettingsTransition:
         user_model = await self._lock_user_model(principal_id)
+        previous_ai_enabled = user_model.ai_enabled
+        previous_autonomy_level = user_model.autonomy_level
         user_model.ai_enabled = update.ai_enabled
         user_model.learning_enabled = update.learning_enabled
         user_model.autonomy_level = update.autonomy_level
         user_model.updated_at = datetime.now(UTC)
         await self._session.flush()
-        return user_model
+        return PersonalizationSettingsTransition(
+            user_model=user_model,
+            previous_ai_enabled=previous_ai_enabled,
+            previous_autonomy_level=previous_autonomy_level,
+        )
 
     async def update_model_configuration(
         self,

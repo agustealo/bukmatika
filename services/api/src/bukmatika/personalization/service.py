@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.ai.delegation_control import revoke_level2_consent_in_session
 from bukmatika.persistence import session_scope
+from bukmatika.persistence.delegation_control import DelegationControlRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.personalization import (
     PersonalizationRepository,
@@ -84,11 +85,18 @@ class PersonalizationService:
     ) -> PersonalizationProfileResponse:
         async with self._session_scope() as database_session:
             repository = PersonalizationRepository(database_session)
+            current_model = await repository.get_or_create_user_model(principal_id)
+            consent = await DelegationControlRepository(database_session).consent(
+                principal_id=principal_id
+            )
+            had_level2 = current_model.autonomy_level == 2
+            had_active_consent = consent is not None and consent.status == "active"
+
             user_model = await repository.update_settings(
                 principal_id=principal_id,
                 update=update,
             )
-            if not user_model.ai_enabled or user_model.autonomy_level < 2:
+            if had_level2 or had_active_consent:
                 reason = (
                     "ai_disabled"
                     if not user_model.ai_enabled

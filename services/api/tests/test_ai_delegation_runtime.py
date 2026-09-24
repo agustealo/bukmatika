@@ -15,6 +15,7 @@ from bukmatika.ai.delegation_domain import (
     DelegationApprovalDecision,
     DelegationApprovalRequest,
     DelegationAttemptCompletion,
+    DelegationAttemptPermit,
     DelegationConflict,
     DelegationProposalRequest,
     DelegationStatus,
@@ -230,7 +231,9 @@ async def test_runtime_consumes_one_permit_through_canonical_executor_and_settle
     assert attempt.claimed_at is None
     assert attempt.claim_expires_at is None
     assert await session.scalar(
-        select(func.count(ActionExecutionReceipt.id)).where(ActionExecutionReceipt.plan_id == plan.id)
+        select(func.count(ActionExecutionReceipt.id)).where(
+            ActionExecutionReceipt.plan_id == plan.id
+        )
     ) == 0
     assert await session.scalar(
         select(func.count(InteractionEvent.id)).where(
@@ -404,8 +407,6 @@ async def test_delegated_adapter_refuses_read_only_capability_without_delegation
         executor_registry=CapabilityExecutorRegistry((_CatalogExecutor(),)),
         session_scope_factory=_scope(session),
     )
-
-    from bukmatika.ai.delegation_domain import DelegationAttemptPermit
 
     with pytest.raises(DelegationStepUnavailable):
         await adapter.execute(

@@ -14,6 +14,7 @@ from bukmatika.persistence.personalization import (
 )
 from bukmatika.persistence.personalization_models import PreferenceClaim, UserModel
 from bukmatika.personalization.domain import (
+    AutonomyLevel2ConsentRequired,
     ExplicitPreferenceRequest,
     PersonalizationProfileResponse,
     PersonalizationSettingsUpdate,
@@ -24,10 +25,6 @@ from bukmatika.personalization.domain import (
 )
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
-
-
-class AutonomyLevel2ConsentRequired(RuntimeError):
-    code = "AUTONOMY_LEVEL_2_CONSENT_REQUIRED"
 
 
 class PersonalizationService:
@@ -93,11 +90,6 @@ class PersonalizationService:
                 principal_id=principal_id,
                 update=update,
             )
-            if transition.enters_level_2 and not update.level_2_consent:
-                raise AutonomyLevel2ConsentRequired(
-                    "Explicit consent is required when enabling autonomy Level 2"
-                )
-
             user_model = transition.user_model
             stopped_delegation_ids: list[str] = []
             if transition.revokes_level_2:

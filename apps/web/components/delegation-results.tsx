@@ -18,12 +18,18 @@ type ResearchPassage = {
   score: number;
 };
 
+type DelegationOutcomeStatus = "rejected" | "stopped" | "completed" | "failed" | "cancelled";
+
 type DelegationResult = {
   delegation_id: string;
-  attempt_id: string;
-  step_id: string;
-  capability: string;
-  completed_at: string;
+  attempt_id: string | null;
+  step_id: string | null;
+  capability: string | null;
+  status: DelegationOutcomeStatus;
+  outcome_at: string;
+  completed_at: string | null;
+  failure_code: string | null;
+  attempt_error_code: string | null;
   available: boolean;
   unavailable_reason: string | null;
   query: string | null;
@@ -42,6 +48,39 @@ function sourceHref(passage: ResearchPassage): string {
   );
 }
 
+function statusLabel(status: DelegationOutcomeStatus): string {
+  switch (status) {
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    case "stopped":
+      return "Stopped";
+    case "cancelled":
+      return "Cancelled";
+    case "rejected":
+      return "Rejected";
+  }
+}
+
+function terminalMessage(result: DelegationResult): string {
+  const code = result.failure_code ?? result.attempt_error_code;
+  switch (result.status) {
+    case "failed":
+      return code
+        ? `The delegated search failed (${code}).`
+        : "The delegated search failed before producing a result.";
+    case "stopped":
+      return "The delegated search was stopped before completion.";
+    case "cancelled":
+      return "The delegated search was cancelled before execution completed.";
+    case "rejected":
+      return "The delegation proposal was rejected and was not executed.";
+    case "completed":
+      return result.unavailable_reason ?? "The canonical source is no longer available.";
+  }
+}
+
 export function DelegationResults() {
   const [results, setResults] = useState<DelegationResult[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,12 +90,12 @@ export function DelegationResults() {
     try {
       const response = await apiFetch("/v1/personalization/delegation-results");
       if (!response.ok) {
-        throw new Error(`Recent results failed with HTTP ${response.status}.`);
+        throw new Error(`Recent outcomes failed with HTTP ${response.status}.`);
       }
       setResults((await response.json()) as DelegationResult[]);
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Recent delegation results are unavailable.");
+      setError(cause instanceof Error ? cause.message : "Recent delegation outcomes are unavailable.");
     } finally {
       setLoading(false);
     }
@@ -74,11 +113,12 @@ export function DelegationResults() {
     <section className={styles.panel} aria-labelledby="delegation-results-title">
       <div className={styles.headingRow}>
         <div>
-          <p className={styles.eyebrow}>Completed work</p>
-          <h2 id="delegation-results-title">Recent delegation results</h2>
+          <p className={styles.eyebrow}>Delegated work</p>
+          <h2 id="delegation-results-title">Recent delegation outcomes</h2>
           <p className={styles.intro}>
-            Completed read-only searches stay inspectable here. Source text is loaded from your
-            current canonical library rather than copied into a second AI store.
+            Completed, failed, stopped, cancelled, and rejected read-only delegations stay
+            inspectable here. Successful source text is loaded from your current canonical library
+            rather than copied into a second AI store.
           </p>
         </div>
         <button className={styles.refreshButton} type="button" onClick={() => void refresh()}>
@@ -86,51 +126,64 @@ export function DelegationResults() {
         </button>
       </div>
 
-      {loading ? <p className={styles.muted}>Loading recent results…</p> : null}
+      {loading ? <p className={styles.muted}>Loading recent outcomes…</p> : null}
       {error ? <p className={styles.error}>{error}</p> : null}
       {!loading && !error && results.length === 0 ? (
-        <p className={styles.muted}>No completed delegated searches yet.</p>
+        <p className={styles.muted}>No terminal delegated work yet.</p>
       ) : null}
 
       <div className={styles.results}>
-        {results.map((result) => (
-          <article className={styles.resultCard} key={result.attempt_id}>
-            <div className={styles.resultMeta}>
-              <span>{result.capability}</span>
-              <span>{new Date(result.completed_at).toLocaleString()}</span>
-            </div>
-            {result.available ? (
-              <>
-                <h3>{result.query ?? "Delegated research search"}</h3>
-                {result.passages.length === 0 ? (
-                  <p className={styles.muted}>The search completed with no matching passages.</p>
-                ) : (
-                  <ol className={styles.passages}>
-                    {result.passages.map((passage) => (
-                      <li
-                        className={styles.passage}
-                        key={`${result.attempt_id}:${passage.document_id}:${passage.char_start}`}
-                      >
-                        <div className={styles.passageHeading}>
-                          <strong>{passage.work_title}</strong>
-                          <span>{passage.edition_title}</span>
-                        </div>
-                        <p>{passage.text}</p>
-                        <a className={styles.sourceLink} href={sourceHref(passage)}>
-                          Open source
-                        </a>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </>
-            ) : (
-              <p className={styles.unavailable}>
-                {result.unavailable_reason ?? "The canonical source is no longer available."}
-              </p>
-            )}
-          </article>
-        ))}
+        {results.map((result) => {
+          const terminal = result.status !== "completed";
+          const key =
+            result.attempt_id ?? `${result.delegation_id}:${result.status}:${result.outcome_at}`;
+          return (
+            <article className={styles.resultCard} key={key}>
+              <div className={styles.resultMeta}>
+                <span>{result.capability ?? "read-only delegation"}</span>
+                <span className={styles.statusBadge} data-status={result.status}>
+                  {statusLabel(result.status)}
+                </span>
+                <span>{new Date(result.outcome_at).toLocaleString()}</span>
+              </div>
+              {terminal ? (
+                <>
+                  <h3>{statusLabel(result.status)} delegated research</h3>
+                  <p className={result.status === "failed" ? styles.failure : styles.unavailable}>
+                    {terminalMessage(result)}
+                  </p>
+                </>
+              ) : result.available ? (
+                <>
+                  <h3>{result.query ?? "Delegated research search"}</h3>
+                  {result.passages.length === 0 ? (
+                    <p className={styles.muted}>The search completed with no matching passages.</p>
+                  ) : (
+                    <ol className={styles.passages}>
+                      {result.passages.map((passage) => (
+                        <li
+                          className={styles.passage}
+                          key={`${result.attempt_id}:${passage.document_id}:${passage.char_start}`}
+                        >
+                          <div className={styles.passageHeading}>
+                            <strong>{passage.work_title}</strong>
+                            <span>{passage.edition_title}</span>
+                          </div>
+                          <p>{passage.text}</p>
+                          <a className={styles.sourceLink} href={sourceHref(passage)}>
+                            Open source
+                          </a>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </>
+              ) : (
+                <p className={styles.unavailable}>{terminalMessage(result)}</p>
+              )}
+            </article>
+          );
+        })}
       </div>
     </section>
   );

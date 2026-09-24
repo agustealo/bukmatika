@@ -339,7 +339,7 @@ async def test_public_domain_recall_baseline_measures_lexical_strength_and_parap
             expected=[
                 _target_for_phrase(
                     books["souls-black-folk"],
-                    "problem of the Twentieth Century",
+                    "problem of the color line",
                 )
             ],
             limit=20,
@@ -389,7 +389,7 @@ async def test_public_domain_recall_baseline_measures_lexical_strength_and_parap
             expected=[
                 _target_for_phrase(
                     books["souls-black-folk"],
-                    "problem of the Twentieth Century",
+                    "problem of the color line",
                 )
             ],
             limit=20,

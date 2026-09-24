@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from test_ai_delegation_runtime import _plan, _principal, _running_delegation, _step
+from test_ai_delegation_runtime import _plan, _principal, _running_delegation, _scope, _step
 
 from bukmatika.ai.delegation import DelegationControlService
 from bukmatika.ai.delegation_domain import (
@@ -102,7 +102,7 @@ async def test_recent_outcomes_keep_rejected_proposal_without_attempt(session: A
         principal_id=principal.id,
         step=_step(CapabilityName.RESEARCH_SEARCH),
     )
-    control = DelegationControlService(session_scope_factory=lambda: _session_scope(session))
+    control = DelegationControlService(session_scope_factory=_scope(session))
     proposed = await control.propose(
         principal_id=principal.id,
         plan_id=plan.id,
@@ -153,12 +153,3 @@ async def test_recent_outcomes_are_principal_scoped(session: AsyncSession) -> No
     other = await _principal(session, f"result-projection-other-{uuid4()}")
 
     assert await recent_delegation_results(session, principal_id=other.id) == []
-
-
-from contextlib import asynccontextmanager
-from collections.abc import AsyncIterator
-
-
-@asynccontextmanager
-async def _session_scope(session: AsyncSession) -> AsyncIterator[AsyncSession]:
-    yield session

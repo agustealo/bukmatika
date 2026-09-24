@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import ClassVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -21,7 +20,8 @@ from bukmatika.persistence.models import Base, TimestampMixin
 
 class AIDelegation(Base, TimestampMixin):
     __tablename__ = "ai_delegations"
-    __mapper_args__: ClassVar[dict[str, object]] = {"eager_defaults": True}
+    # SQLAlchemy requires mapper directives to be mutable class-level dictionaries.
+    __mapper_args__: dict[str, object] = {"eager_defaults": True}  # noqa: RUF012
     __table_args__ = (
         CheckConstraint(
             "status IN ('proposed','approved','rejected','running','stop_requested',"

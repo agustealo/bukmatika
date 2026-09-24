@@ -30,6 +30,7 @@ type DelegationResult = {
   completed_at: string | null;
   failure_code: string | null;
   attempt_error_code: string | null;
+  user_request: string | null;
   available: boolean;
   unavailable_reason: string | null;
   query: string | null;
@@ -148,7 +149,7 @@ export function DelegationResults() {
               </div>
               {terminal ? (
                 <>
-                  <h3>{statusLabel(result.status)} delegated research</h3>
+                  <h3>{result.user_request ?? `${statusLabel(result.status)} delegated research`}</h3>
                   <p className={result.status === "failed" ? styles.failure : styles.unavailable}>
                     {terminalMessage(result)}
                   </p>

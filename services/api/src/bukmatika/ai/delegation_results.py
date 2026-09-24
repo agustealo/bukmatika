@@ -161,6 +161,7 @@ async def recent_delegation_results(
                 completed_at=delegation.completed_at,
                 failure_code=delegation.failure_code,
                 attempt_error_code=attempt.error_code if attempt is not None else None,
+                user_request=terminal_result.user_request,
                 available=False,
             )
         )

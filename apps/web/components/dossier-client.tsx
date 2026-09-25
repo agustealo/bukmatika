@@ -4,6 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 
+type AcquisitionApprovalMode = "always_ask" | "auto_eligible";
+
+type AcquisitionPolicy = {
+  approval_mode: AcquisitionApprovalMode;
+};
+
 type AssetStatus = {
   asset_id: string;
   format: string;
@@ -12,6 +18,9 @@ type AssetStatus = {
   stored: boolean;
   acquisition_id: string | null;
   acquisition_status: string | null;
+  acquisition_request_id: string | null;
+  acquisition_request_status: string | null;
+  acquisition_approval_mode: string | null;
   processing_status: string | null;
   processing_error_code: string | null;
   ocr_job_id: string | null;
@@ -60,6 +69,7 @@ function bytesLabel(bytes: number | null): string | null {
 
 export function DossierClient(props: DossierClientProps) {
   const [dossier, setDossier] = useState<WorkDossier | null>(null);
+  const [acquisitionPolicy, setAcquisitionPolicy] = useState<AcquisitionPolicy | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionKey, setActionKey] = useState<string | null>(null);
@@ -71,11 +81,22 @@ export function DossierClient(props: DossierClientProps) {
   }, [props]);
 
   const load = useCallback(async () => {
-    const response = await apiFetch(dossierPath, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`Dossier failed with HTTP ${response.status}.`);
+    const [dossierResponse, policyResponse] = await Promise.all([
+      apiFetch(dossierPath, { cache: "no-store" }),
+      apiFetch("/v1/acquisition-policy", { cache: "no-store" }),
+    ]);
+    if (!dossierResponse.ok) {
+      throw new Error(`Dossier failed with HTTP ${dossierResponse.status}.`);
     }
-    setDossier((await response.json()) as WorkDossier);
+    if (!policyResponse.ok) {
+      throw new Error(`Acquisition policy failed with HTTP ${policyResponse.status}.`);
+    }
+    const [dossierBody, policyBody] = await Promise.all([
+      dossierResponse.json() as Promise<WorkDossier>,
+      policyResponse.json() as Promise<AcquisitionPolicy>,
+    ]);
+    setDossier(dossierBody);
+    setAcquisitionPolicy(policyBody);
   }, [dossierPath]);
 
   useEffect(() => {
@@ -84,10 +105,24 @@ export function DossierClient(props: DossierClientProps) {
       setLoading(true);
       setError(null);
       try {
-        const response = await apiFetch(dossierPath, { cache: "no-store" });
-        if (!response.ok) throw new Error(`Dossier failed with HTTP ${response.status}.`);
-        const body = (await response.json()) as WorkDossier;
-        if (!cancelled) setDossier(body);
+        const [dossierResponse, policyResponse] = await Promise.all([
+          apiFetch(dossierPath, { cache: "no-store" }),
+          apiFetch("/v1/acquisition-policy", { cache: "no-store" }),
+        ]);
+        if (!dossierResponse.ok) {
+          throw new Error(`Dossier failed with HTTP ${dossierResponse.status}.`);
+        }
+        if (!policyResponse.ok) {
+          throw new Error(`Acquisition policy failed with HTTP ${policyResponse.status}.`);
+        }
+        const [dossierBody, policyBody] = await Promise.all([
+          dossierResponse.json() as Promise<WorkDossier>,
+          policyResponse.json() as Promise<AcquisitionPolicy>,
+        ]);
+        if (!cancelled) {
+          setDossier(dossierBody);
+          setAcquisitionPolicy(policyBody);
+        }
       } catch (caught) {
         if (!cancelled) {
           setError(caught instanceof Error ? caught.message : "Dossier failed.");
@@ -114,6 +149,27 @@ export function DossierClient(props: DossierClientProps) {
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Action failed.");
+    } finally {
+      setActionKey(null);
+    }
+  }
+
+  async function updatePolicy(approvalMode: AcquisitionApprovalMode) {
+    if (actionKey) return;
+    setActionKey("acquisition-policy");
+    setError(null);
+    try {
+      const response = await apiFetch("/v1/acquisition-policy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approval_mode: approvalMode }),
+      });
+      if (!response.ok) {
+        throw new Error(`Acquisition policy update failed with HTTP ${response.status}.`);
+      }
+      setAcquisitionPolicy((await response.json()) as AcquisitionPolicy);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Acquisition policy update failed.");
     } finally {
       setActionKey(null);
     }
@@ -157,6 +213,32 @@ export function DossierClient(props: DossierClientProps) {
           <a className="primary-action link-button" href="/library">Open library</a>
         )}
       </section>
+
+      {acquisitionPolicy ? (
+        <section className="dossier-hero" aria-labelledby="acquisition-policy-title">
+          <div>
+            <p className="eyebrow">Acquisition approval</p>
+            <h2 id="acquisition-policy-title">How explicit requests start</h2>
+            <p className="muted-copy">
+              Rights checks always run before download. This setting only controls whether an eligible
+              request needs a second approval click.
+            </p>
+          </div>
+          <label>
+            <span className="source-label">Approval policy</span>
+            <select
+              value={acquisitionPolicy.approval_mode}
+              disabled={actionKey !== null}
+              onChange={(event) =>
+                void updatePolicy(event.target.value as AcquisitionApprovalMode)
+              }
+            >
+              <option value="always_ask">Ask before download</option>
+              <option value="auto_eligible">Start eligible requests immediately</option>
+            </select>
+          </label>
+        </section>
+      ) : null}
 
       <section className="edition-list" aria-label="Available editions">
         {dossier.editions.length === 0 ? (
@@ -202,6 +284,11 @@ export function DossierClient(props: DossierClientProps) {
                   : false;
                 const ocrBusy = asset.ocr_job_status ? ACTIVE_JOB_STATES.has(asset.ocr_job_status) : false;
                 const size = bytesLabel(asset.byte_size);
+                const pendingApproval = asset.acquisition_request_status === "pending_approval";
+                const requestActive = asset.acquisition_request_status === "active";
+                const requestCanRestart = new Set(["cancelled", "failed", "quarantined"]).has(
+                  asset.acquisition_request_status ?? "",
+                );
                 return (
                   <div className="asset-row" key={asset.asset_id}>
                     <div className="asset-summary">
@@ -212,6 +299,9 @@ export function DossierClient(props: DossierClientProps) {
                       </span>
                     </div>
                     <div className="asset-state" aria-label={`${asset.format} status`}>
+                      {asset.acquisition_request_status ? (
+                        <span>Your request: {pretty(asset.acquisition_request_status)}</span>
+                      ) : null}
                       <span>Acquisition: {asset.stored ? "stored" : pretty(asset.acquisition_status)}</span>
                       <span>Processing: {pretty(asset.processing_status)}</span>
                       {asset.ocr_job_status ? <span>OCR: {pretty(asset.ocr_job_status)}</span> : null}
@@ -226,14 +316,57 @@ export function DossierClient(props: DossierClientProps) {
                           Read
                         </a>
                       ) : null}
-                      {!asset.stored && asset.acquisition_allowed === true && !acquisitionBusy ? (
+                      {!asset.stored &&
+                      asset.acquisition_allowed === true &&
+                      asset.acquisition_request_id === null &&
+                      !acquisitionBusy ? (
                         <button
                           className="secondary-action"
                           type="button"
                           disabled={actionKey !== null}
                           onClick={() => void perform(`acquire:${asset.asset_id}`, `/v1/assets/${asset.asset_id}/acquire`)}
                         >
-                          {actionKey === `acquire:${asset.asset_id}` ? "Queuing…" : "Acquire"}
+                          {actionKey === `acquire:${asset.asset_id}` ? "Requesting…" : "Request acquisition"}
+                        </button>
+                      ) : null}
+                      {!asset.stored && asset.acquisition_allowed === true && requestCanRestart ? (
+                        <button
+                          className="secondary-action"
+                          type="button"
+                          disabled={actionKey !== null}
+                          onClick={() => void perform(`acquire:${asset.asset_id}`, `/v1/assets/${asset.asset_id}/acquire`)}
+                        >
+                          {actionKey === `acquire:${asset.asset_id}` ? "Requesting…" : "Request again"}
+                        </button>
+                      ) : null}
+                      {pendingApproval && asset.acquisition_request_id ? (
+                        <button
+                          className="primary-action"
+                          type="button"
+                          disabled={actionKey !== null}
+                          onClick={() =>
+                            void perform(
+                              `approve:${asset.acquisition_request_id}`,
+                              `/v1/acquisition-requests/${asset.acquisition_request_id}/approve`,
+                            )
+                          }
+                        >
+                          {actionKey === `approve:${asset.acquisition_request_id}` ? "Approving…" : "Approve download"}
+                        </button>
+                      ) : null}
+                      {(pendingApproval || requestActive) && asset.acquisition_request_id ? (
+                        <button
+                          className="secondary-action"
+                          type="button"
+                          disabled={actionKey !== null}
+                          onClick={() =>
+                            void perform(
+                              `cancel:${asset.acquisition_request_id}`,
+                              `/v1/acquisition-requests/${asset.acquisition_request_id}/cancel`,
+                            )
+                          }
+                        >
+                          {actionKey === `cancel:${asset.acquisition_request_id}` ? "Cancelling…" : "Cancel my request"}
                         </button>
                       ) : null}
                       {asset.stored && !asset.document_id && asset.processing_status !== "requires_ocr" ? (

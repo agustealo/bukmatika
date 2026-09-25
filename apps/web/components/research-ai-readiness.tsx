@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 import styles from "./research-ai-readiness.module.css";
@@ -93,21 +93,33 @@ export function ResearchAIReadiness() {
   const [status, setStatus] = useState<AIStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestSequence = useRef(0);
 
   const refresh = useCallback(async () => {
+    const requestId = requestSequence.current + 1;
+    requestSequence.current = requestId;
     setLoading(true);
     try {
       const response = await apiFetch("/v1/ai/status", { cache: "no-store" });
       if (!response.ok) {
         throw await responseError(response);
       }
-      setStatus((await response.json()) as AIStatus);
+      const nextStatus = (await response.json()) as AIStatus;
+      if (requestId !== requestSequence.current) {
+        return;
+      }
+      setStatus(nextStatus);
       setError(null);
     } catch (caught) {
+      if (requestId !== requestSequence.current) {
+        return;
+      }
       setStatus(null);
       setError(caught instanceof Error ? caught.message : "AI readiness could not be confirmed.");
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -124,6 +136,7 @@ export function ResearchAIReadiness() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleFocus);
     return () => {
+      requestSequence.current += 1;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleFocus);
     };

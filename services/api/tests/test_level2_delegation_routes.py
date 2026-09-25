@@ -11,7 +11,10 @@ from bukmatika.ai.delegation_control_domain import (
     DelegationControlStatusResponse,
 )
 from bukmatika.ai.delegation_domain import DelegationNotFound, DelegationStatus
-from bukmatika.ai.delegation_result_domain import DelegationRecentResult
+from bukmatika.ai.delegation_result_domain import (
+    DelegationRecentResult,
+    DelegationResultBudget,
+)
 from bukmatika.identity import AuthenticatedPrincipal
 from bukmatika.personalization.routes import (
     decide_delegation_consent,
@@ -64,6 +67,14 @@ class _OutcomeCaptureService:
                 outcome_at=self.outcome_at,
                 completed_at=self.outcome_at,
                 failure_code="DELEGATED_SEARCH_FAILED",
+                budget=DelegationResultBudget(
+                    selected_step_count=1,
+                    attempts_used=1,
+                    max_total_attempts=1,
+                    max_retries_per_step=0,
+                    max_runtime_seconds=300,
+                    started_at=self.outcome_at - timedelta(seconds=2),
+                ),
                 available=False,
             )
         ]
@@ -112,6 +123,7 @@ async def test_delegation_outcome_route_forwards_authenticated_principal() -> No
     assert response[0].delegation_id == service.delegation_id
     assert response[0].status is DelegationStatus.FAILED
     assert response[0].failure_code == "DELEGATED_SEARCH_FAILED"
+    assert response[0].budget.attempts_used == 1
 
 
 async def test_consent_route_maps_unavailable_to_conflict() -> None:

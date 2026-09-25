@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import { delegationControlHref } from "../lib/delegation-links";
 import styles from "./research-delegation-composer.module.css";
 
 type PlanStep = {
@@ -353,8 +354,10 @@ export function ResearchDelegationComposer({
               <strong>{notice.title}</strong>
               <p>{notice.message}</p>
               {notice.resourceId ? <code>{notice.resourceId}</code> : null}
-              {notice.kind === "proposal" || notice.kind === "proposal-uncertain" ? (
-                <a href="/personalization">Review in AI controls</a>
+              {notice.kind === "proposal" && notice.resourceId ? (
+                <a href={delegationControlHref(notice.resourceId)}>Review exact proposal</a>
+              ) : notice.kind === "proposal-uncertain" ? (
+                <a href="/personalization#delegation-control-heading">Review in AI controls</a>
               ) : null}
             </div>
           ))}
@@ -476,7 +479,7 @@ export function ResearchDelegationComposer({
                       the AI control center.
                     </p>
                   </div>
-                  <a href="/personalization">Review in AI controls</a>
+                  <a href={delegationControlHref(proposal.delegation_id)}>Review exact proposal</a>
                 </div>
               ) : (
                 <button

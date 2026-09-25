@@ -15,14 +15,22 @@ from bukmatika.discovery.base import DiscoveredRecord
 from bukmatika.discovery.registry import ProviderRegistration, ProviderRegistry
 from bukmatika.domain import (
     DiscoveryCandidate,
+    DiscoveryPreferenceDimension,
+    DiscoveryPreferences,
+    DiscoveryRankingExplanation,
     DiscoveryResponse,
     DiscoverySourceStatus,
     RightsState,
     SearchIntent,
+    canonical_format,
+    canonical_language,
+    canonical_source,
 )
 from bukmatika.observability import StructuredEventLogger
 
 _MAX_RETRY_AFTER_SECONDS = 86_400
+_PREFERENCE_DIMENSION_BOOST = 0.01
+_MAX_PREFERENCE_BOOST = 0.05
 ProviderStatus = Literal["ok", "error", "timeout", "rate_limited"]
 ProviderErrorCode = Literal[
     "timeout",
@@ -57,6 +65,31 @@ class _AdapterResult:
     error_code: ProviderErrorCode | None = None
     http_status_code: int | None = None
     retry_after_seconds: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _RankedRecord:
+    record: DiscoveredRecord
+    neutral_score: float
+    preference_boost: float
+    matched_preferences: tuple[DiscoveryPreferenceDimension, ...]
+
+    @property
+    def total_score(self) -> float:
+        return self.neutral_score + self.preference_boost
+
+    @property
+    def key(self) -> str:
+        candidate = self.record.candidate
+        return f"{candidate.source}:{candidate.source_record_id}"
+
+    def explanation(self) -> DiscoveryRankingExplanation:
+        return DiscoveryRankingExplanation(
+            neutral_score=round(self.neutral_score, 4),
+            preference_boost=round(self.preference_boost, 4),
+            total_score=round(self.total_score, 4),
+            matched_preferences=list(self.matched_preferences),
+        )
 
 
 class DiscoveryService:
@@ -109,8 +142,21 @@ class DiscoveryService:
         records = self._deduplicate(
             record for result in results for record in result.records
         )
-        records.sort(key=lambda item: self._rank(item.candidate), reverse=True)
-        bounded_records = records[: session.max_records]
+        ranked_records = [
+            self._rank_record(record, intent.preferences)
+            for record in records
+        ]
+        ranked_records.sort(
+            key=lambda item: (
+                -item.total_score,
+                -item.neutral_score,
+                item.record.candidate.source,
+                item.record.candidate.source_record_id,
+            )
+        )
+        bounded_ranked_records = ranked_records[: session.max_records]
+        displayed_ranked_records = bounded_ranked_records[: intent.limit]
+        bounded_records = [item.record for item in bounded_ranked_records]
         elapsed_ms = max(0, int((time.monotonic() - session.started_at) * 1000))
         source_status = {
             result.name: DiscoverySourceStatus(
@@ -131,8 +177,11 @@ class DiscoveryService:
                 elapsed_ms=elapsed_ms,
                 intent=intent,
                 candidates=[
-                    record.candidate for record in bounded_records[: intent.limit]
+                    item.record.candidate for item in displayed_ranked_records
                 ],
+                ranking={
+                    item.key: item.explanation() for item in displayed_ranked_records
+                },
                 sources_queried=[registration.name for registration in registrations],
                 source_errors=errors,
                 source_status=source_status,
@@ -207,6 +256,72 @@ class DiscoveryService:
             key = (candidate.source, candidate.source_record_id)
             unique.setdefault(key, record)
         return list(unique.values())
+
+    @classmethod
+    def _rank_record(
+        cls,
+        record: DiscoveredRecord,
+        preferences: DiscoveryPreferences,
+    ) -> _RankedRecord:
+        candidate = record.candidate
+        neutral_score = cls._rank(candidate)
+        matched_preferences = cls._matched_preferences(candidate, preferences)
+        preference_boost = min(
+            _MAX_PREFERENCE_BOOST,
+            len(matched_preferences) * _PREFERENCE_DIMENSION_BOOST,
+        )
+        return _RankedRecord(
+            record=record,
+            neutral_score=neutral_score,
+            preference_boost=preference_boost,
+            matched_preferences=matched_preferences,
+        )
+
+    @staticmethod
+    def _matched_preferences(
+        candidate: DiscoveryCandidate,
+        preferences: DiscoveryPreferences,
+    ) -> tuple[DiscoveryPreferenceDimension, ...]:
+        matched: list[DiscoveryPreferenceDimension] = []
+
+        preferred_languages = set(preferences.languages)
+        candidate_languages = {
+            canonical_language(value) for value in candidate.languages if value.strip()
+        }
+        if preferred_languages and preferred_languages.intersection(candidate_languages):
+            matched.append("language")
+
+        preferred_formats = set(preferences.formats)
+        candidate_formats = {
+            canonical_format(value)
+            for value in (
+                *candidate.formats,
+                *(asset.format for asset in candidate.assets),
+            )
+            if value.strip()
+        }
+        if preferred_formats and preferred_formats.intersection(candidate_formats):
+            matched.append("format")
+
+        if (
+            (preferences.year_from is not None or preferences.year_to is not None)
+            and candidate.first_publish_year is not None
+        ):
+            lower = preferences.year_from or 1
+            upper = preferences.year_to or 3000
+            if lower <= candidate.first_publish_year <= upper:
+                matched.append("era")
+
+        preferred_rights = set(preferences.rights_states)
+        candidate_rights = {evidence.state for evidence in candidate.rights}
+        if preferred_rights and preferred_rights.intersection(candidate_rights):
+            matched.append("rights")
+
+        preferred_sources = set(preferences.sources)
+        if preferred_sources and canonical_source(candidate.source) in preferred_sources:
+            matched.append("source")
+
+        return tuple(matched)
 
     @staticmethod
     def _rank(candidate: DiscoveryCandidate) -> float:

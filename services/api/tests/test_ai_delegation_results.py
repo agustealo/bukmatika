@@ -1,7 +1,14 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from test_ai_delegation_runtime import _plan, _principal, _running_delegation, _scope, _step
+from test_ai_delegation_runtime import (
+    RUNTIME_ENTRY_ID,
+    _plan,
+    _principal,
+    _running_delegation,
+    _scope,
+    _step,
+)
 
 from bukmatika.ai.delegation import DelegationControlService
 from bukmatika.ai.delegation_domain import (
@@ -16,8 +23,31 @@ from bukmatika.ai.delegation_results import recent_delegation_results
 from bukmatika.ai.domain import CapabilityName
 from bukmatika.persistence.delegation_models import AIDelegationAttempt
 from bukmatika.persistence.delegation_results import DelegationResultRepository
+from bukmatika.persistence.models import LibraryEntry, Work
 
 EXPECTED_USER_REQUEST = "Run one bounded delegated research step."
+
+
+async def _owned_source(
+    session: AsyncSession,
+    *,
+    principal_id: UUID,
+    suffix: str,
+) -> LibraryEntry:
+    work = Work(
+        canonical_title=f"Delegation result source {suffix}",
+        normalized_title=f"delegation result source {suffix}",
+    )
+    session.add(work)
+    await session.flush()
+    entry = LibraryEntry(
+        principal_id=principal_id,
+        work_id=work.id,
+        status="saved",
+    )
+    session.add(entry)
+    await session.flush()
+    return entry
 
 
 async def test_recent_outcomes_preserve_successful_completed_receipt(
@@ -27,6 +57,11 @@ async def test_recent_outcomes_preserve_successful_completed_receipt(
         session,
         suffix="result-projection-success",
     )
+    source = await _owned_source(
+        session,
+        principal_id=principal.id,
+        suffix="success",
+    )
     permit = await control.authorize_next_step(
         principal_id=principal.id,
         delegation_id=delegation_id,
@@ -35,7 +70,7 @@ async def test_recent_outcomes_preserve_successful_completed_receipt(
     assert attempt is not None
     receipt = DelegatedResearchSearchReceipt(
         query="projection success",
-        selected_library_entry_ids=[],
+        selected_library_entry_ids=[source.id],
         passages=[],
     )
     await DelegationResultRepository(session).store_for_attempt(
@@ -63,6 +98,12 @@ async def test_recent_outcomes_preserve_successful_completed_receipt(
     assert outcome.completed_at == outcome.outcome_at
     assert outcome.failure_code is None
     assert outcome.attempt_error_code is None
+    assert outcome.selected_library_entry_ids == [source.id]
+    assert len(outcome.selected_sources) == 1
+    assert outcome.selected_sources[0].library_entry_id == source.id
+    assert outcome.selected_sources[0].work_title == "Delegation result source success"
+    assert outcome.selected_sources[0].edition_title is None
+    assert outcome.selected_sources[0].available is True
 
 
 async def test_recent_outcomes_surface_terminal_failure_codes(session: AsyncSession) -> None:
@@ -97,6 +138,13 @@ async def test_recent_outcomes_surface_terminal_failure_codes(session: AsyncSess
     assert outcome.attempt_error_code == "DELEGATED_SEARCH_FAILED"
     assert outcome.user_request == EXPECTED_USER_REQUEST
     assert outcome.completed_at == outcome.outcome_at
+    assert outcome.capability == CapabilityName.RESEARCH_SEARCH.value
+    assert outcome.query == "delegated runtime evidence"
+    assert outcome.selected_library_entry_ids == [RUNTIME_ENTRY_ID]
+    assert len(outcome.selected_sources) == 1
+    assert outcome.selected_sources[0].library_entry_id == RUNTIME_ENTRY_ID
+    assert outcome.selected_sources[0].work_title is None
+    assert outcome.selected_sources[0].available is False
 
 
 async def test_recent_outcomes_keep_rejected_without_attempt(session: AsyncSession) -> None:
@@ -135,6 +183,10 @@ async def test_recent_outcomes_keep_rejected_without_attempt(session: AsyncSessi
     assert outcome.user_request == EXPECTED_USER_REQUEST
     assert outcome.available is False
     assert outcome.completed_at is None
+    assert outcome.query == "delegated runtime evidence"
+    assert outcome.selected_library_entry_ids == [RUNTIME_ENTRY_ID]
+    assert len(outcome.selected_sources) == 1
+    assert outcome.selected_sources[0].available is False
 
 
 async def test_recent_outcomes_are_principal_scoped(session: AsyncSession) -> None:

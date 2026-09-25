@@ -154,9 +154,11 @@ test("stale Reader bookmark removal is rejected across two tabs", async ({ page,
   ).toBeVisible();
 
   await firstBookmarked.click();
-  await expect(page.getByRole("alert")).toContainText(
-    "This bookmark changed in another tab. Reload before removing it.",
-  );
+  await expect(
+    page.getByRole("alert").filter({
+      hasText: "This bookmark changed in another tab. Reload before removing it.",
+    }),
+  ).toContainText("This bookmark changed in another tab. Reload before removing it.");
   await expect(firstBookmarked).toBeVisible();
 
   await page.reload();

@@ -52,7 +52,8 @@ SOURCES = (
         edition_title="Browser Comparison Edition",
         heading="Kiln records",
         text=(
-            "Ceramic kiln accounts record clay temperatures, glazing methods, and workshop tools.\n\n"
+            "Ceramic kiln accounts record clay temperatures, glazing methods, "
+            "and workshop tools.\n\n"
             "The surviving ledger lists fuel deliveries and seasonal firing schedules."
         ),
         publication_year=1490,

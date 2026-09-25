@@ -4,10 +4,11 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 
 ## Current engineering checkpoint - 2026-09-25
 
-- Current production base: `main@f862111a6ccd629fd141c9bcde5d21e24af6ed0f` after merged PR #124.
-- Post-merge Quality #526 is green on that exact production commit across API, Web, and Browser quality.
-- The API gate covers Ruff, strict MyPy, the current migration chain, and the complete PostgreSQL/API test suite. The Web gate covers TypeScript typecheck and production build. The Browser gate builds the production web app, starts the real API against PostgreSQL, installs Chromium, and runs the no-mock Research/Reader journey through the consumer surface.
-- The real Chromium rail now proves selected-book Research search to canonical Reader source handoff, balanced comparison with no-match sources preserved, stale cross-tab bookmark removal rejection, stale highlight-note overwrite rejection with draft preservation, and stale highlight removal rejection while preserving the newer canonical annotation state. PRs #119 and #121-#124 established this browser proof.
+- Current production base: `main@36c06e27a2e0626c0e5fb8e1c1c044cd638fddc5` after merged PR #127.
+- Post-merge Quality #534 is green on that exact production commit across API, Web, and Browser quality.
+- Phase 0 foundation is now implementation-complete: the canonical local bootstrap owns prerequisite validation, non-destructive environment setup, PostgreSQL 18 Compose lifecycle, dependency installation, database readiness, and migrations; structured request correlation provides privacy-bounded JSON access logging and canonical `X-Request-ID` propagation.
+- The API gate covers development Compose validation, Ruff, strict MyPy, the current migration chain, and the complete PostgreSQL/API test suite. The Web gate covers TypeScript typecheck and production build. The Browser gate builds the production web app, starts the real API against PostgreSQL, installs Chromium, and runs the no-mock Research/Reader journey through the consumer surface.
+- The real Chromium rail proves selected-book Research search to canonical Reader source handoff, balanced comparison with no-match sources preserved, stale cross-tab bookmark removal rejection, stale highlight-note overwrite rejection with draft preservation, and stale highlight removal rejection while preserving the newer canonical annotation state. PRs #119 and #121-#124 established this browser proof.
 - Grounded reader research is live behind the canonical `ModelGateway` with loopback-only Ollama, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, a public real-model smoke command, and a rollback-only grounded-runtime proof command.
 - Consumer research includes selected-book lexical retrieval, grounded Q&A, balanced source/edition comparison, explicit-highlight grounding, deterministic timelines, deterministic people/place/concept mention extraction, measured retrieval evaluation over canonical evidence, ranked PostgreSQL fallback, and explicit request-local semantic retrieval behind the canonical embedding gateway.
 - Semantic retrieval implementation is shipped but remains unpromoted in ordinary consumer Research until the hardened semantic recall burn passes against a real configured local Ollama embedding model. The request-local semantic path creates no persistent vector authority.
@@ -30,8 +31,8 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 - [x] Adaptive AI architecture and autonomy invariants.
 - [x] CI quality gates.
 - [x] Database migrations.
-- [ ] Local development bootstrap.
-- [ ] Structured logging and request correlation.
+- [x] Local development bootstrap.
+- [x] Structured logging and request correlation.
 - [x] Canonical semantic interaction-event vocabulary.
 
 ## Phase 1 - Real discovery

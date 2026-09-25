@@ -1,4 +1,5 @@
 import { DossierClient } from "../../components/dossier-client";
+import { MetadataProvenancePanel } from "../../components/metadata-provenance-panel";
 
 type DossierPageProps = {
   searchParams: Promise<{
@@ -28,9 +29,17 @@ export default async function DossierPage({ searchParams }: DossierPageProps) {
         </nav>
       </header>
 
-      {workId ? <DossierClient workId={workId} /> : null}
+      {workId ? (
+        <>
+          <DossierClient workId={workId} />
+          <MetadataProvenancePanel workId={workId} />
+        </>
+      ) : null}
       {!workId && hasSourceIdentity ? (
-        <DossierClient provider={provider!} recordId={recordId!} />
+        <>
+          <DossierClient provider={provider!} recordId={recordId!} />
+          <MetadataProvenancePanel provider={provider!} recordId={recordId!} />
+        </>
       ) : null}
       {!workId && !hasSourceIdentity ? (
         <div className="error-card" role="alert">

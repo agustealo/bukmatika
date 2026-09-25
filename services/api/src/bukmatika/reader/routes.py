@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
+from bukmatika.persistence.reader_highlight_notes import ReaderHighlightConflict
 from bukmatika.persistence.readers import (
     ReaderAccessDenied,
     ReaderBookmarkNotFound,
@@ -204,6 +205,11 @@ async def update_highlight_note(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Highlight not found",
+        ) from exc
+    except ReaderHighlightConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "READER_HIGHLIGHT_STALE"},
         ) from exc
 
 

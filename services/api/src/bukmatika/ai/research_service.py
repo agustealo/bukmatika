@@ -22,15 +22,25 @@ from bukmatika.ai.policy import ActionPolicy
 from bukmatika.ai.research_domain import (
     GroundedResearchCapabilityOutput,
     GroundedResearchExecutionResponse,
+    GroundedResearchSelectionRequest,
 )
 from bukmatika.ai.service import AIDisabled
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.plans import PlanRepository
 from bukmatika.personalization.context import ContextAssembler
 from bukmatika.personalization.domain import ContextRequest, ContextTask
-from bukmatika.research import ResearchEvidenceBundleRequest, ResearchService
+from bukmatika.research import (
+    ReaderResearchContextRequest,
+    ResearchEvidenceBundleRequest,
+    ResearchSearchRequest,
+    ResearchService,
+)
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+
+
+class ResearchSelectionEvidenceUnavailable(ValueError):
+    code = "RESEARCH_SELECTION_EVIDENCE_UNAVAILABLE"
 
 
 class GroundedResearchSynthesisService:
@@ -63,6 +73,40 @@ class GroundedResearchSynthesisService:
                 )
             ),
             session_scope_factory=session_scope_factory,
+        )
+
+    async def answer_selection(
+        self,
+        *,
+        principal_id: UUID,
+        request: GroundedResearchSelectionRequest,
+    ) -> GroundedResearchExecutionResponse:
+        search = await self._research.search(
+            principal_id=principal_id,
+            request=ResearchSearchRequest(
+                query=request.question,
+                library_entry_ids=request.library_entry_ids,
+                limit=1,
+            ),
+        )
+        if not search.passages:
+            raise ResearchSelectionEvidenceUnavailable(
+                "Selected books produced no canonical lexical evidence for this question"
+            )
+        anchor = search.passages[0]
+        return await self.answer(
+            principal_id=principal_id,
+            request=ResearchEvidenceBundleRequest(
+                question=request.question,
+                reader=ReaderResearchContextRequest(
+                    library_entry_id=anchor.library_entry_id,
+                    document_id=anchor.document_id,
+                    section_id=anchor.section_id,
+                    char_offset=anchor.char_start,
+                ),
+                library_entry_ids=request.library_entry_ids,
+                related_limit=request.related_limit,
+            ),
         )
 
     async def answer(

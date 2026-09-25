@@ -53,6 +53,7 @@ class BookmarkResponse(BaseModel):
     char_offset: int = Field(ge=0)
     locator: dict[str, Any]
     label: str | None
+    updated_at: datetime
 
 
 class HighlightResponse(BaseModel):
@@ -92,6 +93,10 @@ class BookmarkCreate(BaseModel):
     section_id: UUID
     char_offset: int = Field(ge=0)
     label: str | None = Field(default=None, max_length=200)
+
+
+class BookmarkRemoveRequest(BaseModel):
+    expected_updated_at: datetime
 
 
 class HighlightCreate(BaseModel):

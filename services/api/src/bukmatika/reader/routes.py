@@ -15,6 +15,7 @@ from bukmatika.reader.domain import (
     BookmarkCreate,
     BookmarkResponse,
     HighlightCreate,
+    HighlightDeleteRequest,
     HighlightNoteRequest,
     HighlightNoteUpdate,
     HighlightResponse,
@@ -51,10 +52,7 @@ async def open_reader(
             limit=limit,
         )
     except ReaderAccessDenied as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reader document not found",
-        ) from exc
+        raise HTTPException(status_code=404, detail="Reader document not found") from exc
 
 
 @router.get("/navigation", response_model=ReaderNavigationResponse)
@@ -71,10 +69,7 @@ async def reader_navigation(
             document_id=document_id,
         )
     except ReaderAccessDenied as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reader document not found",
-        ) from exc
+        raise HTTPException(status_code=404, detail="Reader document not found") from exc
 
 
 @router.post("/progress", response_model=ReadingStateResponse)
@@ -93,15 +88,9 @@ async def save_progress(
             update=update,
         )
     except ReaderAccessDenied as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reader document not found",
-        ) from exc
+        raise HTTPException(status_code=404, detail="Reader document not found") from exc
     except ReaderPositionInvalid as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail={"code": "READER_POSITION_INVALID"},
-        ) from exc
+        raise HTTPException(status_code=422, detail={"code": "READER_POSITION_INVALID"}) from exc
 
 
 @router.post("/bookmarks", response_model=BookmarkResponse, status_code=status.HTTP_201_CREATED)
@@ -120,15 +109,9 @@ async def add_bookmark(
             create=create,
         )
     except ReaderAccessDenied as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reader document not found",
-        ) from exc
+        raise HTTPException(status_code=404, detail="Reader document not found") from exc
     except ReaderPositionInvalid as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail={"code": "READER_POSITION_INVALID"},
-        ) from exc
+        raise HTTPException(status_code=422, detail={"code": "READER_POSITION_INVALID"}) from exc
 
 
 @router.post("/bookmarks/{bookmark_id}/remove", status_code=status.HTTP_204_NO_CONTENT)
@@ -147,18 +130,11 @@ async def remove_bookmark(
             bookmark_id=bookmark_id,
         )
     except (ReaderAccessDenied, ReaderBookmarkNotFound) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bookmark not found",
-        ) from exc
+        raise HTTPException(status_code=404, detail="Bookmark not found") from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post(
-    "/highlights",
-    response_model=HighlightResponse,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("/highlights", response_model=HighlightResponse, status_code=status.HTTP_201_CREATED)
 async def add_highlight(
     library_entry_id: UUID,
     document_id: UUID,
@@ -174,15 +150,9 @@ async def add_highlight(
             create=create,
         )
     except ReaderAccessDenied as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reader document not found",
-        ) from exc
+        raise HTTPException(status_code=404, detail="Reader document not found") from exc
     except ReaderPositionInvalid as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail={"code": "READER_HIGHLIGHT_RANGE_INVALID"},
-        ) from exc
+        raise HTTPException(status_code=422, detail={"code": "READER_HIGHLIGHT_RANGE_INVALID"}) from exc
 
 
 @router.post("/highlights/{highlight_id}/note", response_model=HighlightResponse)
@@ -206,15 +176,9 @@ async def update_highlight_note(
             ),
         )
     except (ReaderAccessDenied, ReaderHighlightNotFound) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Highlight not found",
-        ) from exc
+        raise HTTPException(status_code=404, detail="Highlight not found") from exc
     except ReaderHighlightConflict as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "READER_HIGHLIGHT_STALE"},
-        ) from exc
+        raise HTTPException(status_code=409, detail={"code": "READER_HIGHLIGHT_STALE"}) from exc
 
 
 @router.post("/highlights/{highlight_id}/remove", status_code=status.HTTP_204_NO_CONTENT)
@@ -222,6 +186,7 @@ async def remove_highlight(
     library_entry_id: UUID,
     document_id: UUID,
     highlight_id: UUID,
+    request: HighlightDeleteRequest,
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[ReaderService, Depends(reader_service)],
 ) -> Response:
@@ -231,10 +196,10 @@ async def remove_highlight(
             library_entry_id=library_entry_id,
             document_id=document_id,
             highlight_id=highlight_id,
+            expected_updated_at=request.expected_updated_at,
         )
     except (ReaderAccessDenied, ReaderHighlightNotFound) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Highlight not found",
-        ) from exc
+        raise HTTPException(status_code=404, detail="Highlight not found") from exc
+    except ReaderHighlightConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": "READER_HIGHLIGHT_STALE"}) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -136,6 +136,7 @@ async def recent_delegation_results(
                     status=DelegationStatus.COMPLETED,
                     outcome_at=finished_at,
                     completed_at=finished_at,
+                    user_request=stored_result.plan.user_request,
                     budget=budget,
                     available=False,
                     unavailable_reason="Delegated result receipt is no longer valid.",
@@ -164,6 +165,7 @@ async def recent_delegation_results(
                     status=DelegationStatus.COMPLETED,
                     outcome_at=finished_at,
                     completed_at=finished_at,
+                    user_request=stored_result.plan.user_request,
                     budget=budget,
                     available=False,
                     unavailable_reason=(
@@ -184,6 +186,7 @@ async def recent_delegation_results(
                 status=DelegationStatus.COMPLETED,
                 outcome_at=finished_at,
                 completed_at=finished_at,
+                user_request=stored_result.plan.user_request,
                 budget=budget,
                 available=True,
                 query=receipt.query,

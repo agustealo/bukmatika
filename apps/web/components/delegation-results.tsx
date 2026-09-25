@@ -57,6 +57,10 @@ type DelegationResult = {
   passages: ResearchPassage[];
 };
 
+type DelegationResultsProps = {
+  hideWhenEmpty?: boolean;
+};
+
 const REFRESH_INTERVAL_MS = 5_000;
 
 function statusLabel(status: DelegationOutcomeStatus): string {
@@ -164,7 +168,9 @@ function SourceScope({ result }: { result: DelegationResult }) {
   );
 }
 
-export function DelegationResults() {
+export function DelegationResults({
+  hideWhenEmpty = false,
+}: DelegationResultsProps = {}) {
   const [results, setResults] = useState<DelegationResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -191,6 +197,10 @@ export function DelegationResults() {
     }, REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [refresh]);
+
+  if (hideWhenEmpty && (loading || (!error && results.length === 0))) {
+    return null;
+  }
 
   return (
     <section className={styles.panel} aria-labelledby="delegation-results-title">

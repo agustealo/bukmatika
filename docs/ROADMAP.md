@@ -4,9 +4,10 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 
 ## Current engineering checkpoint - 2026-09-25
 
-- Current production base: `main@36c06e27a2e0626c0e5fb8e1c1c044cd638fddc5` after merged PR #127.
-- Post-merge Quality #534 is green on that exact production commit across API, Web, and Browser quality.
-- Phase 0 foundation is now implementation-complete: the canonical local bootstrap owns prerequisite validation, non-destructive environment setup, PostgreSQL 18 Compose lifecycle, dependency installation, database readiness, and migrations; structured request correlation provides privacy-bounded JSON access logging and canonical `X-Request-ID` propagation.
+- Current production base: `main@d0eb2332806ec38339c62ac4833b24420adb64b9` after merged PR #131.
+- Post-merge Quality #544 is green on that exact production commit across API, Web, and Browser quality.
+- Phase 0 foundation is implementation-complete: the canonical local bootstrap owns prerequisite validation, non-destructive environment setup, PostgreSQL 18 Compose lifecycle, dependency installation, database readiness, and migrations; structured request correlation provides canonical `X-Request-ID` propagation and privacy-bounded JSON access logging. PR #130 further fences structured logging to Bukmatika-owned/server logger families so raw HTTP client URLs cannot become a second telemetry authority.
+- Phase 1 listed discovery capabilities are implementation-complete: all four canonical source adapters remain independently degradable; provider health/rate-limit telemetry is bounded and privacy-safe; normalized results persist through the PostgreSQL catalog; and explicit language, format, era, rights-state, and source preferences can transparently nudge ranking by at most `0.05` without suppressing providers, rewriting rights evidence, or changing acquisition eligibility.
 - The API gate covers development Compose validation, Ruff, strict MyPy, the current migration chain, and the complete PostgreSQL/API test suite. The Web gate covers TypeScript typecheck and production build. The Browser gate builds the production web app, starts the real API against PostgreSQL, installs Chromium, and runs the no-mock Research/Reader journey through the consumer surface.
 - The real Chromium rail proves selected-book Research search to canonical Reader source handoff, balanced comparison with no-match sources preserved, stale cross-tab bookmark removal rejection, stale highlight-note overwrite rejection with draft preservation, and stale highlight removal rejection while preserving the newer canonical annotation state. PRs #119 and #121-#124 established this browser proof.
 - Grounded reader research is live behind the canonical `ModelGateway` with loopback-only Ollama, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, a public real-model smoke command, and a rollback-only grounded-runtime proof command.
@@ -45,12 +46,12 @@ Goal: a user can search a topic and receive normalized, rights-classified real r
 - [x] Internet Archive adapter.
 - [x] Project Gutenberg catalog adapter.
 - [x] Library of Congress adapter.
-- [ ] Provider health and rate-limit telemetry.
+- [x] Provider health and rate-limit telemetry.
 - [x] Work/edition duplicate resolver backed by PostgreSQL.
 - [x] Search result persistence.
-- [ ] Explicit discovery preferences: language, format, era, rights state, source type.
+- [x] Explicit discovery preferences: language, format, era, rights state, source type.
 
-Acceptance: “Old World before Columbus” returns live source results with source provenance and no fake catalog rows. Explicit preferences can influence transparent ranking without bypassing neutral sorting.
+Acceptance: “Old World before Columbus” returns live source results with source provenance and no fake catalog rows. Explicit preferences can influence transparent ranking without bypassing neutral sorting. The listed Phase 1 implementation capabilities are complete; broader consumer polish remains governed by Phase 4 acceptance.
 
 ## Phase 2 - Lawful acquisition
 

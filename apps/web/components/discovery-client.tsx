@@ -109,6 +109,16 @@ function optionalYear(value: string): number | undefined {
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 3000 ? parsed : undefined;
 }
 
+function preferenceDimensionCount(preferences: DiscoveryPreferences): number {
+  return [
+    preferences.languages.length > 0,
+    preferences.formats.length > 0,
+    preferences.year_from !== undefined || preferences.year_to !== undefined,
+    preferences.rights_states.length > 0,
+    preferences.sources.length > 0,
+  ].filter(Boolean).length;
+}
+
 export function DiscoveryClient() {
   const [query, setQuery] = useState("");
   const [languages, setLanguages] = useState("");
@@ -118,6 +128,7 @@ export function DiscoveryClient() {
   const [rightsState, setRightsState] = useState<RightsState | "">("");
   const [source, setSource] = useState("");
   const [results, setResults] = useState<DiscoveryResponse | null>(null);
+  const [appliedPreferenceCount, setAppliedPreferenceCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -128,7 +139,13 @@ export function DiscoveryClient() {
 
   const activePreferenceCount = useMemo(
     () =>
-      [languages.trim(), format, yearFrom, yearTo, rightsState, source].filter(Boolean).length,
+      [
+        languages.trim(),
+        format,
+        yearFrom || yearTo,
+        rightsState,
+        source,
+      ].filter(Boolean).length,
     [languages, format, yearFrom, yearTo, rightsState, source],
   );
 
@@ -164,6 +181,7 @@ export function DiscoveryClient() {
       ...(preferredYearFrom === undefined ? {} : { year_from: preferredYearFrom }),
       ...(preferredYearTo === undefined ? {} : { year_to: preferredYearTo }),
     };
+    const submittedPreferenceCount = preferenceDimensionCount(preferences);
 
     setLoading(true);
     setError(null);
@@ -177,8 +195,10 @@ export function DiscoveryClient() {
         throw new Error(`Discovery failed with HTTP ${response.status}.`);
       }
       setResults((await response.json()) as DiscoveryResponse);
+      setAppliedPreferenceCount(submittedPreferenceCount);
     } catch (caught) {
       setResults(null);
+      setAppliedPreferenceCount(0);
       setError(caught instanceof Error ? caught.message : "Discovery failed.");
     } finally {
       setLoading(false);
@@ -310,7 +330,7 @@ export function DiscoveryClient() {
           <div className="results-meta">
             <strong>{countLabel}</strong>
             <span>Sources: {results.sources_queried.join(", ")}</span>
-            {activePreferenceCount > 0 ? (
+            {appliedPreferenceCount > 0 ? (
               <span className={styles.preferenceDisclosure}>Preference boost ≤ 0.05</span>
             ) : null}
           </div>

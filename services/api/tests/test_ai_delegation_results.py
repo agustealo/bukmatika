@@ -18,7 +18,10 @@ from bukmatika.ai.delegation_domain import (
     DelegationProposalRequest,
     DelegationStatus,
 )
-from bukmatika.ai.delegation_result_domain import DelegatedResearchSearchReceipt
+from bukmatika.ai.delegation_result_domain import (
+    DelegatedResearchSearchReceipt,
+    DelegationRecentResult,
+)
 from bukmatika.ai.delegation_results import recent_delegation_results
 from bukmatika.ai.domain import CapabilityName
 from bukmatika.persistence.delegation_models import AIDelegationAttempt
@@ -50,8 +53,8 @@ async def _owned_source(
     return entry
 
 
-def _assert_single_attempt_budget(outcome: object) -> None:
-    budget = getattr(outcome, "budget")
+def _assert_single_attempt_budget(outcome: DelegationRecentResult) -> None:
+    budget = outcome.budget
     assert budget.selected_step_count == 1
     assert budget.attempts_used == 1
     assert budget.max_total_attempts == 1

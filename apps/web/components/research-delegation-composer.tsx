@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import { DelegationControl } from "./delegation-control";
 import styles from "./research-delegation-composer.module.css";
 
 type PlanStep = {
@@ -145,6 +146,11 @@ export function ResearchDelegationComposer({
     selectedStepIds.length > 0 &&
     !proposing &&
     !drafting;
+  const showDelegationControls =
+    proposal !== null ||
+    previousScopeNotices.some(
+      (notice) => notice.kind === "proposal" || notice.kind === "proposal-uncertain",
+    );
 
   function addPreviousScopeNotice(notice: PreviousScopeNotice) {
     setPreviousScopeNotices((current) =>
@@ -271,7 +277,7 @@ export function ResearchDelegationComposer({
           kind: "proposal",
           title: "Previous-scope delegation proposal created",
           message:
-            "A proposal was created for an earlier research scope. Nothing is running. Review or reject that exact proposal in AI controls before starting any work.",
+            "A proposal was created for an earlier research scope. Nothing is running. Review or reject that exact proposal in the delegation controls below before starting any work.",
           resourceId: nextProposal.delegation_id,
         });
         return;
@@ -285,7 +291,7 @@ export function ResearchDelegationComposer({
           kind: "proposal-uncertain",
           title: "Previous-scope proposal request needs review",
           message:
-            "The earlier proposal request did not return a confirmed outcome to this view. Check AI controls before retrying so a durable proposal is not duplicated.",
+            "The earlier proposal request did not return a confirmed outcome to this view. Check the delegation controls below before retrying so a durable proposal is not duplicated.",
         });
         return;
       }
@@ -320,7 +326,7 @@ export function ResearchDelegationComposer({
         <p>
           Bukmatika can ask your configured model to draft a plan against only the selected books.
           The model cannot approve or start the work. Policy-approved research steps still require
-          your exact delegation approval in the AI control center.
+          your exact approval and explicit start in the delegation controls.
         </p>
       </div>
 
@@ -354,7 +360,7 @@ export function ResearchDelegationComposer({
               <p>{notice.message}</p>
               {notice.resourceId ? <code>{notice.resourceId}</code> : null}
               {notice.kind === "proposal" || notice.kind === "proposal-uncertain" ? (
-                <a href="/personalization">Review in AI controls</a>
+                <a href="#research-delegation-control">Review below</a>
               ) : null}
             </div>
           ))}
@@ -472,11 +478,11 @@ export function ResearchDelegationComposer({
                     <span>Delegation proposal created</span>
                     <strong>{proposal.delegation_id}</strong>
                     <p>
-                      Nothing is running yet. Review the exact proposal, approve it, and start it from
-                      the AI control center.
+                      Nothing is running yet. Review the exact proposal, approve it, and start it in
+                      the delegation controls below.
                     </p>
                   </div>
-                  <a href="/personalization">Review in AI controls</a>
+                  <a href="#research-delegation-control">Review and start below</a>
                 </div>
               ) : (
                 <button
@@ -500,6 +506,12 @@ export function ResearchDelegationComposer({
           </p>
         </div>
       )}
+
+      {showDelegationControls ? (
+        <div id="research-delegation-control">
+          <DelegationControl />
+        </div>
+      ) : null}
     </section>
   );
 }

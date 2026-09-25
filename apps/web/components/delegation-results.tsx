@@ -18,6 +18,13 @@ type ResearchPassage = {
   score: number;
 };
 
+type DelegationResultSource = {
+  library_entry_id: string;
+  work_title: string | null;
+  edition_title: string | null;
+  available: boolean;
+};
+
 type DelegationOutcomeStatus = "rejected" | "stopped" | "completed" | "failed" | "cancelled";
 
 type DelegationResult = {
@@ -35,6 +42,7 @@ type DelegationResult = {
   unavailable_reason: string | null;
   query: string | null;
   selected_library_entry_ids: string[];
+  selected_sources: DelegationResultSource[];
   passages: ResearchPassage[];
 };
 
@@ -80,6 +88,31 @@ function terminalMessage(result: DelegationResult): string {
     case "completed":
       return result.unavailable_reason ?? "The canonical source is no longer available.";
   }
+}
+
+function SourceScope({ result }: { result: DelegationResult }) {
+  if (result.selected_sources.length === 0) return null;
+  return (
+    <div className={styles.sourceScope}>
+      <p className={styles.scopeLabel}>
+        Selected books · {result.selected_sources.length}
+      </p>
+      <ul className={styles.sourceList}>
+        {result.selected_sources.map((source) => (
+          <li className={styles.sourceChip} data-available={source.available} key={source.library_entry_id}>
+            {source.available && source.work_title ? (
+              <>
+                <strong>{source.work_title}</strong>
+                {source.edition_title ? <span>{source.edition_title}</span> : null}
+              </>
+            ) : (
+              <span>Source no longer in library</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export function DelegationResults() {
@@ -150,6 +183,12 @@ export function DelegationResults() {
               {terminal ? (
                 <>
                   <h3>{result.user_request ?? `${statusLabel(result.status)} delegated research`}</h3>
+                  {result.query ? (
+                    <p className={styles.plannedQuery}>
+                      <strong>Planned query:</strong> {result.query}
+                    </p>
+                  ) : null}
+                  <SourceScope result={result} />
                   <p className={result.status === "failed" ? styles.failure : styles.unavailable}>
                     {terminalMessage(result)}
                   </p>
@@ -157,6 +196,7 @@ export function DelegationResults() {
               ) : result.available ? (
                 <>
                   <h3>{result.query ?? "Delegated research search"}</h3>
+                  <SourceScope result={result} />
                   {result.passages.length === 0 ? (
                     <p className={styles.muted}>The search completed with no matching passages.</p>
                   ) : (
@@ -180,7 +220,11 @@ export function DelegationResults() {
                   )}
                 </>
               ) : (
-                <p className={styles.unavailable}>{terminalMessage(result)}</p>
+                <>
+                  {result.query ? <h3>{result.query}</h3> : null}
+                  <SourceScope result={result} />
+                  <p className={styles.unavailable}>{terminalMessage(result)}</p>
+                </>
               )}
             </article>
           );

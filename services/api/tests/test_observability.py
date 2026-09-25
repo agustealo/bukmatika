@@ -233,7 +233,8 @@ def test_logging_configuration_does_not_promote_raw_http_client_records(capsys) 
         assert loggers["httpcore"].disabled is True
 
         logging.getLogger("httpx").info(
-            'HTTP Request: GET https://provider.invalid/search?q=private-search-text "HTTP/1.1 200 OK"'
+            "HTTP Request: GET https://provider.invalid/search?"
+            'q=private-search-text "HTTP/1.1 200 OK"'
         )
         logging.getLogger("httpcore").info(
             "connect_tcp.started host='provider.invalid' query='private-search-text'"

@@ -193,6 +193,11 @@ async def update_highlight_note(
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[ReaderService, Depends(reader_service)],
 ) -> HighlightResponse:
+    if update.expected_updated_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "READER_HIGHLIGHT_REVISION_REQUIRED"},
+        )
     try:
         return await service.update_highlight_note(
             principal_id=identity.principal_id,

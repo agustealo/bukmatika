@@ -4,6 +4,7 @@ import {
   expect,
   test,
   type BrowserContext,
+  type Locator,
   type Page,
 } from "@playwright/test";
 
@@ -72,6 +73,10 @@ async function openMatchingResearchReader(page: Page, context: BrowserContext): 
   await expect(page.getByLabel("Book text")).toContainText(NAVIGATION_PASSAGE);
 }
 
+function navigationHighlight(page: Page): Locator {
+  return page.locator("article.reader-highlight-item").filter({ hasText: HIGHLIGHT_TEXT });
+}
+
 async function saveNavigationHighlight(page: Page): Promise<void> {
   const paragraph = page
     .locator("section.reader-section")
@@ -108,9 +113,7 @@ async function saveNavigationHighlight(page: Page): Promise<void> {
   await expect(selectionCard).toContainText(HIGHLIGHT_TEXT);
   await selectionCard.getByRole("button", { name: "Save highlight" }).click();
 
-  await expect(
-    page.locator("article.reader-highlight-item").filter({ hasText: HIGHLIGHT_TEXT }),
-  ).toBeVisible();
+  await expect(navigationHighlight(page)).toBeVisible();
 }
 
 test("owned canonical evidence flows from Research search into the Reader", async ({
@@ -221,12 +224,8 @@ test("stale Reader highlight note keeps its draft and cannot overwrite newer sta
   await secondPage.goto(page.url());
   await expect(secondPage.getByRole("heading", { name: "Navigation evidence" })).toBeVisible();
 
-  const firstHighlight = page
-    .locator("article.reader-highlight-item")
-    .filter({ hasText: HIGHLIGHT_TEXT });
-  const secondHighlight = secondPage
-    .locator("article.reader-highlight-item")
-    .filter({ hasText: HIGHLIGHT_TEXT });
+  const firstHighlight = navigationHighlight(page);
+  const secondHighlight = navigationHighlight(secondPage);
   await expect(firstHighlight).toBeVisible();
   await expect(secondHighlight).toBeVisible();
 
@@ -252,11 +251,48 @@ test("stale Reader highlight note keeps its draft and cannot overwrite newer sta
 
   await secondPage.reload();
   await expect(secondPage.getByRole("heading", { name: "Navigation evidence" })).toBeVisible();
-  const reloadedHighlight = secondPage
-    .locator("article.reader-highlight-item")
-    .filter({ hasText: HIGHLIGHT_TEXT });
+  const reloadedHighlight = navigationHighlight(secondPage);
   await expect(reloadedHighlight).toContainText("newer note from tab A");
   await expect(reloadedHighlight).not.toContainText("stale draft from tab B");
+
+  await secondPage.close();
+});
+
+test("stale Reader highlight removal is rejected after another tab advances its revision", async ({
+  page,
+  context,
+}) => {
+  await openMatchingResearchReader(page, context);
+  await saveNavigationHighlight(page);
+
+  const secondPage = await context.newPage();
+  await secondPage.goto(page.url());
+  await expect(secondPage.getByRole("heading", { name: "Navigation evidence" })).toBeVisible();
+
+  const staleHighlight = navigationHighlight(page);
+  const newerHighlight = navigationHighlight(secondPage);
+  await expect(staleHighlight).toBeVisible();
+  await expect(newerHighlight).toBeVisible();
+
+  await newerHighlight.getByRole("button", { name: "Add note", exact: true }).click();
+  const newerNoteInput = newerHighlight.getByLabel("Highlight note");
+  await newerNoteInput.fill("newer note before stale removal");
+  await newerHighlight.getByRole("button", { name: "Save note", exact: true }).click();
+  await expect(newerHighlight).toContainText("newer note before stale removal");
+  await expect(newerHighlight.getByRole("button", { name: "Edit note", exact: true })).toBeVisible();
+
+  await staleHighlight.getByRole("button", { name: "Remove", exact: true }).click();
+  const staleRemovalMessage = "This highlight changed in another tab. Reload before removing it.";
+  await expect(page.getByRole("alert").filter({ hasText: staleRemovalMessage })).toContainText(
+    staleRemovalMessage,
+  );
+  await expect(staleHighlight).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Navigation evidence" })).toBeVisible();
+  const reloadedHighlight = navigationHighlight(page);
+  await expect(reloadedHighlight).toBeVisible();
+  await expect(reloadedHighlight).toContainText("newer note before stale removal");
 
   await secondPage.close();
 });

@@ -366,6 +366,18 @@ class PrincipalAcquisitionService:
         )
 
 
+def _approval_supersedes_terminal(
+    request: AcquisitionRequest,
+    acquisition: Acquisition | None,
+) -> bool:
+    return (
+        request.approved_at is not None
+        and acquisition is not None
+        and acquisition.completed_at is not None
+        and request.approved_at > acquisition.completed_at
+    )
+
+
 def _request_response(
     request: AcquisitionRequest,
     *,
@@ -375,12 +387,18 @@ def _request_response(
     acquisition_status = (
         AcquisitionStatus(acquisition.status) if acquisition is not None else None
     )
+    superseded_terminal = _approval_supersedes_terminal(request, acquisition)
     if request.cancelled_at is not None:
         request_status = AcquisitionRequestStatus.CANCELLED
     elif asset.stored_object_id is not None or acquisition_status is AcquisitionStatus.STORED:
         request_status = AcquisitionRequestStatus.STORED
     elif acquisition_status is AcquisitionStatus.QUARANTINED:
         request_status = AcquisitionRequestStatus.QUARANTINED
+    elif (
+        acquisition_status in {AcquisitionStatus.FAILED, AcquisitionStatus.CANCELLED}
+        and superseded_terminal
+    ):
+        request_status = AcquisitionRequestStatus.ACTIVE
     elif acquisition_status is AcquisitionStatus.FAILED:
         request_status = AcquisitionRequestStatus.FAILED
     elif acquisition_status is AcquisitionStatus.CANCELLED:

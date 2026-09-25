@@ -71,6 +71,8 @@ Bukmatika emits structured JSON logs to standard output. HTTP requests use one b
 - request access events never include raw query strings, concrete route parameter values, request or response bodies, cookies, authorization material, annotation/book text, or exception messages;
 - downstream structured logs may obtain the request ID from request-bound context rather than copying private payload data into log fields;
 - Uvicorn's duplicate raw-target access logger is disabled because raw targets may contain query parameters;
+- the structured handler is attached only to Bukmatika-owned and selected server logger families rather than promoting the process root logger to the application log level;
+- raw `httpx` and `httpcore` transport logging is disabled because full outbound URLs can contain user-derived search parameters; bounded domain telemetry is the diagnostic authority for provider, acquisition, model, and readiness failures;
 - `BUKMATIKA_LOG_LEVEL` controls the application log threshold and defaults to `INFO`.
 
 Discovery provider telemetry follows the same privacy boundary. Each attempted provider emits one `discovery.provider.completed` event containing only the provider name, bounded status/error code, elapsed time, result count, upstream HTTP status when available, and a clamped `Retry-After` duration when supplied. Provider exceptions are converted to stable public error descriptions before entering `source_errors`; upstream URLs, response bodies, exception messages, and user search text are not copied into discovery telemetry or error summaries. A `429` is surfaced explicitly as `rate_limited`; other HTTP, transport, timeout, and provider failures retain distinct bounded error codes without creating a second persistent health authority.

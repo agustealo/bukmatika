@@ -20,7 +20,7 @@ class StoredDelegationResult:
 @dataclass(frozen=True, slots=True)
 class StoredTerminalDelegation:
     delegation: AIDelegation
-    user_request: str
+    plan: Plan
     attempt: AIDelegationAttempt | None
 
 
@@ -105,7 +105,7 @@ class DelegationResultRepository:
         )
         rows = (
             await self._session.execute(
-                select(AIDelegation, Plan.user_request)
+                select(AIDelegation, Plan)
                 .join(
                     Plan,
                     and_(
@@ -149,8 +149,8 @@ class DelegationResultRepository:
         return [
             StoredTerminalDelegation(
                 delegation=delegation,
-                user_request=user_request,
+                plan=plan,
                 attempt=latest_attempt.get(delegation.id),
             )
-            for delegation, user_request in rows
+            for delegation, plan in rows
         ]

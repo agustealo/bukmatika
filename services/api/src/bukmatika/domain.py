@@ -15,6 +15,91 @@ class RightsState(StrEnum):
     RESTRICTED = "restricted"
 
 
+_LANGUAGE_ALIASES: dict[str, str] = {
+    "de": "de",
+    "deu": "de",
+    "eng": "en",
+    "english": "en",
+    "en": "en",
+    "es": "es",
+    "fra": "fr",
+    "fre": "fr",
+    "fr": "fr",
+    "french": "fr",
+    "ger": "de",
+    "german": "de",
+    "ita": "it",
+    "italian": "it",
+    "it": "it",
+    "la": "la",
+    "lat": "la",
+    "latin": "la",
+    "por": "pt",
+    "portuguese": "pt",
+    "pt": "pt",
+    "spa": "es",
+    "spanish": "es",
+}
+
+
+def canonical_language(value: str) -> str:
+    cleaned = " ".join(value.split()).casefold()
+    return _LANGUAGE_ALIASES.get(cleaned, cleaned)
+
+
+def canonical_format(value: str) -> str:
+    return " ".join(value.split()).casefold()
+
+
+def canonical_source(value: str) -> str:
+    return "_".join(value.strip().casefold().replace("-", " ").split())
+
+
+def _unique_nonempty(values: list[str], normalizer: object) -> list[str]:
+    if normalizer is canonical_language:
+        normalized = [canonical_language(value) for value in values]
+    elif normalizer is canonical_format:
+        normalized = [canonical_format(value) for value in values]
+    elif normalizer is canonical_source:
+        normalized = [canonical_source(value) for value in values]
+    else:
+        raise TypeError("unsupported discovery preference normalizer")
+    return list(dict.fromkeys(value for value in normalized if value))
+
+
+class DiscoveryPreferences(BaseModel):
+    languages: list[str] = Field(default_factory=list, max_length=12)
+    formats: list[str] = Field(default_factory=list, max_length=12)
+    year_from: int | None = Field(default=None, ge=1, le=3000)
+    year_to: int | None = Field(default=None, ge=1, le=3000)
+    rights_states: list[RightsState] = Field(default_factory=list, max_length=7)
+    sources: list[str] = Field(default_factory=list, max_length=12)
+
+    @field_validator("languages")
+    @classmethod
+    def normalize_languages(cls, values: list[str]) -> list[str]:
+        return _unique_nonempty(values, canonical_language)
+
+    @field_validator("formats")
+    @classmethod
+    def normalize_formats(cls, values: list[str]) -> list[str]:
+        return _unique_nonempty(values, canonical_format)
+
+    @field_validator("sources")
+    @classmethod
+    def normalize_sources(cls, values: list[str]) -> list[str]:
+        return _unique_nonempty(values, canonical_source)
+
+    @field_validator("rights_states")
+    @classmethod
+    def normalize_rights_states(cls, values: list[RightsState]) -> list[RightsState]:
+        return list(dict.fromkeys(values))
+
+    def model_post_init(self, __context: object) -> None:
+        if self.year_from and self.year_to and self.year_from > self.year_to:
+            raise ValueError("preferences.year_from cannot be greater than preferences.year_to")
+
+
 class RightsEvidence(BaseModel):
     state: RightsState
     source: str
@@ -32,6 +117,7 @@ class SearchIntent(BaseModel):
     language: str | None = None
     year_from: int | None = Field(default=None, ge=1, le=3000)
     year_to: int | None = Field(default=None, ge=1, le=3000)
+    preferences: DiscoveryPreferences = Field(default_factory=DiscoveryPreferences)
     limit: int = Field(default=24, ge=1, le=100)
 
     @field_validator("query", "title", "author", "subject", "language", mode="before")
@@ -80,6 +166,16 @@ class DiscoveryCandidate(BaseModel):
     source_score: Annotated[float, Field(ge=0, le=1)] = 0.5
 
 
+DiscoveryPreferenceDimension = Literal["language", "format", "era", "rights", "source"]
+
+
+class DiscoveryRankingExplanation(BaseModel):
+    neutral_score: float = Field(ge=0)
+    preference_boost: float = Field(ge=0, le=0.05)
+    total_score: float = Field(ge=0)
+    matched_preferences: list[DiscoveryPreferenceDimension] = Field(default_factory=list)
+
+
 class DiscoverySourceStatus(BaseModel):
     status: Literal["ok", "error", "timeout", "rate_limited"]
     elapsed_ms: int = Field(ge=0)
@@ -100,6 +196,7 @@ class DiscoveryResponse(BaseModel):
     elapsed_ms: int = Field(ge=0)
     intent: SearchIntent
     candidates: list[DiscoveryCandidate]
+    ranking: dict[str, DiscoveryRankingExplanation] = Field(default_factory=dict)
     sources_queried: list[str]
     source_errors: dict[str, str] = Field(default_factory=dict)
     source_status: dict[str, DiscoverySourceStatus] = Field(default_factory=dict)

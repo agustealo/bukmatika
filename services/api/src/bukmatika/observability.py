@@ -24,7 +24,7 @@ class StructuredEventLogger(Protocol):
 
 
 def configure_logging(*, level: str) -> None:
-    """Configure one JSON logging pipeline for Bukmatika and stdlib loggers."""
+    """Configure privacy-bounded JSON logging for Bukmatika-owned logger families."""
     numeric_level = _numeric_log_level(level)
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True, key="timestamp")
     shared_processors: list[Processor] = [
@@ -56,23 +56,33 @@ def configure_logging(*, level: str) -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
 
-    root_logger = logging.getLogger()
-    root_logger.handlers.clear()
-    root_logger.addHandler(handler)
-    root_logger.setLevel(numeric_level)
+    # Do not promote the process root logger to the application level. Libraries such as
+    # HTTP clients can include full outbound URLs in their INFO records, which may contain
+    # user-derived search parameters. Bukmatika-owned loggers are the explicit authority.
+    _configure_owned_logger("bukmatika", handler=handler, level=numeric_level)
+    _configure_owned_logger("uvicorn", handler=handler, level=numeric_level)
+
+    error_logger = logging.getLogger("uvicorn.error")
+    error_logger.handlers.clear()
+    error_logger.setLevel(logging.NOTSET)
+    error_logger.propagate = True
+    error_logger.disabled = False
 
     # Uvicorn's default access line contains the raw request target, including query strings.
-    # Bukmatika emits its own bounded access event instead, so disable only that duplicate logger.
+    # Bukmatika emits its own bounded access event instead, so disable that duplicate logger.
     access_logger = logging.getLogger("uvicorn.access")
     access_logger.handlers.clear()
     access_logger.propagate = False
     access_logger.disabled = True
 
-    for logger_name in ("uvicorn", "uvicorn.error"):
+    # HTTPX/httpcore INFO records can render complete request URLs. Provider, acquisition,
+    # model, and readiness failures are surfaced through Bukmatika's bounded domain events,
+    # so raw transport logging is intentionally not a second diagnostic authority.
+    for logger_name in ("httpx", "httpcore"):
         logger = logging.getLogger(logger_name)
         logger.handlers.clear()
-        logger.propagate = True
-        logger.disabled = False
+        logger.propagate = False
+        logger.disabled = True
 
 
 class RequestCorrelationMiddleware:
@@ -149,6 +159,20 @@ def request_id_from_scope(scope: Scope) -> str | None:
         return None
     value = state.get("request_id")
     return value if isinstance(value, str) else None
+
+
+def _configure_owned_logger(
+    name: str,
+    *,
+    handler: logging.Handler,
+    level: int,
+) -> None:
+    logger = logging.getLogger(name)
+    logger.handlers.clear()
+    logger.addHandler(handler)
+    logger.setLevel(level)
+    logger.propagate = False
+    logger.disabled = False
 
 
 def _numeric_log_level(level: str) -> int:

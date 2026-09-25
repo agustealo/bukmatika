@@ -478,11 +478,11 @@ export function ResearchDelegationComposer({
                     <span>Delegation proposal created</span>
                     <strong>{proposal.delegation_id}</strong>
                     <p>
-                      Nothing is running yet. Review the exact proposal, approve it, and start it in
-                      the delegation controls below.
+                      Review the exact proposal below. The live delegation controls remain the
+                      authority for its current approval, start, stop, and budget state.
                     </p>
                   </div>
-                  <a href="#research-delegation-control">Review and start below</a>
+                  <a href="#research-delegation-control">Review and control below</a>
                 </div>
               ) : (
                 <button

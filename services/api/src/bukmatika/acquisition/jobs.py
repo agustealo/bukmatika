@@ -35,7 +35,7 @@ class AcquisitionNotFound(LookupError):
 
 
 class AcquisitionQueueService:
-    """User-facing authority for enqueueing, observing, and cancelling acquisitions."""
+    """Installation-wide exact-asset transfer queue authority."""
 
     _job_type = "acquisition"
     _active_states: ClassVar[set[str]] = {
@@ -58,129 +58,175 @@ class AcquisitionQueueService:
         self._settings = settings
         self._session_scope = session_scope_factory
 
-    async def enqueue(self, asset_id: UUID) -> AcquisitionJobResponse:
+    async def enqueue(
+        self,
+        asset_id: UUID,
+        *,
+        principal_id: UUID | None = None,
+    ) -> AcquisitionJobResponse:
         async with self._session_scope() as database_session:
-            acquisitions = AcquisitionRepository(database_session)
-            jobs = JobRepository(database_session)
-            asset = await acquisitions.get_asset(asset_id)
-            if asset is None:
-                raise AssetNotFound(f"Asset {asset_id} does not exist")
-            acquisition = await acquisitions.create_or_get_acquisition(asset)
-            dedupe_key = self._dedupe_key(acquisition.id)
-
-            if acquisition.status == AcquisitionStatus.STORED.value:
-                return AcquisitionJobResponse(
-                    acquisition_id=acquisition.id,
-                    asset_id=asset.id,
-                    acquisition_status=AcquisitionStatus.STORED,
-                    job_status=JobStatus.COMPLETED.value,
-                )
-            if acquisition.status == AcquisitionStatus.QUARANTINED.value:
-                raise AcquisitionStateConflict(
-                    "Quarantined acquisition requires refreshed source evidence before retry"
-                )
-
-            existing_job = await jobs.get_by_dedupe_key(dedupe_key)
-            orphaned_active = acquisition.status in self._active_states and (
-                existing_job is None or existing_job.status in self._terminal_job_states
+            return await self.enqueue_in_session(
+                database_session,
+                asset_id,
+                principal_id=principal_id,
             )
-            if orphaned_active:
-                recovered = await acquisitions.recover_expired_attempt(asset.id)
-                if recovered is not None:
-                    acquisition = recovered
 
-            job = await jobs.enqueue(
-                job_type=self._job_type,
-                payload={"asset_id": str(asset.id), "acquisition_id": str(acquisition.id)},
-                dedupe_key=dedupe_key,
-                max_attempts=self._settings.acquisition_max_attempts,
-            )
-            await InteractionEventRepository(database_session).record(
-                SemanticEventType.ACQUISITION_REQUESTED,
-                entity_type="asset",
-                entity_id=asset.id,
-                context={
-                    "acquisition_id": str(acquisition.id),
-                    "job_id": str(job.id),
-                },
-            )
+    async def enqueue_in_session(
+        self,
+        database_session: AsyncSession,
+        asset_id: UUID,
+        *,
+        principal_id: UUID | None = None,
+    ) -> AcquisitionJobResponse:
+        acquisitions = AcquisitionRepository(database_session)
+        jobs = JobRepository(database_session)
+        asset = await acquisitions.get_asset(asset_id)
+        if asset is None:
+            raise AssetNotFound(f"Asset {asset_id} does not exist")
+        acquisition = await acquisitions.create_or_get_acquisition(asset)
+        dedupe_key = self._dedupe_key(acquisition.id)
+
+        if acquisition.status == AcquisitionStatus.STORED.value:
             return AcquisitionJobResponse(
                 acquisition_id=acquisition.id,
                 asset_id=asset.id,
-                job_id=job.id,
-                acquisition_status=AcquisitionStatus(acquisition.status),
-                job_status=job.status,
+                acquisition_status=AcquisitionStatus.STORED,
+                job_status=JobStatus.COMPLETED.value,
             )
+        if acquisition.status == AcquisitionStatus.QUARANTINED.value:
+            raise AcquisitionStateConflict(
+                "Quarantined acquisition requires refreshed source evidence before retry"
+            )
+
+        existing_job = await jobs.get_by_dedupe_key(dedupe_key)
+        orphaned_active = acquisition.status in self._active_states and (
+            existing_job is None or existing_job.status in self._terminal_job_states
+        )
+        if orphaned_active:
+            recovered = await acquisitions.recover_expired_attempt(asset.id)
+            if recovered is not None:
+                acquisition = recovered
+
+        job = await jobs.enqueue(
+            job_type=self._job_type,
+            payload={"asset_id": str(asset.id), "acquisition_id": str(acquisition.id)},
+            dedupe_key=dedupe_key,
+            max_attempts=self._settings.acquisition_max_attempts,
+        )
+        await InteractionEventRepository(database_session).record(
+            SemanticEventType.ACQUISITION_REQUESTED,
+            principal_id=principal_id,
+            entity_type="asset",
+            entity_id=asset.id,
+            context={
+                "acquisition_id": str(acquisition.id),
+                "job_id": str(job.id),
+            },
+        )
+        return AcquisitionJobResponse(
+            acquisition_id=acquisition.id,
+            asset_id=asset.id,
+            job_id=job.id,
+            acquisition_status=AcquisitionStatus(acquisition.status),
+            job_status=job.status,
+        )
 
     async def get(self, acquisition_id: UUID) -> AcquisitionResponse:
         async with self._session_scope() as database_session:
-            repository = AcquisitionRepository(database_session)
-            acquisition = await repository.get_acquisition(acquisition_id)
-            if acquisition is None:
-                raise AcquisitionNotFound(f"Acquisition {acquisition_id} does not exist")
-            storage_key: str | None = None
-            sha256 = acquisition.sha256
-            byte_size = acquisition.bytes_received
-            media_type = acquisition.media_type
-            if acquisition.stored_object_id is not None:
-                stored = await repository.get_stored_object(acquisition.stored_object_id)
-                if stored is not None:
-                    storage_key = stored.storage_key
-                    sha256 = stored.sha256
-                    byte_size = stored.byte_size
-                    media_type = stored.media_type
+            return await self.get_in_session(database_session, acquisition_id)
+
+    async def get_in_session(
+        self,
+        database_session: AsyncSession,
+        acquisition_id: UUID,
+    ) -> AcquisitionResponse:
+        repository = AcquisitionRepository(database_session)
+        acquisition = await repository.get_acquisition(acquisition_id)
+        if acquisition is None:
+            raise AcquisitionNotFound(f"Acquisition {acquisition_id} does not exist")
+        storage_key: str | None = None
+        sha256 = acquisition.sha256
+        byte_size = acquisition.bytes_received
+        media_type = acquisition.media_type
+        if acquisition.stored_object_id is not None:
+            stored = await repository.get_stored_object(acquisition.stored_object_id)
+            if stored is not None:
+                storage_key = stored.storage_key
+                sha256 = stored.sha256
+                byte_size = stored.byte_size
+                media_type = stored.media_type
+        return AcquisitionResponse(
+            acquisition_id=acquisition.id,
+            asset_id=acquisition.asset_id,
+            status=AcquisitionStatus(acquisition.status),
+            sha256=sha256,
+            byte_size=byte_size,
+            media_type=media_type,
+            storage_key=storage_key,
+            error_code=acquisition.error_code,
+        )
+
+    async def cancel(
+        self,
+        acquisition_id: UUID,
+        *,
+        principal_id: UUID | None = None,
+    ) -> AcquisitionResponse:
+        async with self._session_scope() as database_session:
+            return await self.cancel_in_session(
+                database_session,
+                acquisition_id,
+                principal_id=principal_id,
+            )
+
+    async def cancel_in_session(
+        self,
+        database_session: AsyncSession,
+        acquisition_id: UUID,
+        *,
+        principal_id: UUID | None = None,
+    ) -> AcquisitionResponse:
+        acquisitions = AcquisitionRepository(database_session)
+        jobs = JobRepository(database_session)
+        acquisition = await acquisitions.get_acquisition(acquisition_id)
+        if acquisition is None:
+            raise AcquisitionNotFound(f"Acquisition {acquisition_id} does not exist")
+        if acquisition.status in {
+            AcquisitionStatus.STORED.value,
+            AcquisitionStatus.QUARANTINED.value,
+            AcquisitionStatus.CANCELLED.value,
+        }:
             return AcquisitionResponse(
                 acquisition_id=acquisition.id,
                 asset_id=acquisition.asset_id,
                 status=AcquisitionStatus(acquisition.status),
-                sha256=sha256,
-                byte_size=byte_size,
-                media_type=media_type,
-                storage_key=storage_key,
                 error_code=acquisition.error_code,
             )
 
-    async def cancel(self, acquisition_id: UUID) -> AcquisitionResponse:
-        async with self._session_scope() as database_session:
-            acquisitions = AcquisitionRepository(database_session)
-            jobs = JobRepository(database_session)
-            acquisition = await acquisitions.get_acquisition(acquisition_id)
-            if acquisition is None:
-                raise AcquisitionNotFound(f"Acquisition {acquisition_id} does not exist")
-            if acquisition.status in {
-                AcquisitionStatus.STORED.value,
-                AcquisitionStatus.QUARANTINED.value,
-                AcquisitionStatus.CANCELLED.value,
-            }:
-                return AcquisitionResponse(
-                    acquisition_id=acquisition.id,
-                    asset_id=acquisition.asset_id,
-                    status=AcquisitionStatus(acquisition.status),
-                    error_code=acquisition.error_code,
-                )
-
-            acquisition = await acquisitions.request_cancel(acquisition_id)
-            await jobs.cancel_if_queued(dedupe_key=self._dedupe_key(acquisition_id))
-            events = InteractionEventRepository(database_session)
+        acquisition = await acquisitions.request_cancel(acquisition_id)
+        await jobs.cancel_if_queued(dedupe_key=self._dedupe_key(acquisition_id))
+        events = InteractionEventRepository(database_session)
+        await events.record(
+            SemanticEventType.ACQUISITION_CANCEL_REQUESTED,
+            principal_id=principal_id,
+            entity_type="asset",
+            entity_id=acquisition.asset_id,
+            context={"acquisition_id": str(acquisition.id)},
+        )
+        if acquisition.status == AcquisitionStatus.CANCELLED.value:
             await events.record(
-                SemanticEventType.ACQUISITION_CANCEL_REQUESTED,
+                SemanticEventType.ACQUISITION_CANCELLED,
+                principal_id=principal_id,
                 entity_type="asset",
                 entity_id=acquisition.asset_id,
                 context={"acquisition_id": str(acquisition.id)},
             )
-            if acquisition.status == AcquisitionStatus.CANCELLED.value:
-                await events.record(
-                    SemanticEventType.ACQUISITION_CANCELLED,
-                    entity_type="asset",
-                    entity_id=acquisition.asset_id,
-                    context={"acquisition_id": str(acquisition.id)},
-                )
-            return AcquisitionResponse(
-                acquisition_id=acquisition.id,
-                asset_id=acquisition.asset_id,
-                status=AcquisitionStatus(acquisition.status),
-                error_code=acquisition.error_code,
-            )
+        return AcquisitionResponse(
+            acquisition_id=acquisition.id,
+            asset_id=acquisition.asset_id,
+            status=AcquisitionStatus(acquisition.status),
+            error_code=acquisition.error_code,
+        )
 
     @staticmethod
     def _dedupe_key(acquisition_id: UUID) -> str:

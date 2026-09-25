@@ -59,7 +59,7 @@ class DelegationControlRepository:
                 AIDelegation.principal_id == principal_id,
                 AIDelegation.status.in_(_ACTIVE_STATUSES),
             )
-            .order_by(AIDelegation.created_at, AIDelegation.id)
+            .order_by(AIDelegation.created_at.desc(), AIDelegation.id.desc())
         )
         if lock:
             statement = statement.with_for_update()

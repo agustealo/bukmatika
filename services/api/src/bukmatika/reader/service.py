@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.document_models import DocumentSection
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
+from bukmatika.persistence.reader_highlight_notes import update_highlight_note_if_current
 from bukmatika.persistence.reader_models import ReadingState
 from bukmatika.persistence.readers import (
     ReaderAccessDenied,
@@ -257,10 +258,12 @@ class ReaderService:
         async with self._session_scope() as database_session:
             repository = ReaderRepository(database_session)
             access = await repository.require_access(principal_id, library_entry_id, document_id)
-            record = await repository.update_highlight_note(
+            record = await update_highlight_note_if_current(
+                database_session,
                 access=access,
                 highlight_id=highlight_id,
                 note=note,
+                expected_updated_at=update.expected_updated_at,
             )
             await InteractionEventRepository(database_session).record(
                 SemanticEventType.HIGHLIGHT_NOTE_UPDATED,
@@ -418,6 +421,7 @@ def _highlight_response(record: ReaderHighlightRecord) -> HighlightResponse:
         locator=highlight.locator,
         text=record.section.text[highlight.char_start : highlight.char_end],
         note=highlight.note,
+        updated_at=highlight.updated_at,
     )
 
 

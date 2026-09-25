@@ -1,6 +1,11 @@
 import { execFileSync } from "node:child_process";
 
-import { expect, test } from "@playwright/test";
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Page,
+} from "@playwright/test";
 
 type SessionResponse = {
   principal_id: string;
@@ -8,10 +13,7 @@ type SessionResponse = {
   expires_at: string;
 };
 
-test("owned canonical evidence flows from Research search into the Reader", async ({
-  page,
-  context,
-}) => {
+async function seedOwnedResearchSources(page: Page, context: BrowserContext): Promise<void> {
   await page.goto("/research");
 
   await expect(
@@ -37,6 +39,13 @@ test("owned canonical evidence flows from Research search into the Reader", asyn
   );
 
   await page.reload();
+}
+
+test("owned canonical evidence flows from Research search into the Reader", async ({
+  page,
+  context,
+}) => {
+  await seedOwnedResearchSources(page, context);
 
   const source = page.getByRole("checkbox", { name: /Browser Research Evidence/ });
   await expect(source).toBeVisible();
@@ -58,6 +67,52 @@ test("owned canonical evidence flows from Research search into the Reader", asyn
   const citedPassage = page.getByRole("link", { name: "Open cited passage" }).first();
   await expect(citedPassage).toBeVisible();
   await citedPassage.click();
+
+  await expect(page).toHaveURL(/\/read\//);
+  await expect(page.getByRole("heading", { name: "Navigation evidence" })).toBeVisible();
+  await expect(page.getByLabel("Book text")).toContainText(
+    "Mariners mapped obsidian navigation routes across the old world before 1492.",
+  );
+});
+
+test("source comparison keeps no-match evidence explicit and preserves Reader provenance", async ({
+  page,
+  context,
+}) => {
+  await seedOwnedResearchSources(page, context);
+
+  await page.getByRole("button", { name: "Compare sources" }).click();
+
+  const matchingSource = page.getByRole("checkbox", { name: /Browser Research Evidence/ });
+  const noMatchSource = page.getByRole("checkbox", { name: /Browser No Match Evidence/ });
+  await matchingSource.check();
+  await noMatchSource.check();
+
+  await page
+    .getByLabel("What evidence should Bukmatika compare across these sources?")
+    .fill("obsidian navigation");
+  await page
+    .locator("form.research-query")
+    .getByRole("button", { name: "Compare evidence" })
+    .click();
+
+  await expect(page.getByText("2 sources compared", { exact: true })).toBeVisible();
+
+  const comparisonSources = page.locator("section.comparison-source");
+  const matchingColumn = comparisonSources.filter({ hasText: "Browser Research Evidence" });
+  await expect(matchingColumn).toContainText(
+    "Mariners mapped obsidian navigation routes across the old world before 1492.",
+  );
+
+  const noMatchColumn = comparisonSources.filter({ hasText: "Browser No Match Evidence" });
+  await expect(noMatchColumn).toContainText("No exact lexical match");
+  await expect(noMatchColumn).toContainText(
+    "This source stays visible so absence of matching evidence is explicit.",
+  );
+
+  const sourceLink = matchingColumn.getByRole("link", { name: "Open source" }).first();
+  await expect(sourceLink).toBeVisible();
+  await sourceLink.click();
 
   await expect(page).toHaveURL(/\/read\//);
   await expect(page.getByRole("heading", { name: "Navigation evidence" })).toBeVisible();

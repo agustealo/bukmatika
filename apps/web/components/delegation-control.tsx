@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_MUTATION_EVENT, type ApiMutationDetail, apiFetch } from "../lib/api";
 import styles from "./delegation-control.module.css";
@@ -164,8 +164,11 @@ export function DelegationControl() {
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [consentAcknowledged, setConsentAcknowledged] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const refreshSequence = useRef(0);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
+    const requestId = refreshSequence.current + 1;
+    refreshSequence.current = requestId;
     const response = await apiFetch("/v1/personalization/delegation-control", {
       cache: "no-store",
       signal,
@@ -173,7 +176,10 @@ export function DelegationControl() {
     if (!response.ok) {
       throw await responseError(response, "Could not load delegation controls");
     }
-    setSnapshot((await response.json()) as DelegationControlSnapshot);
+    const nextSnapshot = (await response.json()) as DelegationControlSnapshot;
+    if (requestId === refreshSequence.current) {
+      setSnapshot(nextSnapshot);
+    }
   }, []);
 
   useEffect(() => {
@@ -232,7 +238,7 @@ export function DelegationControl() {
   );
 
   useEffect(() => {
-    if (runningCount === 0) {
+    if (runningCount === 0 || busyAction !== null) {
       return;
     }
 
@@ -292,7 +298,7 @@ export function DelegationControl() {
       controller?.abort();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [refresh, runningCount]);
+  }, [busyAction, refresh, runningCount]);
 
   async function mutate(
     action: NonNullable<BusyAction>,

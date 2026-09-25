@@ -27,6 +27,9 @@ class AcquisitionRequestRepository:
         await self._session.flush()
         return policy
 
+    async def asset(self, asset_id: UUID) -> Asset | None:
+        return await self._session.get(Asset, asset_id)
+
     async def lock_asset(self, asset_id: UUID) -> Asset | None:
         return await self._session.scalar(
             select(Asset).where(Asset.id == asset_id).with_for_update(of=Asset)
@@ -130,3 +133,8 @@ class AcquisitionRequestRepository:
 
     async def acquisition(self, acquisition_id: UUID) -> Acquisition | None:
         return await self._session.get(Acquisition, acquisition_id)
+
+    async def acquisition_for_asset(self, asset_id: UUID) -> Acquisition | None:
+        return await self._session.scalar(
+            select(Acquisition).where(Acquisition.asset_id == asset_id)
+        )

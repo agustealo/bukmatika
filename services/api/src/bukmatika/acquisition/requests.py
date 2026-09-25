@@ -94,11 +94,30 @@ class PrincipalAcquisitionService:
                 principal_id=principal_id,
                 asset_id=asset.id,
             )
-            created_or_reactivated = existing is None or existing.cancelled_at is not None
+            linked_acquisition = (
+                await repository.acquisition(existing.acquisition_id)
+                if existing is not None and existing.acquisition_id is not None
+                else None
+            )
+            linked_status = (
+                AcquisitionStatus(linked_acquisition.status)
+                if linked_acquisition is not None
+                else None
+            )
+            reactivate_terminal = linked_status in {
+                AcquisitionStatus.FAILED,
+                AcquisitionStatus.CANCELLED,
+            }
+            created_or_reactivated = (
+                existing is None
+                or existing.cancelled_at is not None
+                or reactivate_terminal
+            )
             request = await repository.create_or_reactivate(
                 principal_id=principal_id,
                 asset_id=asset.id,
                 approval_mode=mode.value,
+                reactivate_terminal=reactivate_terminal,
             )
             if created_or_reactivated:
                 await InteractionEventRepository(database_session).record(
@@ -258,17 +277,22 @@ class PrincipalAcquisitionService:
             )
             if request is None:
                 raise PrincipalAcquisitionRequestNotFound("Acquisition request does not exist")
-            if request.cancelled_at is not None:
-                existing_acquisition = (
-                    await repository.acquisition(request.acquisition_id)
-                    if request.acquisition_id is not None
-                    else None
-                )
-                return _request_response(
-                    request,
-                    asset=asset,
-                    acquisition=existing_acquisition,
-                )
+            existing_acquisition = (
+                await repository.acquisition(request.acquisition_id)
+                if request.acquisition_id is not None
+                else None
+            )
+            current = _request_response(
+                request,
+                asset=asset,
+                acquisition=existing_acquisition,
+            )
+            if request.cancelled_at is not None or current.status in {
+                AcquisitionRequestStatus.STORED,
+                AcquisitionRequestStatus.FAILED,
+                AcquisitionRequestStatus.QUARANTINED,
+            }:
+                return current
 
             was_approved = request.approved_at is not None
             acquisition_id = request.acquisition_id
@@ -359,6 +383,8 @@ def _request_response(
         request_status = AcquisitionRequestStatus.QUARANTINED
     elif acquisition_status is AcquisitionStatus.FAILED:
         request_status = AcquisitionRequestStatus.FAILED
+    elif acquisition_status is AcquisitionStatus.CANCELLED:
+        request_status = AcquisitionRequestStatus.CANCELLED
     elif request.approved_at is not None:
         request_status = AcquisitionRequestStatus.ACTIVE
     else:

@@ -286,9 +286,7 @@ export function DossierClient(props: DossierClientProps) {
                 const size = bytesLabel(asset.byte_size);
                 const pendingApproval = asset.acquisition_request_status === "pending_approval";
                 const requestActive = asset.acquisition_request_status === "active";
-                const requestCanRestart = new Set(["cancelled", "failed", "quarantined"]).has(
-                  asset.acquisition_request_status ?? "",
-                );
+                const requestCanRestart = asset.acquisition_request_status === "cancelled";
                 return (
                   <div className="asset-row" key={asset.asset_id}>
                     <div className="asset-summary">

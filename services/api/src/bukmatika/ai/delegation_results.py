@@ -237,7 +237,10 @@ def _terminal_research_scope(
     registry = CapabilityArgumentContractRegistry()
     requests: list[ResearchSearchRequest] = []
     for step in steps:
-        if step.step_id not in selected_step_ids or step.capability is not CapabilityName.RESEARCH_SEARCH:
+        if (
+            step.step_id not in selected_step_ids
+            or step.capability is not CapabilityName.RESEARCH_SEARCH
+        ):
             continue
         try:
             validated = registry.validate(

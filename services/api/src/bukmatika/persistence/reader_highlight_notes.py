@@ -23,7 +23,7 @@ async def update_highlight_note_if_current(
     access: ReaderAccess,
     highlight_id: UUID,
     note: str | None,
-    expected_updated_at: datetime,
+    expected_updated_at: datetime | None,
 ) -> ReaderHighlightRecord:
     state_id = await session.scalar(
         select(ReadingState.id).where(
@@ -49,7 +49,7 @@ async def update_highlight_note_if_current(
         raise ReaderHighlightNotFound("Highlight does not exist")
 
     highlight, section = row
-    if highlight.updated_at != expected_updated_at:
+    if expected_updated_at is not None and highlight.updated_at != expected_updated_at:
         raise ReaderHighlightConflict("Highlight note changed after this edit started")
 
     highlight.note = note

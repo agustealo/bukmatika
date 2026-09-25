@@ -140,7 +140,8 @@ export function MetadataProvenancePanel(props: MetadataProvenancePanelProps) {
 
   useEffect(() => {
     let cancelled = false;
-    if (requestPath === null) {
+    const activePath = requestPath;
+    if (activePath === null) {
       setLoading(false);
       setProvenance(null);
       return () => {
@@ -152,7 +153,7 @@ export function MetadataProvenancePanel(props: MetadataProvenancePanelProps) {
       setLoading(true);
       setError(null);
       try {
-        const response = await apiFetch(requestPath, { cache: "no-store" });
+        const response = await apiFetch(activePath, { cache: "no-store" });
         if (!response.ok) {
           throw new Error(`Metadata provenance failed with HTTP ${response.status}.`);
         }

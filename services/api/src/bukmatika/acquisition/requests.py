@@ -90,36 +90,43 @@ class PrincipalAcquisitionService:
                 if policy is not None
                 else AcquisitionApprovalMode.ALWAYS_ASK
             )
+            existing = await repository.request_for_asset(
+                principal_id=principal_id,
+                asset_id=asset.id,
+            )
+            created_or_reactivated = existing is None or existing.cancelled_at is not None
             request = await repository.create_or_reactivate(
                 principal_id=principal_id,
                 asset_id=asset.id,
                 approval_mode=mode.value,
             )
-            events = InteractionEventRepository(database_session)
-            await events.record(
-                SemanticEventType.ACQUISITION_REQUEST_CREATED,
-                principal_id=principal_id,
-                entity_type="asset",
-                entity_id=asset.id,
-                context={
-                    "request_id": str(request.id),
-                    "approval_mode": mode.value,
-                },
-            )
+            if created_or_reactivated:
+                await InteractionEventRepository(database_session).record(
+                    SemanticEventType.ACQUISITION_REQUEST_CREATED,
+                    principal_id=principal_id,
+                    entity_type="asset",
+                    entity_id=asset.id,
+                    context={
+                        "request_id": str(request.id),
+                        "approval_mode": mode.value,
+                    },
+                )
 
+            newly_approved = request.approved_at is None
             if asset.stored_object_id is not None:
                 acquisition = await repository.acquisition_for_asset(asset.id)
                 request = await repository.approve(
                     request,
                     acquisition_id=acquisition.id if acquisition is not None else None,
                 )
-                await self._record_approval(
-                    database_session,
-                    principal_id=principal_id,
-                    request=request,
-                    automatic=True,
-                    already_stored=True,
-                )
+                if newly_approved:
+                    await self._record_approval(
+                        database_session,
+                        principal_id=principal_id,
+                        request=request,
+                        automatic=True,
+                        already_stored=True,
+                    )
                 return _request_response(request, asset=asset, acquisition=acquisition)
 
             if mode is AcquisitionApprovalMode.AUTO_ELIGIBLE:
@@ -130,13 +137,14 @@ class PrincipalAcquisitionService:
                     principal_id=principal_id,
                 )
                 request = await repository.link_acquisition(request, queued.acquisition_id)
-                await self._record_approval(
-                    database_session,
-                    principal_id=principal_id,
-                    request=request,
-                    automatic=True,
-                    already_stored=False,
-                )
+                if newly_approved:
+                    await self._record_approval(
+                        database_session,
+                        principal_id=principal_id,
+                        request=request,
+                        automatic=True,
+                        already_stored=False,
+                    )
                 acquisition = await repository.acquisition(queued.acquisition_id)
                 return _request_response(request, asset=asset, acquisition=acquisition)
 
@@ -251,12 +259,16 @@ class PrincipalAcquisitionService:
             if request is None:
                 raise PrincipalAcquisitionRequestNotFound("Acquisition request does not exist")
             if request.cancelled_at is not None:
-                acquisition = (
+                existing_acquisition = (
                     await repository.acquisition(request.acquisition_id)
                     if request.acquisition_id is not None
                     else None
                 )
-                return _request_response(request, asset=asset, acquisition=acquisition)
+                return _request_response(
+                    request,
+                    asset=asset,
+                    acquisition=existing_acquisition,
+                )
 
             was_approved = request.approved_at is not None
             acquisition_id = request.acquisition_id

@@ -1,0 +1,1 @@
+Exact delegation deep-link verification is covered by the production Web quality build/typecheck rail and manual navigation contract review in the pull request. No runtime authority is derived from URL state.

@@ -147,10 +147,12 @@ export function ResearchDelegationComposer({
     !drafting;
 
   function addPreviousScopeNotice(notice: PreviousScopeNotice) {
-    setPreviousScopeNotices((current) => [
-      notice,
-      ...current.filter((item) => item.key !== notice.key),
-    ].slice(0, MAX_PREVIOUS_SCOPE_NOTICES));
+    setPreviousScopeNotices((current) =>
+      [notice, ...current.filter((item) => item.key !== notice.key)].slice(
+        0,
+        MAX_PREVIOUS_SCOPE_NOTICES,
+      ),
+    );
   }
 
   async function draftPlan() {
@@ -183,18 +185,17 @@ export function ResearchDelegationComposer({
       }
       const nextPlan = (await response.json()) as PersistedPlan;
       if (!mounted.current) return;
-      if (requestScopeKey !== currentScopeKey.current) {
+      if (requestId !== draftSequence.current || requestScopeKey !== currentScopeKey.current) {
         addPreviousScopeNotice({
           key: `plan:${nextPlan.plan_id}`,
           kind: "plan",
           title: "Previous-scope plan drafted",
           message:
-            "A persisted plan finished for an earlier research question or source selection. Nothing was delegated. Draft again if you want a plan for the current scope.",
+            "A persisted plan finished for an earlier research scope. Nothing was delegated. Draft again if you want a plan for the current scope.",
           resourceId: nextPlan.plan_id,
         });
         return;
       }
-      if (requestId !== draftSequence.current) return;
 
       const nextDecisionByStep = new Map(
         nextPlan.decisions.map((decision) => [decision.step_id, decision]),
@@ -210,7 +211,7 @@ export function ResearchDelegationComposer({
       setSelectedStepIds(nextEligible);
     } catch (caught) {
       if (!mounted.current) return;
-      if (requestScopeKey !== currentScopeKey.current) {
+      if (requestId !== draftSequence.current || requestScopeKey !== currentScopeKey.current) {
         addPreviousScopeNotice({
           key: `plan-uncertain:${requestId}:${requestScopeKey}`,
           kind: "plan-uncertain",
@@ -220,7 +221,6 @@ export function ResearchDelegationComposer({
         });
         return;
       }
-      if (requestId !== draftSequence.current) return;
       setPlan(null);
       setSelectedStepIds([]);
       setError(caught instanceof Error ? caught.message : "Could not draft the research plan.");
@@ -265,22 +265,21 @@ export function ResearchDelegationComposer({
       }
       const nextProposal = (await response.json()) as DelegationProposal;
       if (!mounted.current) return;
-      if (requestScopeKey !== currentScopeKey.current) {
+      if (requestId !== proposalSequence.current || requestScopeKey !== currentScopeKey.current) {
         addPreviousScopeNotice({
           key: `proposal:${nextProposal.delegation_id}`,
           kind: "proposal",
           title: "Previous-scope delegation proposal created",
           message:
-            "A proposal was created for the earlier research scope. Nothing is running. Review or reject that exact proposal in AI controls before starting any work.",
+            "A proposal was created for an earlier research scope. Nothing is running. Review or reject that exact proposal in AI controls before starting any work.",
           resourceId: nextProposal.delegation_id,
         });
         return;
       }
-      if (requestId !== proposalSequence.current) return;
       setProposal(nextProposal);
     } catch (caught) {
       if (!mounted.current) return;
-      if (requestScopeKey !== currentScopeKey.current) {
+      if (requestId !== proposalSequence.current || requestScopeKey !== currentScopeKey.current) {
         addPreviousScopeNotice({
           key: `proposal-uncertain:${requestId}:${requestScopeKey}`,
           kind: "proposal-uncertain",
@@ -290,7 +289,6 @@ export function ResearchDelegationComposer({
         });
         return;
       }
-      if (requestId !== proposalSequence.current) return;
       setError(caught instanceof Error ? caught.message : "Could not create the delegation proposal.");
     } finally {
       if (
@@ -333,7 +331,9 @@ export function ResearchDelegationComposer({
         </div>
         <div>
           <span>Selected source context</span>
-          <strong>{libraryEntryIds.length} book{libraryEntryIds.length === 1 ? "" : "s"}</strong>
+          <strong>
+            {libraryEntryIds.length} book{libraryEntryIds.length === 1 ? "" : "s"}
+          </strong>
         </div>
         <button type="button" disabled={!canDraft || proposing} onClick={() => void draftPlan()}>
           {drafting ? "Drafting plan…" : plan ? "Redraft plan" : "Draft Level 2 plan"}

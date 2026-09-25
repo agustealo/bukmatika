@@ -13,6 +13,10 @@ type SessionResponse = {
   expires_at: string;
 };
 
+const NAVIGATION_PASSAGE =
+  "Mariners mapped obsidian navigation routes across the old world before 1492.";
+const HIGHLIGHT_TEXT = "Mariners mapped obsidian navigation routes";
+
 async function seedOwnedResearchSources(page: Page, context: BrowserContext): Promise<void> {
   await page.goto("/research");
 
@@ -57,9 +61,7 @@ async function openMatchingResearchReader(page: Page, context: BrowserContext): 
     .click();
 
   await expect(page.getByText("1 passage", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText(/Mariners mapped obsidian navigation routes across the old world before 1492\./),
-  ).toBeVisible();
+  await expect(page.getByText(new RegExp(NAVIGATION_PASSAGE.replace(".", "\\.")))).toBeVisible();
 
   const citedPassage = page.getByRole("link", { name: "Open cited passage" }).first();
   await expect(citedPassage).toBeVisible();
@@ -67,9 +69,48 @@ async function openMatchingResearchReader(page: Page, context: BrowserContext): 
 
   await expect(page).toHaveURL(/\/read\//);
   await expect(page.getByRole("heading", { name: "Navigation evidence" })).toBeVisible();
-  await expect(page.getByLabel("Book text")).toContainText(
-    "Mariners mapped obsidian navigation routes across the old world before 1492.",
-  );
+  await expect(page.getByLabel("Book text")).toContainText(NAVIGATION_PASSAGE);
+}
+
+async function saveNavigationHighlight(page: Page): Promise<void> {
+  const paragraph = page
+    .locator("section.reader-section")
+    .filter({ hasText: "Navigation evidence" })
+    .locator("p.reader-paragraph")
+    .filter({ hasText: NAVIGATION_PASSAGE })
+    .first();
+  await expect(paragraph).toBeVisible();
+
+  await paragraph.evaluate((element, selectedText) => {
+    const textNode = element.firstChild;
+    if (!(textNode instanceof Text)) {
+      throw new Error("Expected an unannotated Reader text node.");
+    }
+    const text = textNode.textContent ?? "";
+    const start = text.indexOf(selectedText);
+    if (start < 0) {
+      throw new Error("Could not locate the canonical highlight passage.");
+    }
+
+    const range = document.createRange();
+    range.setStart(textNode, start);
+    range.setEnd(textNode, start + selectedText.length);
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("Browser selection API is unavailable.");
+    }
+    selection.removeAllRanges();
+    selection.addRange(range);
+    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  }, HIGHLIGHT_TEXT);
+
+  const selectionCard = page.getByLabel("Selected text annotation");
+  await expect(selectionCard).toContainText(HIGHLIGHT_TEXT);
+  await selectionCard.getByRole("button", { name: "Save highlight" }).click();
+
+  await expect(
+    page.locator("article.reader-highlight-item").filter({ hasText: HIGHLIGHT_TEXT }),
+  ).toBeVisible();
 }
 
 test("owned canonical evidence flows from Research search into the Reader", async ({
@@ -104,9 +145,7 @@ test("source comparison keeps no-match evidence explicit and preserves Reader pr
 
   const comparisonSources = page.locator("section.comparison-source");
   const matchingColumn = comparisonSources.filter({ hasText: "Browser Research Evidence" });
-  await expect(matchingColumn).toContainText(
-    "Mariners mapped obsidian navigation routes across the old world before 1492.",
-  );
+  await expect(matchingColumn).toContainText(NAVIGATION_PASSAGE);
 
   const noMatchColumn = comparisonSources.filter({ hasText: "Browser No Match Evidence" });
   await expect(noMatchColumn).toContainText("No exact lexical match");
@@ -120,9 +159,7 @@ test("source comparison keeps no-match evidence explicit and preserves Reader pr
 
   await expect(page).toHaveURL(/\/read\//);
   await expect(page.getByRole("heading", { name: "Navigation evidence" })).toBeVisible();
-  await expect(page.getByLabel("Book text")).toContainText(
-    "Mariners mapped obsidian navigation routes across the old world before 1492.",
-  );
+  await expect(page.getByLabel("Book text")).toContainText(NAVIGATION_PASSAGE);
 });
 
 test("stale Reader bookmark removal is rejected across two tabs", async ({ page, context }) => {
@@ -169,6 +206,57 @@ test("stale Reader bookmark removal is rejected across two tabs", async ({ page,
       .filter({ hasText: "Navigation evidence" })
       .getByRole("button", { name: "Bookmarked", exact: true }),
   ).toBeVisible();
+
+  await secondPage.close();
+});
+
+test("stale Reader highlight note keeps its draft and cannot overwrite newer state", async ({
+  page,
+  context,
+}) => {
+  await openMatchingResearchReader(page, context);
+  await saveNavigationHighlight(page);
+
+  const secondPage = await context.newPage();
+  await secondPage.goto(page.url());
+  await expect(secondPage.getByRole("heading", { name: "Navigation evidence" })).toBeVisible();
+
+  const firstHighlight = page
+    .locator("article.reader-highlight-item")
+    .filter({ hasText: HIGHLIGHT_TEXT });
+  const secondHighlight = secondPage
+    .locator("article.reader-highlight-item")
+    .filter({ hasText: HIGHLIGHT_TEXT });
+  await expect(firstHighlight).toBeVisible();
+  await expect(secondHighlight).toBeVisible();
+
+  await firstHighlight.getByRole("button", { name: "Add note", exact: true }).click();
+  await secondHighlight.getByRole("button", { name: "Add note", exact: true }).click();
+
+  const firstNoteInput = firstHighlight.getByLabel("Highlight note");
+  const secondNoteInput = secondHighlight.getByLabel("Highlight note");
+  await firstNoteInput.fill("newer note from tab A");
+  await secondNoteInput.fill("stale draft from tab B");
+
+  await firstHighlight.getByRole("button", { name: "Save note", exact: true }).click();
+  await expect(firstHighlight).toContainText("newer note from tab A");
+  await expect(firstHighlight.getByRole("button", { name: "Edit note", exact: true })).toBeVisible();
+
+  await secondHighlight.getByRole("button", { name: "Save note", exact: true }).click();
+  const staleMessage =
+    "This highlight note changed in another tab. Your draft is still here; reload before saving again.";
+  await expect(secondPage.getByRole("alert").filter({ hasText: staleMessage })).toContainText(
+    staleMessage,
+  );
+  await expect(secondNoteInput).toHaveValue("stale draft from tab B");
+
+  await secondPage.reload();
+  await expect(secondPage.getByRole("heading", { name: "Navigation evidence" })).toBeVisible();
+  const reloadedHighlight = secondPage
+    .locator("article.reader-highlight-item")
+    .filter({ hasText: HIGHLIGHT_TEXT });
+  await expect(reloadedHighlight).toContainText("newer note from tab A");
+  await expect(reloadedHighlight).not.toContainText("stale draft from tab B");
 
   await secondPage.close();
 });

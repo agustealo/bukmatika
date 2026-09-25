@@ -32,7 +32,7 @@ async function seedEligibleAcquisition(page: Page, context: BrowserContext): Pro
   ).trim();
 }
 
-test("principal acquisition requires explicit approval and cancellation stays durable", async ({
+test("principal acquisition approval, cancellation, and re-request stay coherent", async ({
   page,
   context,
 }) => {
@@ -74,5 +74,16 @@ test("principal acquisition requires explicit approval and cancellation stays du
   const reloadedStatus = page.getByLabel("TXT status");
   await expect(reloadedStatus).toContainText("Your request: cancelled");
   await expect(reloadedStatus).toContainText("Acquisition: cancelled");
-  await expect(page.getByRole("button", { name: "Request again" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Request again" }).click();
+  await expect(reloadedStatus).toContainText("Your request: pending approval");
+  await page.getByRole("button", { name: "Approve download" }).click();
+  await expect(reloadedStatus).toContainText("Your request: active");
+  await expect(reloadedStatus).toContainText("Acquisition: queued");
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: /Browser Acquisition Fixture/ })).toBeVisible();
+  const retriedStatus = page.getByLabel("TXT status");
+  await expect(retriedStatus).toContainText("Your request: active");
+  await expect(retriedStatus).toContainText("Acquisition: queued");
 });

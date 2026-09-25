@@ -329,9 +329,6 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
         const existing = new Set(current.map((section) => section.section_id));
         return [...current, ...page.sections.filter((section) => !existing.has(section.section_id))];
       });
-      setBookmarks(page.bookmarks);
-      setHighlights(page.highlights);
-      setReadingState(page.reading_state);
       setNextAfter(page.next_after_ordinal);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load more sections.");

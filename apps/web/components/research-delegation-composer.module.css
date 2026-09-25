@@ -26,7 +26,8 @@
 .proposalSuccess p,
 .emptyState p,
 .stepBody p,
-.stepBody small {
+.stepBody small,
+.scopeNotice p {
   margin: 0;
   color: var(--muted);
   line-height: 1.6;
@@ -85,6 +86,7 @@
 .contextBar button:focus-visible,
 .proposeAction:focus-visible,
 .proposalSuccess a:focus-visible,
+.scopeNotice a:focus-visible,
 .budgetGrid select:focus-visible,
 .stepToggle input:focus-visible {
   outline: 3px solid rgba(216, 255, 102, 0.68);
@@ -109,6 +111,41 @@
   border-color: rgba(255, 140, 127, 0.42);
   background: rgba(255, 140, 127, 0.08);
   color: #ffc2bb;
+}
+
+.previousScopeNotices {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.scopeNotice {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line));
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--panel) 94%, var(--accent) 6%);
+}
+
+.scopeNotice strong,
+.scopeNotice code {
+  overflow-wrap: anywhere;
+}
+
+.scopeNotice code {
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.scopeNotice a {
+  width: fit-content;
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .planPanel {

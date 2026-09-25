@@ -50,6 +50,16 @@ async def _owned_source(
     return entry
 
 
+def _assert_single_attempt_budget(outcome: object) -> None:
+    budget = getattr(outcome, "budget")
+    assert budget.selected_step_count == 1
+    assert budget.attempts_used == 1
+    assert budget.max_total_attempts == 1
+    assert budget.max_retries_per_step == 0
+    assert budget.max_runtime_seconds == 300
+    assert budget.started_at is not None
+
+
 async def test_recent_outcomes_preserve_successful_completed_receipt(
     session: AsyncSession,
 ) -> None:
@@ -98,6 +108,7 @@ async def test_recent_outcomes_preserve_successful_completed_receipt(
     assert outcome.completed_at == outcome.outcome_at
     assert outcome.failure_code is None
     assert outcome.attempt_error_code is None
+    _assert_single_attempt_budget(outcome)
     assert outcome.selected_library_entry_ids == [source.id]
     assert len(outcome.selected_sources) == 1
     assert outcome.selected_sources[0].library_entry_id == source.id
@@ -140,6 +151,7 @@ async def test_recent_outcomes_surface_terminal_failure_codes(session: AsyncSess
     assert outcome.completed_at == outcome.outcome_at
     assert outcome.capability == CapabilityName.RESEARCH_SEARCH.value
     assert outcome.query == "delegated runtime evidence"
+    _assert_single_attempt_budget(outcome)
     assert outcome.selected_library_entry_ids == [RUNTIME_ENTRY_ID]
     assert len(outcome.selected_sources) == 1
     assert outcome.selected_sources[0].library_entry_id == RUNTIME_ENTRY_ID
@@ -184,6 +196,12 @@ async def test_recent_outcomes_keep_rejected_without_attempt(session: AsyncSessi
     assert outcome.available is False
     assert outcome.completed_at is None
     assert outcome.query == "delegated runtime evidence"
+    assert outcome.budget.selected_step_count == 1
+    assert outcome.budget.attempts_used == 0
+    assert outcome.budget.max_total_attempts == 1
+    assert outcome.budget.max_retries_per_step == 0
+    assert outcome.budget.max_runtime_seconds == 300
+    assert outcome.budget.started_at is None
     assert outcome.selected_library_entry_ids == [RUNTIME_ENTRY_ID]
     assert len(outcome.selected_sources) == 1
     assert outcome.selected_sources[0].available is False

@@ -65,6 +65,7 @@ class ReadingState(Base, TimestampMixin):
     char_offset: Mapped[int | None] = mapped_column(Integer)
     locator: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    position_write_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Bookmark(Base, TimestampMixin):

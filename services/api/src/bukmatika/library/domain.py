@@ -13,6 +13,9 @@ class AssetStatusResponse(BaseModel):
     stored: bool
     acquisition_id: UUID | None
     acquisition_status: str | None
+    acquisition_request_id: UUID | None = None
+    acquisition_request_status: str | None = None
+    acquisition_approval_mode: str | None = None
     processing_status: str | None
     processing_error_code: str | None
     ocr_job_id: UUID | None
@@ -178,12 +181,6 @@ class TagAssignRequest(BaseModel):
 
 class TagUpdate(TagAssignRequest):
     pass
-
-
-class TagResponse(BaseModel):
-    tag_id: UUID
-    name: str
-    item_count: int = Field(ge=0)
 
 
 class SmartShelfRule(BaseModel):

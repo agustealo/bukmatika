@@ -507,11 +507,9 @@ export function ResearchDelegationComposer({
         </div>
       )}
 
-      {showDelegationControls ? (
-        <div id="research-delegation-control">
-          <DelegationControl />
-        </div>
-      ) : null}
+      <div id="research-delegation-control">
+        <DelegationControl hideWhenInactive={!showDelegationControls} />
+      </div>
     </section>
   );
 }

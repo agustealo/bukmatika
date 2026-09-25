@@ -69,6 +69,10 @@ type BusyAction =
   | `stop:${string}`
   | null;
 
+type DelegationControlProps = {
+  hideWhenInactive?: boolean;
+};
+
 const LIVE_STATE_REFRESH_INTERVAL_MS = 5_000;
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -158,7 +162,9 @@ async function responseError(response: Response, fallback: string): Promise<Erro
   return new Error(`${fallback} (HTTP ${response.status}).`);
 }
 
-export function DelegationControl() {
+export function DelegationControl({
+  hideWhenInactive = false,
+}: DelegationControlProps = {}) {
   const [snapshot, setSnapshot] = useState<DelegationControlSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
@@ -207,7 +213,12 @@ export function DelegationControl() {
   useEffect(() => {
     const handleApiMutation = (event: Event) => {
       const detail = (event as CustomEvent<ApiMutationDetail>).detail;
-      if (detail.path !== "/v1/personalization/settings") {
+      const isSettingsMutation = detail.path === "/v1/personalization/settings";
+      const isDelegationProposalMutation =
+        detail.method === "POST" &&
+        detail.path.startsWith("/v1/ai/plans/") &&
+        detail.path.endsWith("/delegations");
+      if (!isSettingsMutation && !isDelegationProposalMutation) {
         return;
       }
 
@@ -366,6 +377,11 @@ export function DelegationControl() {
 
   const controlsDisabled = loading || busyAction !== null;
   const canGrant = Boolean(snapshot?.ai_enabled) && !snapshot?.level2_enabled;
+  const activeDelegationCount = snapshot?.active_delegations.length ?? 0;
+
+  if (hideWhenInactive && (loading || activeDelegationCount === 0)) {
+    return null;
+  }
 
   return (
     <section className={styles.surface} aria-labelledby="delegation-control-heading">
@@ -494,7 +510,7 @@ export function DelegationControl() {
               <span>Running / stopping</span>
             </div>
             <div>
-              <strong>{snapshot?.active_delegations.length ?? 0}</strong>
+              <strong>{activeDelegationCount}</strong>
               <span>Nonterminal total</span>
             </div>
           </div>
@@ -531,7 +547,7 @@ export function DelegationControl() {
           <p>Review the exact request and bounded work, approve it, start it explicitly, and stop it whenever you choose.</p>
         </div>
 
-        {!loading && snapshot?.active_delegations.length === 0 ? (
+        {!loading && activeDelegationCount === 0 ? (
           <div className={styles.emptyState}>
             <strong>No active delegation state</strong>
             <p>When Bukmatika proposes bounded read-only work, it will appear here before execution.</p>

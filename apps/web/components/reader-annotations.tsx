@@ -34,6 +34,16 @@ type ReaderAnnotationsProps = {
   onClearSelection: () => void;
 };
 
+type PendingNoteSave = {
+  highlightId: string;
+  note: string | null;
+};
+
+function normalizedNote(value: string | null): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed || null;
+}
+
 export function ReaderAnnotations({
   highlights,
   selection,
@@ -46,14 +56,47 @@ export function ReaderAnnotations({
   const [selectionNote, setSelectionNote] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingNote, setEditingNote] = useState("");
+  const [pendingNoteSave, setPendingNoteSave] = useState<PendingNoteSave | null>(null);
+  const annotationsBusy = busyKey !== null;
 
   useEffect(() => {
     setSelectionNote("");
   }, [selection?.sectionId, selection?.charStart, selection?.charEnd]);
 
+  useEffect(() => {
+    if (!pendingNoteSave || busyKey === pendingNoteSave.highlightId) return;
+
+    const persisted = highlights.find(
+      (highlight) => highlight.highlight_id === pendingNoteSave.highlightId,
+    );
+    if (persisted && normalizedNote(persisted.note) === pendingNoteSave.note) {
+      setEditingId(null);
+    }
+    setPendingNoteSave(null);
+  }, [busyKey, highlights, pendingNoteSave]);
+
   function beginEdit(highlight: ReaderHighlight) {
+    setPendingNoteSave(null);
     setEditingId(highlight.highlight_id);
     setEditingNote(highlight.note ?? "");
+  }
+
+  function cancelEdit() {
+    setPendingNoteSave(null);
+    setEditingId(null);
+  }
+
+  function saveNote(highlight: ReaderHighlight) {
+    if (annotationsBusy) return;
+
+    const requestedNote = normalizedNote(editingNote);
+    if (requestedNote === normalizedNote(highlight.note)) {
+      setEditingId(null);
+      return;
+    }
+
+    setPendingNoteSave({ highlightId: highlight.highlight_id, note: requestedNote });
+    void onUpdateNote(highlight.highlight_id, requestedNote);
   }
 
   return (
@@ -72,18 +115,21 @@ export function ReaderAnnotations({
             maxLength={4000}
             placeholder="Add a note…"
             value={selectionNote}
+            disabled={annotationsBusy}
             onChange={(event) => setSelectionNote(event.target.value)}
           />
           <div className="reader-annotation-actions">
             <button
               type="button"
               data-primary="true"
-              disabled={busyKey === "create"}
+              disabled={annotationsBusy}
               onClick={() => void onCreate(selectionNote.trim() || null)}
             >
               {busyKey === "create" ? "Saving…" : "Save highlight"}
             </button>
-            <button type="button" onClick={onClearSelection}>Cancel</button>
+            <button type="button" disabled={annotationsBusy} onClick={onClearSelection}>
+              Cancel
+            </button>
           </div>
         </div>
       ) : null}
@@ -104,6 +150,7 @@ export function ReaderAnnotations({
                   aria-label="Highlight note"
                   maxLength={4000}
                   value={editingNote}
+                  disabled={annotationsBusy}
                   onChange={(event) => setEditingNote(event.target.value)}
                 />
               ) : highlight.note ? (
@@ -115,27 +162,28 @@ export function ReaderAnnotations({
                     <button
                       type="button"
                       data-primary="true"
-                      disabled={busy}
-                      onClick={() => {
-                        void onUpdateNote(
-                          highlight.highlight_id,
-                          editingNote.trim() || null,
-                        ).then(() => setEditingId(null));
-                      }}
+                      disabled={annotationsBusy}
+                      onClick={() => saveNote(highlight)}
                     >
                       {busy ? "Saving…" : "Save note"}
                     </button>
-                    <button type="button" onClick={() => setEditingId(null)}>Cancel</button>
+                    <button type="button" disabled={annotationsBusy} onClick={cancelEdit}>
+                      Cancel
+                    </button>
                   </>
                 ) : (
-                  <button type="button" onClick={() => beginEdit(highlight)}>
+                  <button
+                    type="button"
+                    disabled={annotationsBusy}
+                    onClick={() => beginEdit(highlight)}
+                  >
                     {highlight.note ? "Edit note" : "Add note"}
                   </button>
                 )}
                 <button
                   type="button"
                   data-danger="true"
-                  disabled={busy}
+                  disabled={annotationsBusy}
                   onClick={() => void onRemove(highlight.highlight_id)}
                 >
                   Remove

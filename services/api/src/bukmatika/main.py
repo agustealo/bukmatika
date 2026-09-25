@@ -40,7 +40,8 @@ from bukmatika.domain import (
     DiscoveryResponse,
     SearchIntent,
 )
-from bukmatika.identity import AuthenticatedPrincipal, require_principal, router as identity_router
+from bukmatika.identity import AuthenticatedPrincipal, require_principal
+from bukmatika.identity import router as identity_router
 from bukmatika.library import router as library_router
 from bukmatika.observability import (
     REQUEST_ID_HEADER,

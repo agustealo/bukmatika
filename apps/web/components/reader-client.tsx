@@ -465,12 +465,26 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
 
   async function removeHighlight(highlightId: string) {
     if (annotationBusyKey !== null) return;
+    const currentHighlight = highlights.find((highlight) => highlight.highlight_id === highlightId);
+    if (!currentHighlight) {
+      setError("This highlight is no longer available.");
+      return;
+    }
     setAnnotationBusyKey(highlightId);
     setError(null);
     try {
       const response = await apiFetch(`${basePath}/highlights/${highlightId}/remove`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expected_updated_at: currentHighlight.updated_at,
+        }),
       });
+      if (response.status === 409) {
+        throw new Error(
+          "This highlight changed in another tab. Reload before removing it.",
+        );
+      }
       if (!response.ok) throw new Error(`Highlight removal failed with HTTP ${response.status}.`);
       setHighlights((current) =>
         current.filter((item) => item.highlight_id !== highlightId),

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 import { ResearchDelegationComposer } from "./research-delegation-composer";
@@ -95,6 +95,10 @@ function passageReaderHref(passage: ResearchPassage): string {
   return `/read/${passage.library_entry_id}/${passage.document_id}?${params.toString()}#reader-section-${passage.section_id}`;
 }
 
+function isAbortError(value: unknown): boolean {
+  return value instanceof DOMException && value.name === "AbortError";
+}
+
 export function ResearchClient() {
   const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -105,6 +109,8 @@ export function ResearchClient() {
   const [loadingLibrary, setLoadingLibrary] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestSequence = useRef(0);
+  const activeController = useRef<AbortController | null>(null);
 
   const readable = useMemo(
     () => library.filter((item) => item.readable_document_id !== null),
@@ -112,6 +118,9 @@ export function ResearchClient() {
   );
   const selectionLimit = mode === "compare" ? COMPARE_MAX_SELECTIONS : SEARCH_MAX_SELECTIONS;
   const minimumSelection = mode === "compare" ? 2 : 1;
+  const scopeKey = JSON.stringify([mode, query.trim(), selected]);
+  const currentScopeKey = useRef(scopeKey);
+  currentScopeKey.current = scopeKey;
 
   useEffect(() => {
     let cancelled = false;
@@ -136,6 +145,25 @@ export function ResearchClient() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    requestSequence.current += 1;
+    activeController.current?.abort();
+    activeController.current = null;
+    setSearchResults(null);
+    setCompareResults(null);
+    setError(null);
+    setRunning(false);
+  }, [scopeKey]);
+
+  useEffect(
+    () => () => {
+      requestSequence.current += 1;
+      activeController.current?.abort();
+      activeController.current = null;
+    },
+    [],
+  );
 
   function changeMode(nextMode: ResearchMode) {
     setMode(nextMode);
@@ -164,47 +192,76 @@ export function ResearchClient() {
     const normalized = query.trim();
     if (!normalized || selected.length < minimumSelection || running) return;
 
+    const requestId = requestSequence.current + 1;
+    requestSequence.current = requestId;
+    const requestScopeKey = scopeKey;
+    const requestMode = mode;
+    const requestSelected = [...selected];
+    const controller = new AbortController();
+    activeController.current?.abort();
+    activeController.current = controller;
     setRunning(true);
     setError(null);
+
     try {
-      if (mode === "compare") {
+      if (requestMode === "compare") {
         const response = await apiFetch("/v1/research/compare", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             query: normalized,
-            library_entry_ids: selected,
+            library_entry_ids: requestSelected,
             per_source_limit: COMPARE_PASSAGES_PER_SOURCE,
           }),
+          signal: controller.signal,
         });
         if (!response.ok) {
           throw new Error(`Source comparison failed with HTTP ${response.status}.`);
         }
-        setCompareResults((await response.json()) as ResearchCompareResponse);
+        const payload = (await response.json()) as ResearchCompareResponse;
+        if (requestId !== requestSequence.current || requestScopeKey !== currentScopeKey.current) {
+          return;
+        }
+        setCompareResults(payload);
       } else {
         const response = await apiFetch("/v1/research/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             query: normalized,
-            library_entry_ids: selected,
+            library_entry_ids: requestSelected,
             limit: 30,
           }),
+          signal: controller.signal,
         });
         if (!response.ok) {
           throw new Error(`Research search failed with HTTP ${response.status}.`);
         }
-        setSearchResults((await response.json()) as ResearchSearchResponse);
+        const payload = (await response.json()) as ResearchSearchResponse;
+        if (requestId !== requestSequence.current || requestScopeKey !== currentScopeKey.current) {
+          return;
+        }
+        setSearchResults(payload);
       }
     } catch (caught) {
-      if (mode === "compare") {
+      if (
+        requestId !== requestSequence.current ||
+        requestScopeKey !== currentScopeKey.current ||
+        isAbortError(caught)
+      ) {
+        return;
+      }
+      if (requestMode === "compare") {
         setCompareResults(null);
       } else {
         setSearchResults(null);
       }
       setError(caught instanceof Error ? caught.message : "Research request failed.");
     } finally {
-      setRunning(false);
+      if (requestId === requestSequence.current && requestScopeKey === currentScopeKey.current) {
+        if (activeController.current === controller) activeController.current = null;
+        setRunning(false);
+      }
     }
   }
 

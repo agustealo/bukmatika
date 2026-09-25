@@ -100,7 +100,25 @@ function terminalMessage(result: DelegationResult): string {
   }
 }
 
-function BudgetStory({ budget }: { budget: DelegationResultBudget }) {
+function elapsedLabel(startedAt: string | null, outcomeAt: string): string {
+  if (startedAt === null) return "Not started";
+  const started = Date.parse(startedAt);
+  const outcome = Date.parse(outcomeAt);
+  if (!Number.isFinite(started) || !Number.isFinite(outcome) || outcome < started) {
+    return "Unavailable";
+  }
+  const seconds = Math.round((outcome - started) / 1_000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
+}
+
+function BudgetStory({ result }: { result: DelegationResult }) {
+  const { budget } = result;
   return (
     <dl className={styles.budgetGrid}>
       <div>
@@ -120,6 +138,10 @@ function BudgetStory({ budget }: { budget: DelegationResultBudget }) {
       <div>
         <dt>Runtime ceiling</dt>
         <dd>{budget.max_runtime_seconds}s</dd>
+      </div>
+      <div>
+        <dt>Elapsed</dt>
+        <dd>{elapsedLabel(budget.started_at, result.outcome_at)}</dd>
       </div>
     </dl>
   );
@@ -215,7 +237,7 @@ export function DelegationResults() {
                 </span>
                 <span>{new Date(result.outcome_at).toLocaleString()}</span>
               </div>
-              <BudgetStory budget={result.budget} />
+              <BudgetStory result={result} />
               {terminal ? (
                 <>
                   <h3>{result.user_request ?? `${statusLabel(result.status)} delegated research`}</h3>

@@ -57,6 +57,15 @@ function citationLabel(evidenceIds: string[]): string {
   return evidenceIds.join(", ");
 }
 
+function sourceCoverageLabel(bundle: EvidenceBundle): string {
+  const selectedCount = bundle.selected_library_entry_ids.length;
+  const contributingCount = new Set(bundle.evidence.map((item) => item.library_entry_id)).size;
+  const missingCount = Math.max(0, selectedCount - contributingCount);
+  const selectedLabel = `Evidence from ${contributingCount} of ${selectedCount} selected book${selectedCount === 1 ? "" : "s"}`;
+  if (missingCount === 0) return selectedLabel;
+  return `${selectedLabel} · ${missingCount} selected book${missingCount === 1 ? "" : "s"} contributed no evidence`;
+}
+
 async function responseError(response: Response): Promise<Error> {
   try {
     const payload = (await response.json()) as { detail?: unknown };
@@ -203,6 +212,7 @@ export function ResearchGroundedAnswer({
             <span>{result.model_provider}</span>
             <span>{result.model_name}</span>
             <span>{result.model_routing}</span>
+            <span>{sourceCoverageLabel(result.evidence)}</span>
           </div>
           <ol className={styles.claims}>
             {result.answer.claims.map((claim, index) => (

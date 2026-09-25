@@ -1,12 +1,16 @@
 import asyncio
+import logging
 import re
+import sys
 
 import httpx
+import structlog
 from fastapi import FastAPI, Response
 
 from bukmatika.observability import (
     REQUEST_ID_HEADER,
     RequestCorrelationMiddleware,
+    configure_logging,
     correlated_internal_server_error,
     current_request_id,
 )
@@ -51,6 +55,21 @@ def _event(logger: RecordingLogger, event_name: str) -> tuple[str, dict[str, obj
         if event == event_name:
             return level, values
     raise AssertionError(f"Missing event: {event_name}")
+
+
+def _logger_state(logger: logging.Logger) -> tuple[list[logging.Handler], int, bool, bool]:
+    return list(logger.handlers), logger.level, logger.propagate, logger.disabled
+
+
+def _restore_logger(
+    logger: logging.Logger,
+    state: tuple[list[logging.Handler], int, bool, bool],
+) -> None:
+    handlers, level, propagate, disabled = state
+    logger.handlers[:] = handlers
+    logger.setLevel(level)
+    logger.propagate = propagate
+    logger.disabled = disabled
 
 
 async def test_request_correlation_accepts_safe_caller_id_and_returns_it() -> None:
@@ -181,3 +200,52 @@ async def test_failed_request_preserves_request_id_without_logging_private_conte
     assert "private failure detail" not in rendered
     assert "private-book-identifier" not in rendered
     assert "top-secret-query" not in rendered
+
+
+def test_logging_configuration_does_not_promote_raw_http_client_records(capsys) -> None:
+    logger_names = (
+        "",
+        "bukmatika",
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+        "httpx",
+        "httpcore",
+    )
+    loggers = {name: logging.getLogger(name) for name in logger_names}
+    states = {name: _logger_state(logger) for name, logger in loggers.items()}
+
+    root = loggers[""]
+    sentinel = logging.StreamHandler(sys.stdout)
+    root.handlers.append(sentinel)
+    root.setLevel(logging.INFO)
+
+    try:
+        configure_logging(level="INFO")
+
+        assert root.handlers[-1] is sentinel
+        assert root.level == logging.INFO
+        assert loggers["bukmatika"].level == logging.INFO
+        assert loggers["bukmatika"].propagate is False
+        assert loggers["uvicorn"].level == logging.INFO
+        assert loggers["uvicorn"].propagate is False
+        assert loggers["httpx"].disabled is True
+        assert loggers["httpcore"].disabled is True
+
+        logging.getLogger("httpx").info(
+            "HTTP Request: GET https://provider.invalid/search?"
+            'q=private-search-text "HTTP/1.1 200 OK"'
+        )
+        logging.getLogger("httpcore").info(
+            "connect_tcp.started host='provider.invalid' query='private-search-text'"
+        )
+        logging.getLogger("bukmatika.test").info("bounded application event")
+
+        output = capsys.readouterr().out
+        assert "bounded application event" in output
+        assert "private-search-text" not in output
+        assert "provider.invalid" not in output
+    finally:
+        for name, logger in loggers.items():
+            _restore_logger(logger, states[name])
+        structlog.reset_defaults()

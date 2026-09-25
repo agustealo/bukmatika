@@ -31,7 +31,7 @@ type ReaderAnnotationsProps = {
   busyKey: string | null;
   onCreate: (note: string | null) => Promise<void>;
   onUpdateNote: (highlightId: string, note: string | null) => Promise<void>;
-  onRemove: (highlightId: string) => Promise<void>;
+  onRemove: (highlightId: string, expectedUpdatedAt: string) => Promise<void>;
   onClearSelection: () => void;
 };
 
@@ -67,7 +67,6 @@ export function ReaderAnnotations({
 
   useEffect(() => {
     if (!pendingNoteSave) return;
-
     if (!pendingNoteSave.sawBusy) {
       if (busyKey === pendingNoteSave.highlightId) {
         setPendingNoteSave((current) =>
@@ -78,9 +77,7 @@ export function ReaderAnnotations({
       }
       return;
     }
-
     if (busyKey === pendingNoteSave.highlightId) return;
-
     const persisted = highlights.find(
       (highlight) => highlight.highlight_id === pendingNoteSave.highlightId,
     );
@@ -103,13 +100,11 @@ export function ReaderAnnotations({
 
   function saveNote(highlight: ReaderHighlight) {
     if (annotationsBusy) return;
-
     const requestedNote = normalizedNote(editingNote);
     if (requestedNote === normalizedNote(highlight.note)) {
       setEditingId(null);
       return;
     }
-
     setPendingNoteSave({
       highlightId: highlight.highlight_id,
       note: requestedNote,
@@ -191,11 +186,7 @@ export function ReaderAnnotations({
                     </button>
                   </>
                 ) : (
-                  <button
-                    type="button"
-                    disabled={annotationsBusy}
-                    onClick={() => beginEdit(highlight)}
-                  >
+                  <button type="button" disabled={annotationsBusy} onClick={() => beginEdit(highlight)}>
                     {highlight.note ? "Edit note" : "Add note"}
                   </button>
                 )}
@@ -203,7 +194,7 @@ export function ReaderAnnotations({
                   type="button"
                   data-danger="true"
                   disabled={annotationsBusy}
-                  onClick={() => void onRemove(highlight.highlight_id)}
+                  onClick={() => void onRemove(highlight.highlight_id, highlight.updated_at)}
                 >
                   Remove
                 </button>

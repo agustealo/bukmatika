@@ -16,6 +16,7 @@ class StoredDelegationResult:
     result: AIDelegationAttemptResult
     attempt: AIDelegationAttempt
     delegation: AIDelegation
+    plan: Plan
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +74,7 @@ class DelegationResultRepository:
     ) -> list[StoredDelegationResult]:
         rows = (
             await self._session.execute(
-                select(AIDelegationAttemptResult, AIDelegationAttempt, AIDelegation)
+                select(AIDelegationAttemptResult, AIDelegationAttempt, AIDelegation, Plan)
                 .join(
                     AIDelegationAttempt,
                     AIDelegationAttempt.id == AIDelegationAttemptResult.attempt_id,
@@ -85,10 +86,18 @@ class DelegationResultRepository:
                         AIDelegation.principal_id == AIDelegationAttempt.principal_id,
                     ),
                 )
+                .join(
+                    Plan,
+                    and_(
+                        Plan.id == AIDelegation.plan_id,
+                        Plan.principal_id == AIDelegation.principal_id,
+                    ),
+                )
                 .where(
                     AIDelegationAttemptResult.principal_id == principal_id,
                     AIDelegationAttempt.principal_id == principal_id,
                     AIDelegation.principal_id == principal_id,
+                    Plan.principal_id == principal_id,
                     AIDelegationAttempt.status == "completed",
                     AIDelegationAttempt.finished_at.is_not(None),
                 )
@@ -100,8 +109,13 @@ class DelegationResultRepository:
             )
         ).all()
         return [
-            StoredDelegationResult(result=result, attempt=attempt, delegation=delegation)
-            for result, attempt, delegation in rows
+            StoredDelegationResult(
+                result=result,
+                attempt=attempt,
+                delegation=delegation,
+                plan=plan,
+            )
+            for result, attempt, delegation, plan in rows
         ]
 
     async def recent_terminal(

@@ -6,7 +6,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0020_principal_acquisition_requests"
+revision: str = "0020_acquisition_requests"
 down_revision: str | None = "0019_reader_progress_write_order"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

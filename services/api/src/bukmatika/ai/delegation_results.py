@@ -17,6 +17,7 @@ from bukmatika.ai.delegation_result_domain import (
     DelegatedResearchPassageReceipt,
     DelegatedResearchSearchReceipt,
     DelegationRecentResult,
+    DelegationResultBudget,
     DelegationResultSource,
 )
 from bukmatika.ai.domain import CapabilityName, PlanStep
@@ -122,6 +123,7 @@ async def recent_delegation_results(
         finished_at = stored_result.attempt.finished_at
         if finished_at is None:
             continue
+        budget = _budget_projection(stored_result.delegation)
         try:
             receipt = DelegatedResearchSearchReceipt.model_validate(stored_result.result.receipt)
         except ValidationError:
@@ -134,6 +136,7 @@ async def recent_delegation_results(
                     status=DelegationStatus.COMPLETED,
                     outcome_at=finished_at,
                     completed_at=finished_at,
+                    budget=budget,
                     available=False,
                     unavailable_reason="Delegated result receipt is no longer valid.",
                 )
@@ -161,6 +164,7 @@ async def recent_delegation_results(
                     status=DelegationStatus.COMPLETED,
                     outcome_at=finished_at,
                     completed_at=finished_at,
+                    budget=budget,
                     available=False,
                     unavailable_reason=(
                         "Canonical delegated result sources are no longer available."
@@ -180,6 +184,7 @@ async def recent_delegation_results(
                 status=DelegationStatus.COMPLETED,
                 outcome_at=finished_at,
                 completed_at=finished_at,
+                budget=budget,
                 available=True,
                 query=receipt.query,
                 selected_library_entry_ids=receipt.selected_library_entry_ids,
@@ -209,6 +214,7 @@ async def recent_delegation_results(
                 failure_code=delegation.failure_code,
                 attempt_error_code=attempt.error_code if attempt is not None else None,
                 user_request=terminal_result.plan.user_request,
+                budget=_budget_projection(delegation),
                 available=False,
                 query=query,
                 selected_library_entry_ids=selected_ids,
@@ -218,6 +224,17 @@ async def recent_delegation_results(
 
     results.sort(key=lambda result: result.outcome_at, reverse=True)
     return results[:bounded_limit]
+
+
+def _budget_projection(delegation: AIDelegation) -> DelegationResultBudget:
+    return DelegationResultBudget(
+        selected_step_count=len(delegation.selected_step_ids),
+        attempts_used=delegation.attempts_used,
+        max_total_attempts=delegation.max_total_attempts,
+        max_retries_per_step=delegation.max_retries_per_step,
+        max_runtime_seconds=delegation.max_runtime_seconds,
+        started_at=delegation.started_at,
+    )
 
 
 def _terminal_outcome_at(delegation: AIDelegation) -> datetime:

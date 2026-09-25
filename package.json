@@ -10,6 +10,10 @@
   "scripts": {
     "web:dev": "npm run dev --workspace @bukmatika/web",
     "web:build": "npm run build --workspace @bukmatika/web",
-    "web:typecheck": "npm run typecheck --workspace @bukmatika/web"
+    "web:typecheck": "npm run typecheck --workspace @bukmatika/web",
+    "web:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
   }
 }

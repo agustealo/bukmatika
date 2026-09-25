@@ -107,6 +107,11 @@ class HighlightCreate(BaseModel):
         return self
 
 
+class HighlightNoteRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=4_000)
+    expected_updated_at: datetime
+
+
 class HighlightNoteUpdate(BaseModel):
     note: str | None = Field(default=None, max_length=4_000)
     expected_updated_at: datetime | None = None

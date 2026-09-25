@@ -11,10 +11,8 @@ from bukmatika.identity import AuthenticatedPrincipal
 from bukmatika.persistence.reader_highlight_notes import ReaderHighlightConflict
 from bukmatika.reader import HighlightCreate, HighlightNoteUpdate, ReaderService
 from bukmatika.reader.domain import HighlightNoteRequest, HighlightRemoveRequest
-from bukmatika.reader.routes import (
-    remove_highlight as remove_highlight_route,
-    update_highlight_note as update_highlight_note_route,
-)
+from bukmatika.reader.routes import remove_highlight as remove_highlight_route
+from bukmatika.reader.routes import update_highlight_note as update_highlight_note_route
 
 
 async def test_stale_highlight_note_revision_cannot_overwrite_newer_note(

@@ -13,6 +13,9 @@ class AssetStatusResponse(BaseModel):
     stored: bool
     acquisition_id: UUID | None
     acquisition_status: str | None
+    acquisition_request_id: UUID | None = None
+    acquisition_request_status: str | None = None
+    acquisition_approval_mode: str | None = None
     processing_status: str | None
     processing_error_code: str | None
     ocr_job_id: UUID | None

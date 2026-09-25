@@ -10,17 +10,17 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from bukmatika.acquisition import (
-    AcquisitionJobResponse,
-    AcquisitionResponse,
+    AcquisitionPolicyResponse,
+    AcquisitionPolicyUpdate,
+    AcquisitionRequestResponse,
     AcquisitionService,
     AssetNotFound,
+    PrincipalAcquisitionRequestConflict,
+    PrincipalAcquisitionRequestNotFound,
+    PrincipalAcquisitionService,
 )
 from bukmatika.acquisition.downloader import SafeDownloader
-from bukmatika.acquisition.jobs import (
-    AcquisitionJobWorker,
-    AcquisitionNotFound,
-    AcquisitionQueueService,
-)
+from bukmatika.acquisition.jobs import AcquisitionJobWorker, AcquisitionQueueService
 from bukmatika.acquisition.storage import LocalObjectStore
 from bukmatika.ai.delegation_jobs import DelegationJobWorker
 from bukmatika.ai.factory import build_model_gateway
@@ -40,6 +40,7 @@ from bukmatika.domain import (
     DiscoveryResponse,
     SearchIntent,
 )
+from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.identity import router as identity_router
 from bukmatika.library import router as library_router
 from bukmatika.observability import (
@@ -135,7 +136,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         object_store,
         settings,
     )
-    app.state.acquisition_queue = AcquisitionQueueService(settings)
+    acquisition_queue = AcquisitionQueueService(settings)
+    app.state.acquisition_queue = acquisition_queue
+    app.state.principal_acquisition = PrincipalAcquisitionService(
+        settings,
+        queue=acquisition_queue,
+    )
     app.state.ocr_queue = OcrQueueService(settings)
     app.state.document_processing = DocumentProcessingService(
         ParserRegistry(
@@ -216,10 +222,10 @@ def discovery_service(request: Request) -> DiscoveryService:
     return service
 
 
-def acquisition_queue_service(request: Request) -> AcquisitionQueueService:
-    service = request.app.state.acquisition_queue
-    if not isinstance(service, AcquisitionQueueService):
-        raise RuntimeError("Acquisition queue service is not initialized")
+def principal_acquisition_service(request: Request) -> PrincipalAcquisitionService:
+    service = request.app.state.principal_acquisition
+    if not isinstance(service, PrincipalAcquisitionService):
+        raise RuntimeError("Principal acquisition service is not initialized")
     return service
 
 
@@ -318,17 +324,41 @@ async def catalog_search(
     return CatalogSearchResponse(query=query, items=items)
 
 
+@app.get("/v1/acquisition-policy", response_model=AcquisitionPolicyResponse)
+async def acquisition_policy(
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[PrincipalAcquisitionService, Depends(principal_acquisition_service)],
+) -> AcquisitionPolicyResponse:
+    return await service.policy(principal_id=identity.principal_id)
+
+
+@app.post("/v1/acquisition-policy", response_model=AcquisitionPolicyResponse)
+async def update_acquisition_policy(
+    update: AcquisitionPolicyUpdate,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[PrincipalAcquisitionService, Depends(principal_acquisition_service)],
+) -> AcquisitionPolicyResponse:
+    return await service.update_policy(
+        principal_id=identity.principal_id,
+        update=update,
+    )
+
+
 @app.post(
     "/v1/assets/{asset_id}/acquire",
-    response_model=AcquisitionJobResponse,
+    response_model=AcquisitionRequestResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def acquire_asset(
     asset_id: UUID,
-    service: Annotated[AcquisitionQueueService, Depends(acquisition_queue_service)],
-) -> AcquisitionJobResponse:
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[PrincipalAcquisitionService, Depends(principal_acquisition_service)],
+) -> AcquisitionRequestResponse:
     try:
-        return await service.enqueue(asset_id)
+        return await service.request_asset(
+            principal_id=identity.principal_id,
+            asset_id=asset_id,
+        )
     except AssetNotFound as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -341,31 +371,76 @@ async def acquire_asset(
         ) from exc
 
 
-@app.get("/v1/acquisitions/{acquisition_id}", response_model=AcquisitionResponse)
-async def acquisition_status(
-    acquisition_id: UUID,
-    service: Annotated[AcquisitionQueueService, Depends(acquisition_queue_service)],
-) -> AcquisitionResponse:
+@app.get(
+    "/v1/acquisition-requests/{request_id}",
+    response_model=AcquisitionRequestResponse,
+)
+async def acquisition_request_status(
+    request_id: UUID,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[PrincipalAcquisitionService, Depends(principal_acquisition_service)],
+) -> AcquisitionRequestResponse:
     try:
-        return await service.get(acquisition_id)
-    except AcquisitionNotFound as exc:
+        return await service.get(
+            principal_id=identity.principal_id,
+            request_id=request_id,
+        )
+    except (PrincipalAcquisitionRequestNotFound, AssetNotFound) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Acquisition not found",
+            detail="Acquisition request not found",
         ) from exc
 
 
-@app.post("/v1/acquisitions/{acquisition_id}/cancel", response_model=AcquisitionResponse)
-async def cancel_acquisition(
-    acquisition_id: UUID,
-    service: Annotated[AcquisitionQueueService, Depends(acquisition_queue_service)],
-) -> AcquisitionResponse:
+@app.post(
+    "/v1/acquisition-requests/{request_id}/approve",
+    response_model=AcquisitionRequestResponse,
+)
+async def approve_acquisition_request(
+    request_id: UUID,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[PrincipalAcquisitionService, Depends(principal_acquisition_service)],
+) -> AcquisitionRequestResponse:
     try:
-        return await service.cancel(acquisition_id)
-    except AcquisitionNotFound as exc:
+        return await service.approve(
+            principal_id=identity.principal_id,
+            request_id=request_id,
+        )
+    except (PrincipalAcquisitionRequestNotFound, AssetNotFound) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Acquisition not found",
+            detail="Acquisition request not found",
+        ) from exc
+    except PrincipalAcquisitionRequestConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "ACQUISITION_REQUEST_STATE_CONFLICT"},
+        ) from exc
+    except AcquisitionStateConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "ACQUISITION_STATE_CONFLICT"},
+        ) from exc
+
+
+@app.post(
+    "/v1/acquisition-requests/{request_id}/cancel",
+    response_model=AcquisitionRequestResponse,
+)
+async def cancel_acquisition_request(
+    request_id: UUID,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[PrincipalAcquisitionService, Depends(principal_acquisition_service)],
+) -> AcquisitionRequestResponse:
+    try:
+        return await service.cancel(
+            principal_id=identity.principal_id,
+            request_id=request_id,
+        )
+    except (PrincipalAcquisitionRequestNotFound, AssetNotFound) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Acquisition request not found",
         ) from exc
 
 

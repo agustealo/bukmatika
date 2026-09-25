@@ -5,6 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from bukmatika.config import get_settings
 from bukmatika.persistence import (
+    acquisition_request_models,
     action_models,
     delegation_control_models,
     delegation_models,
@@ -23,6 +24,7 @@ if config.config_file_name is not None:
 
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
 _registered_models = (
+    acquisition_request_models.AcquisitionPolicy,
     action_models.ActionExecutionReceipt,
     delegation_control_models.AIDelegationConsent,
     delegation_models.AIDelegation,

@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -9,6 +10,20 @@ class AcquisitionStatus(StrEnum):
     RESOLVING = "resolving"
     DOWNLOADING = "downloading"
     VERIFYING = "verifying"
+    STORED = "stored"
+    FAILED = "failed"
+    QUARANTINED = "quarantined"
+    CANCELLED = "cancelled"
+
+
+class AcquisitionApprovalMode(StrEnum):
+    ALWAYS_ASK = "always_ask"
+    AUTO_ELIGIBLE = "auto_eligible"
+
+
+class AcquisitionRequestStatus(StrEnum):
+    PENDING_APPROVAL = "pending_approval"
+    ACTIVE = "active"
     STORED = "stored"
     FAILED = "failed"
     QUARANTINED = "quarantined"
@@ -33,3 +48,22 @@ class AcquisitionJobResponse(BaseModel):
     job_id: UUID | None = None
     acquisition_status: AcquisitionStatus
     job_status: str
+
+
+class AcquisitionPolicyUpdate(BaseModel):
+    approval_mode: AcquisitionApprovalMode
+
+
+class AcquisitionPolicyResponse(BaseModel):
+    approval_mode: AcquisitionApprovalMode
+
+
+class AcquisitionRequestResponse(BaseModel):
+    request_id: UUID
+    asset_id: UUID
+    acquisition_id: UUID | None
+    approval_mode: AcquisitionApprovalMode
+    status: AcquisitionRequestStatus
+    approved_at: datetime | None
+    cancelled_at: datetime | None
+    acquisition_status: AcquisitionStatus | None

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import { readerSourceHref } from "../lib/reader-links";
 import { ResearchDelegationComposer } from "./research-delegation-composer";
 import { ResearchGroundedAnswer } from "./research-grounded-answer";
 
@@ -85,14 +86,6 @@ function locatorLabel(locator: Record<string, string | number>): string {
 
 function selectionLabel(count: number): string {
   return `${count} source${count === 1 ? "" : "s"} selected`;
-}
-
-function passageReaderHref(passage: ResearchPassage): string {
-  const params = new URLSearchParams({
-    section: String(passage.section_ordinal),
-    offset: String(passage.char_start),
-  });
-  return `/read/${passage.library_entry_id}/${passage.document_id}?${params.toString()}#reader-section-${passage.section_id}`;
 }
 
 function isAbortError(value: unknown): boolean {
@@ -433,7 +426,17 @@ export function ResearchClient() {
                         <p>{passage.text}</p>
                         <div className="passage-actions">
                           <span>Text offsets {passage.char_start}–{passage.char_end}</span>
-                          <a href={passageReaderHref(passage)}>Open cited passage</a>
+                          <a
+                            href={readerSourceHref(
+                              passage.library_entry_id,
+                              passage.document_id,
+                              passage.section_id,
+                              passage.section_ordinal,
+                              passage.char_start,
+                            )}
+                          >
+                            Open cited passage
+                          </a>
                         </div>
                       </article>
                     ))}
@@ -482,7 +485,17 @@ export function ResearchClient() {
                               <p>{passage.text}</p>
                               <div className="passage-actions">
                                 <span>{passage.char_start}–{passage.char_end}</span>
-                                <a href={passageReaderHref(passage)}>Open source</a>
+                                <a
+                                  href={readerSourceHref(
+                                    passage.library_entry_id,
+                                    passage.document_id,
+                                    passage.section_id,
+                                    passage.section_ordinal,
+                                    passage.char_start,
+                                  )}
+                                >
+                                  Open source
+                                </a>
                               </div>
                             </article>
                           ))}

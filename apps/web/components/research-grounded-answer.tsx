@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 import styles from "./research-grounded-answer.module.css";
@@ -87,6 +87,10 @@ async function responseError(response: Response): Promise<Error> {
   return new Error(`Grounded answer failed with HTTP ${response.status}.`);
 }
 
+function isAbortError(value: unknown): boolean {
+  return value instanceof DOMException && value.name === "AbortError";
+}
+
 export function ResearchGroundedAnswer({
   question,
   libraryEntryIds,
@@ -95,12 +99,30 @@ export function ResearchGroundedAnswer({
   const [result, setResult] = useState<GroundedResearchResponse | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestSequence = useRef(0);
+  const activeController = useRef<AbortController | null>(null);
 
   const scopeKey = `${question}\n${libraryEntryIds.join(",")}`;
+  const currentScopeKey = useRef(scopeKey);
+  currentScopeKey.current = scopeKey;
+
   useEffect(() => {
+    requestSequence.current += 1;
+    activeController.current?.abort();
+    activeController.current = null;
     setResult(null);
     setError(null);
+    setRunning(false);
   }, [scopeKey]);
+
+  useEffect(
+    () => () => {
+      requestSequence.current += 1;
+      activeController.current?.abort();
+      activeController.current = null;
+    },
+    [],
+  );
 
   const evidenceById = useMemo(
     () => new Map(result?.evidence.evidence.map((item) => [item.evidence_id, item]) ?? []),
@@ -109,8 +131,16 @@ export function ResearchGroundedAnswer({
 
   async function synthesize() {
     if (!hasEvidence || running) return;
+
+    const requestId = requestSequence.current + 1;
+    requestSequence.current = requestId;
+    const requestScopeKey = scopeKey;
+    const controller = new AbortController();
+    activeController.current?.abort();
+    activeController.current = controller;
     setRunning(true);
     setError(null);
+
     try {
       const response = await apiFetch("/v1/ai/research/answer-selection", {
         method: "POST",
@@ -120,14 +150,29 @@ export function ResearchGroundedAnswer({
           library_entry_ids: libraryEntryIds,
           related_limit: 12,
         }),
+        signal: controller.signal,
       });
       if (!response.ok) throw await responseError(response);
-      setResult((await response.json()) as GroundedResearchResponse);
+      const payload = (await response.json()) as GroundedResearchResponse;
+      if (requestId !== requestSequence.current || requestScopeKey !== currentScopeKey.current) {
+        return;
+      }
+      setResult(payload);
     } catch (caught) {
+      if (
+        requestId !== requestSequence.current ||
+        requestScopeKey !== currentScopeKey.current ||
+        isAbortError(caught)
+      ) {
+        return;
+      }
       setResult(null);
       setError(caught instanceof Error ? caught.message : "Grounded answer failed.");
     } finally {
-      setRunning(false);
+      if (requestId === requestSequence.current && requestScopeKey === currentScopeKey.current) {
+        if (activeController.current === controller) activeController.current = null;
+        setRunning(false);
+      }
     }
   }
 
@@ -182,7 +227,10 @@ export function ResearchGroundedAnswer({
           <div className={styles.evidence}>
             <div className={styles.evidenceHeading}>
               <strong>Canonical evidence</strong>
-              <span>{result.evidence.evidence.length} item{result.evidence.evidence.length === 1 ? "" : "s"}</span>
+              <span>
+                {result.evidence.evidence.length} item
+                {result.evidence.evidence.length === 1 ? "" : "s"}
+              </span>
             </div>
             {result.evidence.evidence.map((item) => (
               <article id={`research-answer-evidence-${item.evidence_id}`} key={item.evidence_id}>

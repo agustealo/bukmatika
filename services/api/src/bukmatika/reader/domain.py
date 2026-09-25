@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -63,6 +64,7 @@ class HighlightResponse(BaseModel):
     locator: dict[str, Any]
     text: str
     note: str | None
+    updated_at: datetime
 
 
 class ReaderDocumentResponse(BaseModel):
@@ -107,3 +109,4 @@ class HighlightCreate(BaseModel):
 
 class HighlightNoteUpdate(BaseModel):
     note: str | None = Field(default=None, max_length=4_000)
+    expected_updated_at: datetime

@@ -113,6 +113,26 @@ class AcquisitionRequestRepository:
         request: AcquisitionRequest,
         acquisition_id: UUID,
     ) -> AcquisitionRequest:
+        acquisition = await self._session.scalar(
+            select(Acquisition)
+            .where(Acquisition.id == acquisition_id)
+            .with_for_update(of=Acquisition)
+        )
+        if acquisition is None:
+            raise RuntimeError("Principal request references a missing acquisition")
+
+        # JobRepository revives failed/cancelled durable jobs when an explicit
+        # request is approved again. Keep the canonical transfer state aligned
+        # in the same transaction so consumers never observe active intent bound
+        # to a terminal transfer while the revived job is waiting for a worker.
+        if acquisition.status in {"failed", "cancelled"}:
+            acquisition.status = "queued"
+            acquisition.cancel_requested = False
+            acquisition.error_code = None
+            acquisition.error_detail = None
+            acquisition.completed_at = None
+            acquisition.updated_at = datetime.now(UTC)
+
         request.acquisition_id = acquisition_id
         await self._session.flush()
         return request

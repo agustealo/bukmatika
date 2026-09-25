@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_MUTATION_EVENT, type ApiMutationDetail, apiFetch } from "../lib/api";
 import styles from "./delegation-control.module.css";
@@ -162,6 +162,7 @@ export function DelegationControl() {
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [consentAcknowledged, setConsentAcknowledged] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const focusedDelegationId = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     const response = await apiFetch("/v1/personalization/delegation-control");
@@ -212,6 +213,28 @@ export function DelegationControl() {
     window.addEventListener(API_MUTATION_EVENT, handleApiMutation);
     return () => window.removeEventListener(API_MUTATION_EVENT, handleApiMutation);
   }, [refresh]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    const targetDelegationId = new URLSearchParams(window.location.search).get("delegation");
+    if (!targetDelegationId || focusedDelegationId.current === targetDelegationId) return;
+    if (
+      !snapshot.active_delegations.some(
+        (delegation) => delegation.delegation_id === targetDelegationId,
+      )
+    ) {
+      return;
+    }
+
+    const target = document.getElementById(`delegation-${targetDelegationId}`);
+    if (!target) return;
+    focusedDelegationId.current = targetDelegationId;
+    const frame = window.requestAnimationFrame(() => {
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [snapshot]);
 
   const runningCount = useMemo(
     () =>
@@ -472,7 +495,12 @@ export function DelegationControl() {
             : delegation.step_ids.map(readableStep).join(" → ");
 
           return (
-            <article className={styles.delegationCard} key={delegation.delegation_id}>
+            <article
+              className={styles.delegationCard}
+              id={`delegation-${delegation.delegation_id}`}
+              key={delegation.delegation_id}
+              tabIndex={-1}
+            >
               <div className={styles.delegationHeader}>
                 <div>
                   <span className={styles.badge} data-tone={statusTone(delegation.status)}>

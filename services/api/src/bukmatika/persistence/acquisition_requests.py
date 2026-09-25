@@ -89,6 +89,8 @@ class AcquisitionRequestRepository:
             request.approved_at = None
             request.cancelled_at = None
             request.acquisition_id = None
+        elif request.approved_at is None:
+            request.approval_mode = approval_mode
         await self._session.flush()
         return request
 

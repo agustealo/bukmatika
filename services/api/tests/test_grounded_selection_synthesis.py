@@ -1,8 +1,8 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_grounded_synthesis import (
-    _RecordingGateway,
     _principal,
+    _RecordingGateway,
     _scope,
     _seed_book,
 )

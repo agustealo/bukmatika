@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
+from uuid import UUID
 
 from pydantic import HttpUrl
 from sqlalchemy import select
@@ -74,7 +75,7 @@ def _edition_record(
     )
 
 
-async def _work_id(session: AsyncSession) -> Any:
+async def _work_id(session: AsyncSession) -> UUID:
     work_id = await session.scalar(
         select(Work.id).where(Work.canonical_title == "Provenance Test Work")
     )

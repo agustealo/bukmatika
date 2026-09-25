@@ -154,7 +154,7 @@ def test_discovery_preferences_normalize_without_becoming_search_constraints() -
 
 
 def test_discovery_preferences_reject_inverted_era() -> None:
-    with pytest.raises(ValueError, match="preferences.year_from"):
+    with pytest.raises(ValueError, match=r"preferences\.year_from"):
         SearchIntent(
             query="history",
             preferences={"year_from": 1800, "year_to": 1500},

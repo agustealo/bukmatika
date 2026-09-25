@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.document_models import DocumentSection
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
+from bukmatika.persistence.reader_bookmarks import remove_bookmark_if_current
 from bukmatika.persistence.reader_highlight_notes import (
     remove_highlight_if_current,
     update_highlight_note_if_current,
@@ -198,11 +199,17 @@ class ReaderService:
         library_entry_id: UUID,
         document_id: UUID,
         bookmark_id: UUID,
+        expected_updated_at: datetime | None = None,
     ) -> None:
         async with self._session_scope() as database_session:
             repository = ReaderRepository(database_session)
             access = await repository.require_access(principal_id, library_entry_id, document_id)
-            await repository.remove_bookmark(access=access, bookmark_id=bookmark_id)
+            await remove_bookmark_if_current(
+                database_session,
+                access=access,
+                bookmark_id=bookmark_id,
+                expected_updated_at=expected_updated_at,
+            )
             await InteractionEventRepository(database_session).record(
                 SemanticEventType.BOOKMARK_REMOVED,
                 principal_id=access.principal_id,
@@ -417,6 +424,7 @@ def _bookmark_response(record: ReaderBookmarkRecord) -> BookmarkResponse:
         char_offset=bookmark.char_offset,
         locator=bookmark.locator,
         label=bookmark.label,
+        updated_at=bookmark.updated_at,
     )
 
 

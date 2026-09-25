@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
+from bukmatika.persistence.reader_bookmarks import ReaderBookmarkConflict
 from bukmatika.persistence.reader_highlight_notes import ReaderHighlightConflict
 from bukmatika.persistence.readers import (
     ReaderAccessDenied,
@@ -13,6 +14,7 @@ from bukmatika.persistence.readers import (
 )
 from bukmatika.reader.domain import (
     BookmarkCreate,
+    BookmarkRemoveRequest,
     BookmarkResponse,
     HighlightCreate,
     HighlightNoteRequest,
@@ -137,6 +139,7 @@ async def remove_bookmark(
     library_entry_id: UUID,
     document_id: UUID,
     bookmark_id: UUID,
+    remove: BookmarkRemoveRequest,
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[ReaderService, Depends(reader_service)],
 ) -> Response:
@@ -146,11 +149,17 @@ async def remove_bookmark(
             library_entry_id=library_entry_id,
             document_id=document_id,
             bookmark_id=bookmark_id,
+            expected_updated_at=remove.expected_updated_at,
         )
     except (ReaderAccessDenied, ReaderBookmarkNotFound) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Bookmark not found",
+        ) from exc
+    except ReaderBookmarkConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "READER_BOOKMARK_STALE"},
         ) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

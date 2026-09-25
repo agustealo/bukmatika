@@ -42,6 +42,7 @@ type Bookmark = {
   char_offset: number;
   locator: ReaderLocator;
   label: string | null;
+  updated_at: string;
 };
 
 type ReaderDocument = {
@@ -346,7 +347,14 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
       if (existing) {
         const response = await apiFetch(`${basePath}/bookmarks/${existing.bookmark_id}/remove`, {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            expected_updated_at: existing.updated_at,
+          }),
         });
+        if (response.status === 409) {
+          throw new Error("This bookmark changed in another tab. Reload before removing it.");
+        }
         if (!response.ok) throw new Error(`Bookmark removal failed with HTTP ${response.status}.`);
         setBookmarks((current) =>
           current.filter((bookmark) => bookmark.bookmark_id !== existing.bookmark_id),

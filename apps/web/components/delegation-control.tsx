@@ -69,6 +69,8 @@ type BusyAction =
   | `stop:${string}`
   | null;
 
+const LIVE_STATE_REFRESH_INTERVAL_MS = 5_000;
+
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "short",
@@ -163,8 +165,11 @@ export function DelegationControl() {
   const [consentAcknowledged, setConsentAcknowledged] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    const response = await apiFetch("/v1/personalization/delegation-control");
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    const response = await apiFetch("/v1/personalization/delegation-control", {
+      cache: "no-store",
+      signal,
+    });
     if (!response.ok) {
       throw await responseError(response, "Could not load delegation controls");
     }
@@ -225,6 +230,69 @@ export function DelegationControl() {
     () => snapshot?.active_delegations.filter((delegation) => delegation.status === "proposed").length ?? 0,
     [snapshot],
   );
+
+  useEffect(() => {
+    if (runningCount === 0) {
+      return;
+    }
+
+    let disposed = false;
+    let timeoutId: number | null = null;
+    let controller: AbortController | null = null;
+
+    const schedule = () => {
+      if (disposed || document.visibilityState !== "visible") {
+        return;
+      }
+      timeoutId = window.setTimeout(() => {
+        timeoutId = null;
+        void poll();
+      }, LIVE_STATE_REFRESH_INTERVAL_MS);
+    };
+
+    const poll = async () => {
+      if (disposed || document.visibilityState !== "visible" || controller !== null) {
+        return;
+      }
+
+      controller = new AbortController();
+      try {
+        await refresh(controller.signal);
+      } catch {
+        // Keep the last durable snapshot visible across transient background refresh failures.
+      } finally {
+        controller = null;
+        schedule();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        controller?.abort();
+        return;
+      }
+
+      if (!disposed && timeoutId === null && controller === null) {
+        void poll();
+      }
+    };
+
+    schedule();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      disposed = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+      controller?.abort();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refresh, runningCount]);
 
   async function mutate(
     action: NonNullable<BusyAction>,
@@ -441,8 +509,9 @@ export function DelegationControl() {
             {loading ? "Refreshing…" : "Refresh delegation state"}
           </button>
           <p className={styles.summaryNote}>
-            Bukmatika does not poll for or invent new work here. This panel reflects durable delegation
-            state already created by an approved AI plan.
+            While work is running or stopping, this panel refreshes only the existing durable
+            delegation state while the tab is visible. Refreshing never creates, approves, starts, or
+            expands work.
           </p>
         </article>
       </div>

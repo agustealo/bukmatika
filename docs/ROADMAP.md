@@ -2,18 +2,21 @@
 
 The roadmap is organized by vertical slices. A slice is complete only when the real user path works end-to-end.
 
-## Current engineering checkpoint - 2026-09-24
+## Current engineering checkpoint - 2026-09-25
 
-- Current production base: `main@9f8a517ae2cfc46b762d9cb23b0ef8037de5a8d9` after merged PR #71.
-- Post-merge Quality #394 is green on that exact production commit.
-- The current API gate covers Ruff, strict MyPy across 141 source files, the migration chain through `0017_level2_delegation_consent`, and 408 PostgreSQL/API tests. The web gate covers TypeScript typecheck and production build.
+- Current production base: `main@f56bf41f2b36fa907f867f5478f5c303f610f77b` after merged PR #117.
+- Post-merge Quality #511 is green on that exact production commit.
+- The current API gate covers Ruff, strict MyPy, the current migration chain, and the complete PostgreSQL/API test suite. The web gate covers TypeScript typecheck and production build.
 - Grounded reader research is live behind the canonical `ModelGateway` with loopback-only Ollama, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, a public real-model smoke command, and a rollback-only grounded-runtime proof command.
 - Consumer research includes selected-book lexical retrieval, grounded Q&A, balanced source/edition comparison, explicit-highlight grounding, deterministic timelines, deterministic people/place/concept mention extraction, and measured retrieval evaluation over canonical evidence.
+- The bounded Level 2 Research workflow is now continuous in the Research surface: selected books and a question can produce an exact proposal, the user can approve or reject it, explicitly start or stop it, follow durable live state, recover active controls after reload or scope changes, see the newest active proposal first, and inspect terminal outcomes from the same server-backed delegation/result authorities.
+- Research now surfaces canonical local-AI readiness for AI-disabled, unconfigured, runtime-offline, invalid-runtime, and missing-model states without becoming a second settings authority. Evidence-only research remains available and setup routes back to the canonical AI control center.
 - Consumer library portability includes versioned manifests, deterministic dry-run/apply, rights-gated byte export/import, bounded `.bukmatika` transport, archive hardening, and export omission transparency.
-- Bounded Level 2 read-only delegation is live for explicitly selected `research.search` steps only. It requires principal-owned consent, exact per-run approval, explicit start, immutable selection/budget fingerprints, finite runtime/retry/attempt ceilings, stop/revoke controls, current-state/policy/context revalidation, durable PostgreSQL dispatch, claim leases, restart recovery, and audit evidence.
+- Bounded Level 2 read-only delegation remains limited to explicitly selected `research.search` steps. It requires principal-owned consent, exact per-run approval, explicit start, immutable selection/budget fingerprints, finite runtime/retry/attempt ceilings, stop/revoke controls, current-state/policy/context revalidation, durable PostgreSQL dispatch, claim leases, restart recovery, and audit evidence.
 - The Level 2 lane is not standing permission. The model cannot approve, start, expand, reorder, rebudget, or silently replan delegated work.
 - Level 3, delegated writes, autonomous acquisition, consequential delegation, standing approvals, arbitrary tool/code/shell/SQL/filesystem access, and open-ended scheduler agents remain closed.
 - The grounded proof command existing is not proof that an installed model passed it. Phase 5 still carries a release-evidence gate until `bukmatika-grounded-ai-proof` is actually executed successfully against a real installed local model and recorded for the exact release candidate.
+- Repository governance remains an external settings gate: `main` is still unprotected, and issue #108 tracks requiring pull requests and the existing quality checks while blocking force pushes/deletion without pretending application code can substitute for branch protection.
 - Retrieval quality work remains independent of autonomy expansion. Improve measured lexical/semantic research quality only where evidence proves a gap; do not add infrastructure simply because the Level 2 control spine now exists.
 
 ## Phase 0 - Foundation
@@ -108,6 +111,8 @@ Goal: introduce one bounded AI orchestration system that becomes more useful thr
 - [x] Transactional grounded-runtime proof command over canonical persisted evidence, plan/audit/ledger verification, and rollback validation.
 - [x] Bounded Level 2 read-only delegation authority for `research.search` with consent, exact approval/start, budgets, stop/revoke, durable dispatch, restart/concurrency recovery, and audit evidence.
 - [x] Consumer planning front door from selected books and research question to a bounded delegation proposal.
+- [x] In-Research Level 2 lifecycle continuity through exact proposal review, approve/reject, explicit start/stop, durable live-state refresh, reload/scope recovery, newest-first active work, and terminal outcomes over the canonical delegation authority.
+- [x] Research-local read-only AI readiness guidance over the canonical `/v1/ai/status` contract, with evidence-only fallback and setup routing to the canonical AI control center.
 - [x] Shared capability argument/context contracts preflighted before approval and revalidated before permit/runtime execution.
 - [ ] Recorded successful real local-runtime grounded-answer release proof against an installed model.
 

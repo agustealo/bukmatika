@@ -15,6 +15,7 @@ from bukmatika.reader.domain import (
     BookmarkCreate,
     BookmarkResponse,
     HighlightCreate,
+    HighlightNoteRequest,
     HighlightNoteUpdate,
     HighlightResponse,
     ReaderDocumentResponse,
@@ -189,22 +190,20 @@ async def update_highlight_note(
     library_entry_id: UUID,
     document_id: UUID,
     highlight_id: UUID,
-    update: HighlightNoteUpdate,
+    update: HighlightNoteRequest,
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[ReaderService, Depends(reader_service)],
 ) -> HighlightResponse:
-    if update.expected_updated_at is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail={"code": "READER_HIGHLIGHT_REVISION_REQUIRED"},
-        )
     try:
         return await service.update_highlight_note(
             principal_id=identity.principal_id,
             library_entry_id=library_entry_id,
             document_id=document_id,
             highlight_id=highlight_id,
-            update=update,
+            update=HighlightNoteUpdate(
+                note=update.note,
+                expected_updated_at=update.expected_updated_at,
+            ),
         )
     except (ReaderAccessDenied, ReaderHighlightNotFound) as exc:
         raise HTTPException(

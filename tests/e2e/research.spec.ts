@@ -41,10 +41,7 @@ async function seedOwnedResearchSources(page: Page, context: BrowserContext): Pr
   await page.reload();
 }
 
-test("owned canonical evidence flows from Research search into the Reader", async ({
-  page,
-  context,
-}) => {
+async function openMatchingResearchReader(page: Page, context: BrowserContext): Promise<void> {
   await seedOwnedResearchSources(page, context);
 
   const source = page.getByRole("checkbox", { name: /Browser Research Evidence/ });
@@ -73,6 +70,13 @@ test("owned canonical evidence flows from Research search into the Reader", asyn
   await expect(page.getByLabel("Book text")).toContainText(
     "Mariners mapped obsidian navigation routes across the old world before 1492.",
   );
+}
+
+test("owned canonical evidence flows from Research search into the Reader", async ({
+  page,
+  context,
+}) => {
+  await openMatchingResearchReader(page, context);
 });
 
 test("source comparison keeps no-match evidence explicit and preserves Reader provenance", async ({
@@ -119,4 +123,50 @@ test("source comparison keeps no-match evidence explicit and preserves Reader pr
   await expect(page.getByLabel("Book text")).toContainText(
     "Mariners mapped obsidian navigation routes across the old world before 1492.",
   );
+});
+
+test("stale Reader bookmark removal is rejected across two tabs", async ({ page, context }) => {
+  await openMatchingResearchReader(page, context);
+
+  const secondPage = await context.newPage();
+  await secondPage.goto(page.url());
+  await expect(secondPage.getByRole("heading", { name: "Navigation evidence" })).toBeVisible();
+
+  const firstSection = page.locator("section.reader-section").filter({
+    hasText: "Navigation evidence",
+  });
+  const secondSection = secondPage.locator("section.reader-section").filter({
+    hasText: "Navigation evidence",
+  });
+
+  const firstBookmark = firstSection.getByRole("button", { name: "Bookmark", exact: true });
+  const secondBookmark = secondSection.getByRole("button", { name: "Bookmark", exact: true });
+  await expect(firstBookmark).toBeVisible();
+  await expect(secondBookmark).toBeVisible();
+
+  await firstBookmark.click();
+  const firstBookmarked = firstSection.getByRole("button", { name: "Bookmarked", exact: true });
+  await expect(firstBookmarked).toBeVisible();
+
+  await secondBookmark.click();
+  await expect(
+    secondSection.getByRole("button", { name: "Bookmarked", exact: true }),
+  ).toBeVisible();
+
+  await firstBookmarked.click();
+  await expect(page.getByRole("alert")).toContainText(
+    "This bookmark changed in another tab. Reload before removing it.",
+  );
+  await expect(firstBookmarked).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Navigation evidence" })).toBeVisible();
+  await expect(
+    page
+      .locator("section.reader-section")
+      .filter({ hasText: "Navigation evidence" })
+      .getByRole("button", { name: "Bookmarked", exact: true }),
+  ).toBeVisible();
+
+  await secondPage.close();
 });

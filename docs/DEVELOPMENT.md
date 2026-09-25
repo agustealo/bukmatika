@@ -25,6 +25,41 @@ A feature is done when:
 - documentation reflects the shipped behavior;
 - no dead scaffold, sample provider, demo record, or duplicate authority remains.
 
+## Local development bootstrap
+
+The canonical local bootstrap keeps application runtimes native for fast reload while Docker Compose owns only PostgreSQL. Local AI remains optional and is never installed, pulled, or started by the bootstrap.
+
+Prerequisites:
+
+- Python 3.12 through 3.14;
+- Node.js 24 or newer plus npm;
+- Docker with the Compose plugin.
+
+From the repository root, validate prerequisites without changing local state:
+
+```text
+python scripts/dev_bootstrap.py --check
+```
+
+Then prepare the development environment:
+
+```text
+python scripts/dev_bootstrap.py
+```
+
+The bootstrap:
+
+1. validates Python, Node.js, npm, Docker Compose, and `compose.yaml`;
+2. copies `.env.example` to `.env` only when `.env` does not already exist;
+3. creates `.venv` only when the canonical virtual environment is absent;
+4. installs the API in editable development mode and installs web dependencies;
+5. starts the PostgreSQL 18 development service bound only to `127.0.0.1:5432`;
+6. waits for `pg_isready` rather than assuming container startup means database readiness;
+7. runs the canonical Alembic migration chain to `head`;
+8. prints the exact API and web development commands.
+
+The database uses a named Compose volume so ordinary `docker compose down` preserves local data. Removing local database data is therefore an explicit destructive action rather than a bootstrap side effect.
+
 ## Observability contract
 
 Bukmatika emits structured JSON logs to standard output. HTTP requests use one bounded correlation authority:

@@ -37,6 +37,7 @@ type ReaderAnnotationsProps = {
 type PendingNoteSave = {
   highlightId: string;
   note: string | null;
+  sawBusy: boolean;
 };
 
 function normalizedNote(value: string | null): string | null {
@@ -64,7 +65,20 @@ export function ReaderAnnotations({
   }, [selection?.sectionId, selection?.charStart, selection?.charEnd]);
 
   useEffect(() => {
-    if (!pendingNoteSave || busyKey === pendingNoteSave.highlightId) return;
+    if (!pendingNoteSave) return;
+
+    if (!pendingNoteSave.sawBusy) {
+      if (busyKey === pendingNoteSave.highlightId) {
+        setPendingNoteSave((current) =>
+          current && current.highlightId === pendingNoteSave.highlightId
+            ? { ...current, sawBusy: true }
+            : current,
+        );
+      }
+      return;
+    }
+
+    if (busyKey === pendingNoteSave.highlightId) return;
 
     const persisted = highlights.find(
       (highlight) => highlight.highlight_id === pendingNoteSave.highlightId,
@@ -95,7 +109,11 @@ export function ReaderAnnotations({
       return;
     }
 
-    setPendingNoteSave({ highlightId: highlight.highlight_id, note: requestedNote });
+    setPendingNoteSave({
+      highlightId: highlight.highlight_id,
+      note: requestedNote,
+      sawBusy: false,
+    });
     void onUpdateNote(highlight.highlight_id, requestedNote);
   }
 

@@ -8,7 +8,12 @@ from pydantic import HttpUrl
 from bukmatika.discovery.base import DiscoveredRecord
 from bukmatika.discovery.registry import ProviderRegistration, ProviderRegistry
 from bukmatika.discovery.service import DiscoveryService, _retry_after_seconds
-from bukmatika.domain import DiscoveryCandidate, SearchIntent
+from bukmatika.domain import (
+    DiscoveryCandidate,
+    RightsEvidence,
+    RightsState,
+    SearchIntent,
+)
 
 
 class RecordingAdapter:
@@ -20,6 +25,18 @@ class RecordingAdapter:
     async def search(self, intent: SearchIntent) -> list[DiscoveredRecord]:
         self.last_limit = intent.limit
         return [_record(self.name, index) for index in range(self.record_count)]
+
+
+class StaticAdapter:
+    def __init__(self, name: str, records: list[DiscoveredRecord]) -> None:
+        self.name = name
+        self.records = records
+        self.calls = 0
+
+    async def search(self, intent: SearchIntent) -> list[DiscoveredRecord]:
+        del intent
+        self.calls += 1
+        return self.records
 
 
 class SlowAdapter:
@@ -71,7 +88,16 @@ class RecordingLogger:
         return None
 
 
-def _record(source: str, index: int) -> DiscoveredRecord:
+def _record(
+    source: str,
+    index: int,
+    *,
+    source_score: float = 0.5,
+    languages: list[str] | None = None,
+    formats: list[str] | None = None,
+    first_publish_year: int | None = None,
+    rights: list[RightsEvidence] | None = None,
+) -> DiscoveredRecord:
     record_id = f"{source}-{index}"
     return DiscoveredRecord(
         candidate=DiscoveryCandidate(
@@ -79,7 +105,12 @@ def _record(source: str, index: int) -> DiscoveredRecord:
             source_record_id=record_id,
             work_key=f"{source}:{record_id}",
             title=f"Book {index}",
+            first_publish_year=first_publish_year,
+            languages=languages or [],
+            formats=formats or [],
+            rights=rights or [],
             landing_url=HttpUrl(f"https://example.org/{record_id}"),
+            source_score=source_score,
         ),
         source_payload={"id": record_id},
         parser_version="test-v1",
@@ -95,6 +126,38 @@ def test_provider_registry_rejects_duplicate_authority_names() -> None:
                 ProviderRegistration(first, max_results=5, timeout_seconds=1),
                 ProviderRegistration(second, max_results=5, timeout_seconds=1),
             ]
+        )
+
+
+def test_discovery_preferences_normalize_without_becoming_search_constraints() -> None:
+    intent = SearchIntent(
+        query="history",
+        preferences={
+            "languages": [" English ", "ENG", "Latin"],
+            "formats": [" EPUB ", "epub"],
+            "year_from": 1400,
+            "year_to": 1600,
+            "rights_states": ["authorized_download", "authorized_download"],
+            "sources": ["Project Gutenberg", "project-gutenberg"],
+        },
+    )
+
+    assert intent.language is None
+    assert intent.year_from is None
+    assert intent.year_to is None
+    assert intent.preferences.languages == ["en", "la"]
+    assert intent.preferences.formats == ["epub"]
+    assert intent.preferences.year_from == 1400
+    assert intent.preferences.year_to == 1600
+    assert intent.preferences.rights_states == [RightsState.AUTHORIZED_DOWNLOAD]
+    assert intent.preferences.sources == ["project_gutenberg"]
+
+
+def test_discovery_preferences_reject_inverted_era() -> None:
+    with pytest.raises(ValueError, match="preferences.year_from"):
+        SearchIntent(
+            query="history",
+            preferences={"year_from": 1800, "year_to": 1500},
         )
 
 
@@ -116,6 +179,97 @@ async def test_discovery_caps_provider_and_total_records() -> None:
     assert len(batch.records) == 3
     assert len(batch.response.candidates) == 3
     assert batch.response.source_status["bounded"].result_count == 4
+
+
+async def test_preferences_are_bounded_transparent_and_do_not_filter_sources() -> None:
+    dominant = StaticAdapter(
+        "dominant_source",
+        [_record("dominant_source", 1, source_score=0.95)],
+    )
+    neutral = StaticAdapter(
+        "neutral_source",
+        [_record("neutral_source", 1, source_score=0.90)],
+    )
+    preferred_rights = [
+        RightsEvidence(
+            state=RightsState.AUTHORIZED_DOWNLOAD,
+            source="project_gutenberg",
+            basis="Official acquisition link.",
+        )
+    ]
+    preferred = StaticAdapter(
+        "project_gutenberg",
+        [
+            _record(
+                "project_gutenberg",
+                1,
+                source_score=0.87,
+                languages=["eng"],
+                formats=["EPUB"],
+                first_publish_year=1492,
+                rights=preferred_rights,
+            )
+        ],
+    )
+    service = DiscoveryService(
+        ProviderRegistry(
+            [
+                ProviderRegistration(dominant, max_results=5, timeout_seconds=1),
+                ProviderRegistration(neutral, max_results=5, timeout_seconds=1),
+                ProviderRegistration(preferred, max_results=5, timeout_seconds=1),
+            ]
+        ),
+        session_timeout_seconds=1,
+        max_records=10,
+    )
+
+    batch = await service.discover(
+        SearchIntent(
+            query="history",
+            preferences={
+                "languages": ["English"],
+                "formats": ["EPUB"],
+                "year_from": 1400,
+                "year_to": 1600,
+                "rights_states": ["authorized_download"],
+                "sources": ["Project Gutenberg"],
+            },
+        ),
+        service.create_session(),
+    )
+
+    assert [candidate.source for candidate in batch.response.candidates] == [
+        "dominant_source",
+        "project_gutenberg",
+        "neutral_source",
+    ]
+    assert dominant.calls == 1
+    assert neutral.calls == 1
+    assert preferred.calls == 1
+    assert batch.response.sources_queried == [
+        "dominant_source",
+        "neutral_source",
+        "project_gutenberg",
+    ]
+
+    preferred_key = "project_gutenberg:project_gutenberg-1"
+    preferred_ranking = batch.response.ranking[preferred_key]
+    assert preferred_ranking.neutral_score == 0.89
+    assert preferred_ranking.preference_boost == 0.05
+    assert preferred_ranking.total_score == 0.94
+    assert preferred_ranking.matched_preferences == [
+        "language",
+        "format",
+        "era",
+        "rights",
+        "source",
+    ]
+
+    dominant_ranking = batch.response.ranking["dominant_source:dominant_source-1"]
+    assert dominant_ranking.neutral_score == 0.95
+    assert dominant_ranking.preference_boost == 0
+    assert dominant_ranking.total_score == 0.95
+    assert batch.response.candidates[1].rights == preferred_rights
 
 
 async def test_provider_timeout_and_failure_do_not_collapse_search_or_leak_errors() -> None:

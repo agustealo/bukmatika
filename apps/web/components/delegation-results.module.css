@@ -39,7 +39,8 @@
 .passageHeading span,
 .scopeLabel,
 .plannedQuery,
-.sourceChip span {
+.sourceChip span,
+.budgetGrid dt {
   color: var(--muted);
 }
 
@@ -131,6 +132,34 @@
 .statusBadge[data-status="failed"] {
   border-color: var(--danger, #a63d40);
   color: var(--danger, #a63d40);
+}
+
+.budgetGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.budgetGrid div {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.budgetGrid dt {
+  margin: 0 0 3px;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.budgetGrid dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .resultCard h3 {
@@ -243,6 +272,10 @@
 
   .refreshButton {
     align-self: flex-start;
+  }
+
+  .budgetGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .sourceList,

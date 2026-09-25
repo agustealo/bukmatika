@@ -25,6 +25,51 @@ async def update_highlight_note_if_current(
     note: str | None,
     expected_updated_at: datetime | None,
 ) -> ReaderHighlightRecord:
+    record = await _locked_highlight_record(
+        session,
+        access=access,
+        highlight_id=highlight_id,
+    )
+    if (
+        expected_updated_at is not None
+        and record.highlight.updated_at != expected_updated_at
+    ):
+        raise ReaderHighlightConflict("Highlight note changed after this edit started")
+
+    record.highlight.note = note
+    record.highlight.updated_at = datetime.now(UTC)
+    await session.flush()
+    return record
+
+
+async def remove_highlight_if_current(
+    session: AsyncSession,
+    *,
+    access: ReaderAccess,
+    highlight_id: UUID,
+    expected_updated_at: datetime | None,
+) -> None:
+    record = await _locked_highlight_record(
+        session,
+        access=access,
+        highlight_id=highlight_id,
+    )
+    if (
+        expected_updated_at is not None
+        and record.highlight.updated_at != expected_updated_at
+    ):
+        raise ReaderHighlightConflict("Highlight changed after this removal started")
+
+    await session.delete(record.highlight)
+    await session.flush()
+
+
+async def _locked_highlight_record(
+    session: AsyncSession,
+    *,
+    access: ReaderAccess,
+    highlight_id: UUID,
+) -> ReaderHighlightRecord:
     state_id = await session.scalar(
         select(ReadingState.id).where(
             ReadingState.library_entry_id == access.library_entry_id,
@@ -49,13 +94,11 @@ async def update_highlight_note_if_current(
         raise ReaderHighlightNotFound("Highlight does not exist")
 
     highlight, section = row
-    if expected_updated_at is not None and highlight.updated_at != expected_updated_at:
-        raise ReaderHighlightConflict("Highlight note changed after this edit started")
-
-    highlight.note = note
-    highlight.updated_at = datetime.now(UTC)
-    await session.flush()
     return ReaderHighlightRecord(highlight=highlight, section=section)
 
 
-__all__ = ["ReaderHighlightConflict", "update_highlight_note_if_current"]
+__all__ = [
+    "ReaderHighlightConflict",
+    "remove_highlight_if_current",
+    "update_highlight_note_if_current",
+]

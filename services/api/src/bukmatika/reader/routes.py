@@ -17,6 +17,7 @@ from bukmatika.reader.domain import (
     HighlightCreate,
     HighlightNoteRequest,
     HighlightNoteUpdate,
+    HighlightRemoveRequest,
     HighlightResponse,
     ReaderDocumentResponse,
     ReaderNavigationResponse,
@@ -222,6 +223,7 @@ async def remove_highlight(
     library_entry_id: UUID,
     document_id: UUID,
     highlight_id: UUID,
+    remove: HighlightRemoveRequest,
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[ReaderService, Depends(reader_service)],
 ) -> Response:
@@ -231,10 +233,16 @@ async def remove_highlight(
             library_entry_id=library_entry_id,
             document_id=document_id,
             highlight_id=highlight_id,
+            expected_updated_at=remove.expected_updated_at,
         )
     except (ReaderAccessDenied, ReaderHighlightNotFound) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Highlight not found",
+        ) from exc
+    except ReaderHighlightConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "READER_HIGHLIGHT_STALE"},
         ) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)

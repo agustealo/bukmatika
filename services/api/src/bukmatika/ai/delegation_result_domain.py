@@ -42,10 +42,16 @@ class DelegationRecentResult(BaseModel):
     capability: str | None = None
     status: DelegationStatus = DelegationStatus.COMPLETED
     outcome_at: datetime
+    started_at: datetime | None = None
     completed_at: datetime | None = None
     failure_code: str | None = None
     attempt_error_code: str | None = None
     user_request: str | None = None
+    selected_step_count: int = Field(ge=0)
+    attempts_used: int = Field(ge=0)
+    max_total_attempts: int = Field(ge=1)
+    max_retries_per_step: int = Field(ge=0)
+    max_runtime_seconds: int = Field(ge=30)
     available: bool
     unavailable_reason: str | None = None
     query: str | None = None

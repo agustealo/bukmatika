@@ -107,7 +107,7 @@ async def test_recent_outcomes_preserve_successful_completed_receipt(
     assert outcome.status is DelegationStatus.COMPLETED
     assert outcome.available is True
     assert outcome.query == "projection success"
-    assert outcome.user_request is None
+    assert outcome.user_request == EXPECTED_USER_REQUEST
     assert outcome.completed_at == outcome.outcome_at
     assert outcome.failure_code is None
     assert outcome.attempt_error_code is None

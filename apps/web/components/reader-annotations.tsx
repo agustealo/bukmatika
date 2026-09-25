@@ -15,6 +15,7 @@ export type ReaderHighlight = {
   locator: ReaderLocator;
   text: string;
   note: string | null;
+  updated_at: string;
 };
 
 export type PendingReaderSelection = {

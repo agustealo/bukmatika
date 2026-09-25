@@ -36,7 +36,10 @@
 .error,
 .unavailable,
 .resultMeta,
-.passageHeading span {
+.passageHeading span,
+.scopeLabel,
+.plannedQuery,
+.sourceChip span {
   color: var(--muted);
 }
 
@@ -135,6 +138,63 @@
   font-size: 1.35rem;
 }
 
+.plannedQuery {
+  margin: -6px 0 14px;
+  line-height: 1.5;
+}
+
+.plannedQuery strong {
+  color: var(--ink);
+}
+
+.sourceScope {
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+
+.scopeLabel {
+  margin: 0 0 9px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sourceList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sourceChip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 0.78rem;
+}
+
+.sourceChip[data-available="false"] {
+  border-style: dashed;
+}
+
+.sourceChip strong,
+.sourceChip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .passages {
   display: grid;
   gap: 12px;
@@ -183,5 +243,15 @@
 
   .refreshButton {
     align-self: flex-start;
+  }
+
+  .sourceList,
+  .sourceChip {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sourceChip {
+    border-radius: 12px;
   }
 }

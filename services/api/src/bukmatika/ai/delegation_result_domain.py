@@ -28,6 +28,13 @@ class DelegatedResearchSearchReceipt(BaseModel):
     passages: list[DelegatedResearchPassageReceipt]
 
 
+class DelegationResultSource(BaseModel):
+    library_entry_id: UUID
+    work_title: str | None = None
+    edition_title: str | None = None
+    available: bool
+
+
 class DelegationRecentResult(BaseModel):
     delegation_id: UUID
     attempt_id: UUID | None = None
@@ -43,4 +50,5 @@ class DelegationRecentResult(BaseModel):
     unavailable_reason: str | None = None
     query: str | None = None
     selected_library_entry_ids: list[UUID] = Field(default_factory=list)
+    selected_sources: list[DelegationResultSource] = Field(default_factory=list)
     passages: list[ResearchPassageResponse] = Field(default_factory=list)

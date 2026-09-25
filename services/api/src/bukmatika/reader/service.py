@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.document_models import DocumentSection
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
-from bukmatika.persistence.reader_highlight_notes import update_highlight_note_if_current
+from bukmatika.persistence.reader_highlight_notes import (
+    delete_highlight_if_current,
+    update_highlight_note_if_current,
+)
 from bukmatika.persistence.reader_models import ReadingState
 from bukmatika.persistence.readers import (
     ReaderAccessDenied,
@@ -285,11 +289,17 @@ class ReaderService:
         library_entry_id: UUID,
         document_id: UUID,
         highlight_id: UUID,
+        expected_updated_at: datetime | None = None,
     ) -> None:
         async with self._session_scope() as database_session:
             repository = ReaderRepository(database_session)
             access = await repository.require_access(principal_id, library_entry_id, document_id)
-            await repository.remove_highlight(access=access, highlight_id=highlight_id)
+            await delete_highlight_if_current(
+                database_session,
+                access=access,
+                highlight_id=highlight_id,
+                expected_updated_at=expected_updated_at,
+            )
             await InteractionEventRepository(database_session).record(
                 SemanticEventType.HIGHLIGHT_REMOVED,
                 principal_id=access.principal_id,

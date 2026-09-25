@@ -94,30 +94,11 @@ class PrincipalAcquisitionService:
                 principal_id=principal_id,
                 asset_id=asset.id,
             )
-            linked_acquisition = (
-                await repository.acquisition(existing.acquisition_id)
-                if existing is not None and existing.acquisition_id is not None
-                else None
-            )
-            linked_status = (
-                AcquisitionStatus(linked_acquisition.status)
-                if linked_acquisition is not None
-                else None
-            )
-            reactivate_terminal = linked_status in {
-                AcquisitionStatus.FAILED,
-                AcquisitionStatus.CANCELLED,
-            }
-            created_or_reactivated = (
-                existing is None
-                or existing.cancelled_at is not None
-                or reactivate_terminal
-            )
+            created_or_reactivated = existing is None or existing.cancelled_at is not None
             request = await repository.create_or_reactivate(
                 principal_id=principal_id,
                 asset_id=asset.id,
                 approval_mode=mode.value,
-                reactivate_terminal=reactivate_terminal,
             )
             if created_or_reactivated:
                 await InteractionEventRepository(database_session).record(
@@ -366,18 +347,6 @@ class PrincipalAcquisitionService:
         )
 
 
-def _approval_supersedes_terminal(
-    request: AcquisitionRequest,
-    acquisition: Acquisition | None,
-) -> bool:
-    return (
-        request.approved_at is not None
-        and acquisition is not None
-        and acquisition.completed_at is not None
-        and request.approved_at > acquisition.completed_at
-    )
-
-
 def _request_response(
     request: AcquisitionRequest,
     *,
@@ -387,22 +356,14 @@ def _request_response(
     acquisition_status = (
         AcquisitionStatus(acquisition.status) if acquisition is not None else None
     )
-    superseded_terminal = _approval_supersedes_terminal(request, acquisition)
     if request.cancelled_at is not None:
         request_status = AcquisitionRequestStatus.CANCELLED
     elif asset.stored_object_id is not None or acquisition_status is AcquisitionStatus.STORED:
         request_status = AcquisitionRequestStatus.STORED
     elif acquisition_status is AcquisitionStatus.QUARANTINED:
         request_status = AcquisitionRequestStatus.QUARANTINED
-    elif (
-        acquisition_status in {AcquisitionStatus.FAILED, AcquisitionStatus.CANCELLED}
-        and superseded_terminal
-    ):
-        request_status = AcquisitionRequestStatus.ACTIVE
     elif acquisition_status is AcquisitionStatus.FAILED:
         request_status = AcquisitionRequestStatus.FAILED
-    elif acquisition_status is AcquisitionStatus.CANCELLED:
-        request_status = AcquisitionRequestStatus.CANCELLED
     elif request.approved_at is not None:
         request_status = AcquisitionRequestStatus.ACTIVE
     else:

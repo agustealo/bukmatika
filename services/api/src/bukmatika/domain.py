@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
@@ -55,15 +56,8 @@ def canonical_source(value: str) -> str:
     return "_".join(value.strip().casefold().replace("-", " ").split())
 
 
-def _unique_nonempty(values: list[str], normalizer: object) -> list[str]:
-    if normalizer is canonical_language:
-        normalized = [canonical_language(value) for value in values]
-    elif normalizer is canonical_format:
-        normalized = [canonical_format(value) for value in values]
-    elif normalizer is canonical_source:
-        normalized = [canonical_source(value) for value in values]
-    else:
-        raise TypeError("unsupported discovery preference normalizer")
+def _unique_nonempty(values: list[str], normalizer: Callable[[str], str]) -> list[str]:
+    normalized = [normalizer(value) for value in values]
     return list(dict.fromkeys(value for value in normalized if value))
 
 

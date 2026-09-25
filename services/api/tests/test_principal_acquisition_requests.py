@@ -1,7 +1,7 @@
 from uuid import UUID
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_acquisition_jobs import _scope, _seed_open_asset, _settings
 
@@ -17,8 +17,9 @@ from bukmatika.acquisition.requests import (
     PrincipalAcquisitionService,
 )
 from bukmatika.persistence.acquisition_request_models import AcquisitionRequest
+from bukmatika.persistence.events import SemanticEventType
 from bukmatika.persistence.jobs import JobRepository, JobStatus
-from bukmatika.persistence.models import Acquisition, Principal
+from bukmatika.persistence.models import Acquisition, InteractionEvent, Principal
 
 
 async def _principal(session: AsyncSession, suffix: str) -> Principal:
@@ -44,6 +45,24 @@ async def _service(
 
 async def _global_acquisition(session: AsyncSession, asset_id: UUID) -> Acquisition | None:
     return await session.scalar(select(Acquisition).where(Acquisition.asset_id == asset_id))
+
+
+async def _event_count(
+    session: AsyncSession,
+    *,
+    principal_id: UUID,
+    asset_id: UUID,
+    event_type: SemanticEventType,
+) -> int:
+    count = await session.scalar(
+        select(func.count(InteractionEvent.id)).where(
+            InteractionEvent.principal_id == principal_id,
+            InteractionEvent.entity_type == "asset",
+            InteractionEvent.entity_id == asset_id,
+            InteractionEvent.event_type == event_type.value,
+        )
+    )
+    return int(count or 0)
 
 
 async def test_default_policy_requires_approval_before_global_enqueue(
@@ -93,6 +112,24 @@ async def test_auto_eligible_explicit_request_enqueues_once(
         )
     ).all()
     assert len(rows) == 1
+    assert (
+        await _event_count(
+            session,
+            principal_id=principal.id,
+            asset_id=asset.id,
+            event_type=SemanticEventType.ACQUISITION_REQUEST_CREATED,
+        )
+        == 1
+    )
+    assert (
+        await _event_count(
+            session,
+            principal_id=principal.id,
+            asset_id=asset.id,
+            event_type=SemanticEventType.ACQUISITION_REQUEST_APPROVED,
+        )
+        == 1
+    )
 
 
 async def test_two_principals_share_transfer_and_last_cancel_stops_it(
@@ -171,6 +208,15 @@ async def test_cancelled_request_can_be_explicitly_requested_again(
     assert restarted.status is AcquisitionRequestStatus.PENDING_APPROVAL
     assert restarted.cancelled_at is None
     assert restarted.acquisition_id is None
+    assert (
+        await _event_count(
+            session,
+            principal_id=principal.id,
+            asset_id=asset.id,
+            event_type=SemanticEventType.ACQUISITION_REQUEST_CREATED,
+        )
+        == 2
+    )
 
 
 async def test_manual_approval_enqueues_shared_transfer(

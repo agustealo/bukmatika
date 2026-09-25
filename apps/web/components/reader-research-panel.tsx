@@ -261,8 +261,17 @@ export function ReaderResearchPanel({
   const [aiStatus, setAIStatus] = useState<AIStatus | null>(null);
   const [activeAction, setActiveAction] = useState<ActiveAction>(null);
   const [error, setError] = useState<string | null>(null);
-  const activeSectionRef = useRef(sectionId);
+  const requestSequence = useRef(0);
   const loading = activeAction !== null;
+  const scopeKey = JSON.stringify([
+    libraryEntryId,
+    documentId,
+    sectionId,
+    question.trim(),
+    selectedHighlightIds,
+  ]);
+  const currentScopeKey = useRef(scopeKey);
+  currentScopeKey.current = scopeKey;
 
   useEffect(() => {
     let cancelled = false;
@@ -285,28 +294,27 @@ export function ReaderResearchPanel({
   }, []);
 
   useEffect(() => {
-    activeSectionRef.current = sectionId;
+    requestSequence.current += 1;
     setBundle(null);
     setAnswer(null);
     setAnswerModel(null);
     setTimeline(null);
     setMentions(null);
     setError(null);
-  }, [sectionId]);
+    setActiveAction(null);
+  }, [scopeKey]);
+
+  useEffect(
+    () => () => {
+      requestSequence.current += 1;
+    },
+    [],
+  );
 
   useEffect(() => {
     const available = new Set(highlights.map((highlight) => highlight.highlight_id));
     setSelectedHighlightIds((current) => current.filter((id) => available.has(id)));
   }, [highlights]);
-
-  useEffect(() => {
-    setBundle(null);
-    setAnswer(null);
-    setAnswerModel(null);
-    setTimeline(null);
-    setMentions(null);
-    setError(null);
-  }, [selectedHighlightIds]);
 
   const canSynthesize = aiStatus?.ready === true && aiStatus.ai_enabled === true;
 
@@ -320,19 +328,37 @@ export function ReaderResearchPanel({
     });
   }
 
-  function requestBody(requestedSectionId: string, normalizedQuestion: string) {
+  function requestBody(
+    requestedSectionId: string,
+    requestedCharOffset: number,
+    normalizedQuestion: string,
+    requestedHighlightIds: string[],
+  ) {
     return {
       question: normalizedQuestion,
       reader: {
         library_entry_id: libraryEntryId,
         document_id: documentId,
         section_id: requestedSectionId,
-        char_offset: visibleReaderCharOffset(requestedSectionId),
+        char_offset: requestedCharOffset,
       },
       library_entry_ids: [libraryEntryId],
-      selected_highlight_ids: selectedHighlightIds,
+      selected_highlight_ids: requestedHighlightIds,
       related_limit: 6,
     };
+  }
+
+  function requestIsCurrent(
+    requestId: number,
+    requestScopeKey: string,
+    requestedSectionId: string,
+    requestedCharOffset: number,
+  ): boolean {
+    return (
+      requestId === requestSequence.current &&
+      requestScopeKey === currentScopeKey.current &&
+      visibleReaderCharOffset(requestedSectionId) === requestedCharOffset
+    );
   }
 
   async function research(event: FormEvent<HTMLFormElement>) {
@@ -341,10 +367,22 @@ export function ReaderResearchPanel({
     const requestedSectionId = sectionId;
     if (!requestedSectionId || !normalized || loading) return;
 
+    const requestId = requestSequence.current + 1;
+    requestSequence.current = requestId;
+    const requestScopeKey = scopeKey;
+    const requestedCharOffset = visibleReaderCharOffset(requestedSectionId);
+    const requestedHighlightIds = [...selectedHighlightIds];
     const requestInit = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody(requestedSectionId, normalized)),
+      body: JSON.stringify(
+        requestBody(
+          requestedSectionId,
+          requestedCharOffset,
+          normalized,
+          requestedHighlightIds,
+        ),
+      ),
     };
 
     setActiveAction("research");
@@ -386,7 +424,14 @@ export function ReaderResearchPanel({
 
       if (usedSynthesis) {
         const payload = (await response.json()) as GroundedResearchResponse;
-        if (activeSectionRef.current === requestedSectionId) {
+        if (
+          requestIsCurrent(
+            requestId,
+            requestScopeKey,
+            requestedSectionId,
+            requestedCharOffset,
+          )
+        ) {
           setBundle(payload.evidence);
           setAnswer(payload.answer);
           setAnswerModel(
@@ -395,19 +440,30 @@ export function ReaderResearchPanel({
         }
       } else {
         const payload = (await response.json()) as EvidenceBundle;
-        if (activeSectionRef.current === requestedSectionId) {
+        if (
+          requestIsCurrent(
+            requestId,
+            requestScopeKey,
+            requestedSectionId,
+            requestedCharOffset,
+          )
+        ) {
           setBundle(payload);
         }
       }
     } catch (caught) {
-      if (activeSectionRef.current === requestedSectionId) {
+      if (
+        requestIsCurrent(requestId, requestScopeKey, requestedSectionId, requestedCharOffset)
+      ) {
         setBundle(null);
         setAnswer(null);
         setAnswerModel(null);
         setError(caught instanceof Error ? caught.message : "Could not research this passage.");
       }
     } finally {
-      setActiveAction(null);
+      if (requestId === requestSequence.current) {
+        setActiveAction(null);
+      }
     }
   }
 
@@ -415,6 +471,12 @@ export function ReaderResearchPanel({
     const normalized = question.trim();
     const requestedSectionId = sectionId;
     if (!requestedSectionId || !normalized || loading) return;
+
+    const requestId = requestSequence.current + 1;
+    requestSequence.current = requestId;
+    const requestScopeKey = scopeKey;
+    const requestedCharOffset = visibleReaderCharOffset(requestedSectionId);
+    const requestedHighlightIds = [...selectedHighlightIds];
 
     setActiveAction("timeline");
     setError(null);
@@ -427,24 +489,37 @@ export function ReaderResearchPanel({
       const response = await apiFetch("/v1/research/timeline", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody(requestedSectionId, normalized)),
+        body: JSON.stringify(
+          requestBody(
+            requestedSectionId,
+            requestedCharOffset,
+            normalized,
+            requestedHighlightIds,
+          ),
+        ),
       });
       if (!response.ok) {
         throw new Error(`Timeline grounding failed with HTTP ${response.status}.`);
       }
       const payload = (await response.json()) as TimelineResponse;
-      if (activeSectionRef.current === requestedSectionId) {
+      if (
+        requestIsCurrent(requestId, requestScopeKey, requestedSectionId, requestedCharOffset)
+      ) {
         setTimeline(payload);
         setBundle(payload.evidence);
       }
     } catch (caught) {
-      if (activeSectionRef.current === requestedSectionId) {
+      if (
+        requestIsCurrent(requestId, requestScopeKey, requestedSectionId, requestedCharOffset)
+      ) {
         setTimeline(null);
         setBundle(null);
         setError(caught instanceof Error ? caught.message : "Could not build this timeline.");
       }
     } finally {
-      setActiveAction(null);
+      if (requestId === requestSequence.current) {
+        setActiveAction(null);
+      }
     }
   }
 
@@ -452,6 +527,12 @@ export function ReaderResearchPanel({
     const normalized = question.trim();
     const requestedSectionId = sectionId;
     if (!requestedSectionId || !normalized || loading) return;
+
+    const requestId = requestSequence.current + 1;
+    requestSequence.current = requestId;
+    const requestScopeKey = scopeKey;
+    const requestedCharOffset = visibleReaderCharOffset(requestedSectionId);
+    const requestedHighlightIds = [...selectedHighlightIds];
 
     setActiveAction("mentions");
     setError(null);
@@ -464,24 +545,37 @@ export function ReaderResearchPanel({
       const response = await apiFetch("/v1/research/mentions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody(requestedSectionId, normalized)),
+        body: JSON.stringify(
+          requestBody(
+            requestedSectionId,
+            requestedCharOffset,
+            normalized,
+            requestedHighlightIds,
+          ),
+        ),
       });
       if (!response.ok) {
         throw new Error(`Mention grounding failed with HTTP ${response.status}.`);
       }
       const payload = (await response.json()) as MentionsResponse;
-      if (activeSectionRef.current === requestedSectionId) {
+      if (
+        requestIsCurrent(requestId, requestScopeKey, requestedSectionId, requestedCharOffset)
+      ) {
         setMentions(payload);
         setBundle(payload.evidence);
       }
     } catch (caught) {
-      if (activeSectionRef.current === requestedSectionId) {
+      if (
+        requestIsCurrent(requestId, requestScopeKey, requestedSectionId, requestedCharOffset)
+      ) {
         setMentions(null);
         setBundle(null);
         setError(caught instanceof Error ? caught.message : "Could not extract evidence mentions.");
       }
     } finally {
-      setActiveAction(null);
+      if (requestId === requestSequence.current) {
+        setActiveAction(null);
+      }
     }
   }
 

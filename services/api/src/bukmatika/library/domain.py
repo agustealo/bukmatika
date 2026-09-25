@@ -183,6 +183,12 @@ class TagUpdate(TagAssignRequest):
     pass
 
 
+class TagResponse(BaseModel):
+    tag_id: UUID
+    name: str
+    item_count: int = Field(ge=0)
+
+
 class SmartShelfRule(BaseModel):
     reading_status: LibraryReadingStatus | None = None
     collection_id: UUID | None = None

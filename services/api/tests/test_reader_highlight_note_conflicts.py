@@ -3,12 +3,14 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_reader import _scope, _seed_reader_document
 
 from bukmatika.identity import AuthenticatedPrincipal
 from bukmatika.persistence.reader_highlight_notes import ReaderHighlightConflict
 from bukmatika.reader import HighlightCreate, HighlightNoteUpdate, ReaderService
+from bukmatika.reader.domain import HighlightNoteRequest
 from bukmatika.reader.routes import update_highlight_note as update_highlight_note_route
 
 
@@ -71,7 +73,12 @@ async def test_stale_highlight_note_revision_cannot_overwrite_newer_note(
     assert persisted.updated_at == newer.updated_at
 
 
-async def test_public_note_route_requires_revision_and_maps_stale_conflict(
+def test_public_note_request_requires_revision() -> None:
+    with pytest.raises(ValidationError):
+        HighlightNoteRequest.model_validate({"note": "No revision"})
+
+
+async def test_public_note_route_maps_stale_revision_to_conflict(
     session: AsyncSession,
 ) -> None:
     entry, document, sections = await _seed_reader_document(session, suffix="note-route")
@@ -93,18 +100,6 @@ async def test_public_note_route_requires_revision_and_maps_stale_conflict(
         ),
     )
 
-    with pytest.raises(HTTPException) as missing_revision:
-        await update_highlight_note_route(
-            library_entry_id=entry.id,
-            document_id=document.id,
-            highlight_id=created.highlight_id,
-            update=HighlightNoteUpdate(note="No revision"),
-            identity=identity,
-            service=service,
-        )
-    assert missing_revision.value.status_code == 422
-    assert missing_revision.value.detail == {"code": "READER_HIGHLIGHT_REVISION_REQUIRED"}
-
     await service.update_highlight_note(
         principal_id=entry.principal_id,
         library_entry_id=entry.id,
@@ -121,7 +116,7 @@ async def test_public_note_route_requires_revision_and_maps_stale_conflict(
             library_entry_id=entry.id,
             document_id=document.id,
             highlight_id=created.highlight_id,
-            update=HighlightNoteUpdate(
+            update=HighlightNoteRequest(
                 note="Stale route overwrite",
                 expected_updated_at=created.updated_at,
             ),

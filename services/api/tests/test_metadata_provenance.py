@@ -1,8 +1,9 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import HttpUrl
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.catalog import CatalogResolver
@@ -10,6 +11,7 @@ from bukmatika.discovery.base import DiscoveredRecord
 from bukmatika.domain import DiscoveredAsset, DiscoveryCandidate, RightsEvidence, RightsState
 from bukmatika.library.provenance import MetadataProvenanceService
 from bukmatika.persistence.catalog import CatalogRepository
+from bukmatika.persistence.models import Work
 
 
 def _scope(session: AsyncSession):  # type: ignore[no-untyped-def]
@@ -72,11 +74,19 @@ def _edition_record(
     )
 
 
+async def _work_id(session: AsyncSession) -> Any:
+    work_id = await session.scalar(
+        select(Work.id).where(Work.canonical_title == "Provenance Test Work")
+    )
+    assert work_id is not None
+    return work_id
+
+
 async def test_dossier_provenance_exposes_conflicting_assertions_without_raw_payload(
     session: AsyncSession,
 ) -> None:
     resolver = CatalogResolver(CatalogRepository(session))
-    first = await resolver.ingest(
+    await resolver.ingest(
         _edition_record(
             source="provider-a",
             record_id="edition-a",
@@ -95,11 +105,12 @@ async def test_dossier_provenance_exposes_conflicting_assertions_without_raw_pay
         )
     )
     await session.flush()
+    work_id = await _work_id(session)
 
     service = MetadataProvenanceService(session_scope_factory=_scope(session))
-    dossier = await service.dossier_for_work(work_id=first.work_id)
+    dossier = await service.dossier_for_work(work_id=work_id)
 
-    assert dossier.work_id == first.work_id
+    assert dossier.work_id == work_id
     assert dossier.title == "Provenance Test Work"
     assert len(dossier.editions) == 1
 
@@ -128,7 +139,7 @@ async def test_dossier_provenance_exposes_conflicting_assertions_without_raw_pay
 
 async def test_source_identity_resolves_same_provenance_projection(session: AsyncSession) -> None:
     resolver = CatalogResolver(CatalogRepository(session))
-    ingested = await resolver.ingest(
+    await resolver.ingest(
         _edition_record(
             source="provider-source",
             record_id="edition-source",
@@ -137,12 +148,14 @@ async def test_source_identity_resolves_same_provenance_projection(session: Asyn
         )
     )
     await session.flush()
+    work_id = await _work_id(session)
 
     service = MetadataProvenanceService(session_scope_factory=_scope(session))
-    by_work = await service.dossier_for_work(work_id=ingested.work_id)
+    by_work = await service.dossier_for_work(work_id=work_id)
     by_source = await service.dossier_for_source(
         provider="provider-source",
         provider_record_id="edition-source",
     )
 
+    assert by_work.work_id == work_id
     assert by_source == by_work

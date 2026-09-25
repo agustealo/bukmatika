@@ -231,7 +231,12 @@ export function DelegationResults() {
                 </>
               ) : result.available ? (
                 <>
-                  <h3>{result.query ?? "Delegated research search"}</h3>
+                  <h3>{result.user_request ?? result.query ?? "Delegated research search"}</h3>
+                  {result.query ? (
+                    <p className={styles.plannedQuery}>
+                      <strong>Executed query:</strong> {result.query}
+                    </p>
+                  ) : null}
                   <SourceScope result={result} />
                   {result.passages.length === 0 ? (
                     <p className={styles.muted}>The search completed with no matching passages.</p>
@@ -257,7 +262,12 @@ export function DelegationResults() {
                 </>
               ) : (
                 <>
-                  {result.query ? <h3>{result.query}</h3> : null}
+                  <h3>{result.user_request ?? result.query ?? "Completed delegated research"}</h3>
+                  {result.query ? (
+                    <p className={styles.plannedQuery}>
+                      <strong>Executed query:</strong> {result.query}
+                    </p>
+                  ) : null}
                   <SourceScope result={result} />
                   <p className={styles.unavailable}>{terminalMessage(result)}</p>
                 </>

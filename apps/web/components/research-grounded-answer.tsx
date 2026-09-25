@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import { readerSourceHref } from "../lib/reader-links";
 import styles from "./research-grounded-answer.module.css";
 
 type EvidenceItem = {
@@ -44,14 +45,6 @@ type ResearchGroundedAnswerProps = {
   libraryEntryIds: string[];
   hasEvidence: boolean;
 };
-
-function evidenceHref(item: EvidenceItem): string {
-  const params = new URLSearchParams({
-    section: String(item.section_ordinal),
-    offset: String(item.char_start),
-  });
-  return `/read/${item.library_entry_id}/${item.document_id}?${params.toString()}#reader-section-${item.section_id}`;
-}
 
 function citationLabel(evidenceIds: string[]): string {
   return evidenceIds.join(", ");
@@ -255,7 +248,17 @@ export function ResearchGroundedAnswer({
                   <span>
                     {item.source_kind} · offsets {item.char_start}–{item.char_end}
                   </span>
-                  <a href={evidenceHref(item)}>Open source</a>
+                  <a
+                    href={readerSourceHref(
+                      item.library_entry_id,
+                      item.document_id,
+                      item.section_id,
+                      item.section_ordinal,
+                      item.char_start,
+                    )}
+                  >
+                    Open source
+                  </a>
                 </div>
               </article>
             ))}

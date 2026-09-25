@@ -149,11 +149,11 @@ export function MetadataProvenancePanel(props: MetadataProvenancePanelProps) {
       };
     }
 
-    async function load() {
+    async function load(path: string) {
       setLoading(true);
       setError(null);
       try {
-        const response = await apiFetch(activePath, { cache: "no-store" });
+        const response = await apiFetch(path, { cache: "no-store" });
         if (!response.ok) {
           throw new Error(`Metadata provenance failed with HTTP ${response.status}.`);
         }
@@ -171,7 +171,7 @@ export function MetadataProvenancePanel(props: MetadataProvenancePanelProps) {
       }
     }
 
-    void load();
+    void load(activePath);
     return () => {
       cancelled = true;
     };

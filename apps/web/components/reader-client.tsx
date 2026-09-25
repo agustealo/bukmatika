@@ -430,14 +430,27 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
 
   async function updateHighlightNote(highlightId: string, note: string | null) {
     if (annotationBusyKey !== null) return;
+    const currentHighlight = highlights.find((highlight) => highlight.highlight_id === highlightId);
+    if (!currentHighlight) {
+      setError("This highlight is no longer available.");
+      return;
+    }
     setAnnotationBusyKey(highlightId);
     setError(null);
     try {
       const response = await apiFetch(`${basePath}/highlights/${highlightId}/note`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note }),
+        body: JSON.stringify({
+          note,
+          expected_updated_at: currentHighlight.updated_at,
+        }),
       });
+      if (response.status === 409) {
+        throw new Error(
+          "This highlight note changed in another tab. Your draft is still here; reload before saving again.",
+        );
+      }
       if (!response.ok) throw new Error(`Note update failed with HTTP ${response.status}.`);
       const updated = (await response.json()) as ReaderHighlight;
       setHighlights((current) =>

@@ -4,14 +4,13 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bukmatika.library.domain import DossierIdentityConflict, DossierNotFound
 from bukmatika.library.provenance_domain import (
     EditionMetadataProvenanceResponse,
     MetadataAssertionResponse,
     WorkMetadataProvenanceResponse,
 )
 from bukmatika.persistence import session_scope
-from bukmatika.persistence.library import LibraryRepository
+from bukmatika.persistence.library import DossierNotFound, LibraryRepository
 from bukmatika.persistence.metadata_provenance import (
     MetadataProvenanceRecord,
     MetadataProvenanceRepository,
@@ -104,8 +103,4 @@ def _assertion_response(record: MetadataProvenanceRecord) -> MetadataAssertionRe
     )
 
 
-__all__ = [
-    "DossierIdentityConflict",
-    "DossierNotFound",
-    "MetadataProvenanceService",
-]
+__all__ = ["MetadataProvenanceService"]

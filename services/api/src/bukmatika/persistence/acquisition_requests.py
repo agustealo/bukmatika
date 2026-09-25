@@ -71,6 +71,7 @@ class AcquisitionRequestRepository:
         principal_id: UUID,
         asset_id: UUID,
         approval_mode: str,
+        reactivate_terminal: bool = False,
     ) -> AcquisitionRequest:
         request = await self.request_for_asset(
             principal_id=principal_id,
@@ -84,7 +85,7 @@ class AcquisitionRequestRepository:
                 approval_mode=approval_mode,
             )
             self._session.add(request)
-        elif request.cancelled_at is not None:
+        elif request.cancelled_at is not None or reactivate_terminal:
             request.approval_mode = approval_mode
             request.approved_at = None
             request.cancelled_at = None

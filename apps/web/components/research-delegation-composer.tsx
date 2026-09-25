@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 import styles from "./research-delegation-composer.module.css";
@@ -43,7 +43,16 @@ type ResearchDelegationComposerProps = {
   researchRequest: string;
 };
 
+type PreviousScopeNotice = {
+  key: string;
+  kind: "plan" | "plan-uncertain" | "proposal" | "proposal-uncertain";
+  title: string;
+  message: string;
+  resourceId?: string;
+};
+
 const DELEGATABLE_CAPABILITY = "research.search";
+const MAX_PREVIOUS_SCOPE_NOTICES = 3;
 
 function readableCapability(value: string): string {
   return value.replaceAll(".", " · ").replaceAll("_", " ");
@@ -83,14 +92,34 @@ export function ResearchDelegationComposer({
   const [drafting, setDrafting] = useState(false);
   const [proposing, setProposing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previousScopeNotices, setPreviousScopeNotices] = useState<PreviousScopeNotice[]>([]);
+  const draftSequence = useRef(0);
+  const proposalSequence = useRef(0);
+  const mounted = useRef(true);
 
-  const selectionKey = libraryEntryIds.join(",");
+  const scopeKey = JSON.stringify([researchRequest.trim(), libraryEntryIds]);
+  const currentScopeKey = useRef(scopeKey);
+  currentScopeKey.current = scopeKey;
+
   useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      draftSequence.current += 1;
+      proposalSequence.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    draftSequence.current += 1;
+    proposalSequence.current += 1;
     setPlan(null);
     setSelectedStepIds([]);
     setProposal(null);
     setError(null);
-  }, [researchRequest, selectionKey]);
+    setDrafting(false);
+    setProposing(false);
+  }, [scopeKey]);
 
   const decisionByStep = useMemo(
     () => new Map(plan?.decisions.map((decision) => [decision.step_id, decision]) ?? []),
@@ -117,20 +146,34 @@ export function ResearchDelegationComposer({
     !proposing &&
     !drafting;
 
+  function addPreviousScopeNotice(notice: PreviousScopeNotice) {
+    setPreviousScopeNotices((current) => [
+      notice,
+      ...current.filter((item) => item.key !== notice.key),
+    ].slice(0, MAX_PREVIOUS_SCOPE_NOTICES));
+  }
+
   async function draftPlan() {
     if (!canDraft) return;
+
+    const requestId = draftSequence.current + 1;
+    draftSequence.current = requestId;
+    const requestScopeKey = scopeKey;
+    const requestText = researchRequest.trim();
+    const requestLibraryEntryIds = [...libraryEntryIds];
     setDrafting(true);
     setError(null);
     setProposal(null);
+
     try {
       const response = await apiFetch("/v1/ai/plans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_request: researchRequest.trim(),
+          user_request: requestText,
           context_request: {
             task: "research",
-            library_entry_ids: libraryEntryIds,
+            library_entry_ids: requestLibraryEntryIds,
             scopes: [],
           },
         }),
@@ -139,6 +182,20 @@ export function ResearchDelegationComposer({
         throw await responseError(response, "Could not draft the research plan");
       }
       const nextPlan = (await response.json()) as PersistedPlan;
+      if (!mounted.current) return;
+      if (requestScopeKey !== currentScopeKey.current) {
+        addPreviousScopeNotice({
+          key: `plan:${nextPlan.plan_id}`,
+          kind: "plan",
+          title: "Previous-scope plan drafted",
+          message:
+            "A persisted plan finished for an earlier research question or source selection. Nothing was delegated. Draft again if you want a plan for the current scope.",
+          resourceId: nextPlan.plan_id,
+        });
+        return;
+      }
+      if (requestId !== draftSequence.current) return;
+
       const nextDecisionByStep = new Map(
         nextPlan.decisions.map((decision) => [decision.step_id, decision]),
       );
@@ -152,37 +209,97 @@ export function ResearchDelegationComposer({
       setPlan(nextPlan);
       setSelectedStepIds(nextEligible);
     } catch (caught) {
+      if (!mounted.current) return;
+      if (requestScopeKey !== currentScopeKey.current) {
+        addPreviousScopeNotice({
+          key: `plan-uncertain:${requestId}:${requestScopeKey}`,
+          kind: "plan-uncertain",
+          title: "Previous-scope plan request needs review",
+          message:
+            "The earlier plan request did not return a usable confirmation to this view. It may have persisted, but no delegation was created from this page.",
+        });
+        return;
+      }
+      if (requestId !== draftSequence.current) return;
       setPlan(null);
       setSelectedStepIds([]);
       setError(caught instanceof Error ? caught.message : "Could not draft the research plan.");
     } finally {
-      setDrafting(false);
+      if (
+        mounted.current &&
+        requestId === draftSequence.current &&
+        requestScopeKey === currentScopeKey.current
+      ) {
+        setDrafting(false);
+      }
     }
   }
 
   async function createProposal() {
     if (!plan || !canPropose) return;
+
+    const requestId = proposalSequence.current + 1;
+    proposalSequence.current = requestId;
+    const requestScopeKey = scopeKey;
+    const requestPlanId = plan.plan_id;
+    const requestStepIds = [...selectedStepIds];
+    const requestRuntimeSeconds = runtimeSeconds;
+    const requestRetriesPerStep = retriesPerStep;
+    const requestMaxTotalAttempts = maxTotalAttempts;
     setProposing(true);
     setError(null);
+
     try {
-      const response = await apiFetch(`/v1/ai/plans/${plan.plan_id}/delegations`, {
+      const response = await apiFetch(`/v1/ai/plans/${requestPlanId}/delegations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          step_ids: selectedStepIds,
-          max_runtime_seconds: runtimeSeconds,
-          max_retries_per_step: retriesPerStep,
-          max_total_attempts: maxTotalAttempts,
+          step_ids: requestStepIds,
+          max_runtime_seconds: requestRuntimeSeconds,
+          max_retries_per_step: requestRetriesPerStep,
+          max_total_attempts: requestMaxTotalAttempts,
         }),
       });
       if (!response.ok) {
         throw await responseError(response, "Could not create the delegation proposal");
       }
-      setProposal((await response.json()) as DelegationProposal);
+      const nextProposal = (await response.json()) as DelegationProposal;
+      if (!mounted.current) return;
+      if (requestScopeKey !== currentScopeKey.current) {
+        addPreviousScopeNotice({
+          key: `proposal:${nextProposal.delegation_id}`,
+          kind: "proposal",
+          title: "Previous-scope delegation proposal created",
+          message:
+            "A proposal was created for the earlier research scope. Nothing is running. Review or reject that exact proposal in AI controls before starting any work.",
+          resourceId: nextProposal.delegation_id,
+        });
+        return;
+      }
+      if (requestId !== proposalSequence.current) return;
+      setProposal(nextProposal);
     } catch (caught) {
+      if (!mounted.current) return;
+      if (requestScopeKey !== currentScopeKey.current) {
+        addPreviousScopeNotice({
+          key: `proposal-uncertain:${requestId}:${requestScopeKey}`,
+          kind: "proposal-uncertain",
+          title: "Previous-scope proposal request needs review",
+          message:
+            "The earlier proposal request did not return a confirmed outcome to this view. Check AI controls before retrying so a durable proposal is not duplicated.",
+        });
+        return;
+      }
+      if (requestId !== proposalSequence.current) return;
       setError(caught instanceof Error ? caught.message : "Could not create the delegation proposal.");
     } finally {
-      setProposing(false);
+      if (
+        mounted.current &&
+        requestId === proposalSequence.current &&
+        requestScopeKey === currentScopeKey.current
+      ) {
+        setProposing(false);
+      }
     }
   }
 
@@ -226,6 +343,21 @@ export function ResearchDelegationComposer({
       {error ? (
         <div className={styles.error} role="alert">
           {error}
+        </div>
+      ) : null}
+
+      {previousScopeNotices.length > 0 ? (
+        <div className={styles.previousScopeNotices} aria-label="Previous research scope outcomes">
+          {previousScopeNotices.map((notice) => (
+            <div className={styles.scopeNotice} key={notice.key} role="status">
+              <strong>{notice.title}</strong>
+              <p>{notice.message}</p>
+              {notice.resourceId ? <code>{notice.resourceId}</code> : null}
+              {notice.kind === "proposal" || notice.kind === "proposal-uncertain" ? (
+                <a href="/personalization">Review in AI controls</a>
+              ) : null}
+            </div>
+          ))}
         </div>
       ) : null}
 
@@ -291,7 +423,9 @@ export function ResearchDelegationComposer({
               <div className={styles.budgetHeading}>
                 <div>
                   <span>Execution budget</span>
-                  <strong>{selectedStepIds.length} selected step{selectedStepIds.length === 1 ? "" : "s"}</strong>
+                  <strong>
+                    {selectedStepIds.length} selected step{selectedStepIds.length === 1 ? "" : "s"}
+                  </strong>
                 </div>
                 <p>
                   The worker may only consume this exact persisted selection. Changing the plan or

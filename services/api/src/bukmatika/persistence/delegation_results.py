@@ -15,6 +15,7 @@ _TERMINAL_NONRESULT_STATUSES = ("rejected", "stopped", "failed", "cancelled")
 class StoredDelegationResult:
     result: AIDelegationAttemptResult
     attempt: AIDelegationAttempt
+    delegation: AIDelegation
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,14 +73,22 @@ class DelegationResultRepository:
     ) -> list[StoredDelegationResult]:
         rows = (
             await self._session.execute(
-                select(AIDelegationAttemptResult, AIDelegationAttempt)
+                select(AIDelegationAttemptResult, AIDelegationAttempt, AIDelegation)
                 .join(
                     AIDelegationAttempt,
                     AIDelegationAttempt.id == AIDelegationAttemptResult.attempt_id,
                 )
+                .join(
+                    AIDelegation,
+                    and_(
+                        AIDelegation.id == AIDelegationAttempt.delegation_id,
+                        AIDelegation.principal_id == AIDelegationAttempt.principal_id,
+                    ),
+                )
                 .where(
                     AIDelegationAttemptResult.principal_id == principal_id,
                     AIDelegationAttempt.principal_id == principal_id,
+                    AIDelegation.principal_id == principal_id,
                     AIDelegationAttempt.status == "completed",
                     AIDelegationAttempt.finished_at.is_not(None),
                 )
@@ -90,7 +99,10 @@ class DelegationResultRepository:
                 .limit(limit)
             )
         ).all()
-        return [StoredDelegationResult(result=result, attempt=attempt) for result, attempt in rows]
+        return [
+            StoredDelegationResult(result=result, attempt=attempt, delegation=delegation)
+            for result, attempt, delegation in rows
+        ]
 
     async def recent_terminal(
         self,

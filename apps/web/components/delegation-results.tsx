@@ -25,6 +25,15 @@ type DelegationResultSource = {
   available: boolean;
 };
 
+type DelegationResultBudget = {
+  selected_step_count: number;
+  attempts_used: number;
+  max_total_attempts: number;
+  max_retries_per_step: number;
+  max_runtime_seconds: number;
+  started_at: string | null;
+};
+
 type DelegationOutcomeStatus = "rejected" | "stopped" | "completed" | "failed" | "cancelled";
 
 type DelegationResult = {
@@ -38,6 +47,7 @@ type DelegationResult = {
   failure_code: string | null;
   attempt_error_code: string | null;
   user_request: string | null;
+  budget: DelegationResultBudget;
   available: boolean;
   unavailable_reason: string | null;
   query: string | null;
@@ -88,6 +98,31 @@ function terminalMessage(result: DelegationResult): string {
     case "completed":
       return result.unavailable_reason ?? "The canonical source is no longer available.";
   }
+}
+
+function BudgetStory({ budget }: { budget: DelegationResultBudget }) {
+  return (
+    <dl className={styles.budgetGrid}>
+      <div>
+        <dt>Attempts</dt>
+        <dd>
+          {budget.attempts_used} / {budget.max_total_attempts}
+        </dd>
+      </div>
+      <div>
+        <dt>Steps</dt>
+        <dd>{budget.selected_step_count}</dd>
+      </div>
+      <div>
+        <dt>Retries / step</dt>
+        <dd>{budget.max_retries_per_step}</dd>
+      </div>
+      <div>
+        <dt>Runtime ceiling</dt>
+        <dd>{budget.max_runtime_seconds}s</dd>
+      </div>
+    </dl>
+  );
 }
 
 function SourceScope({ result }: { result: DelegationResult }) {
@@ -180,6 +215,7 @@ export function DelegationResults() {
                 </span>
                 <span>{new Date(result.outcome_at).toLocaleString()}</span>
               </div>
+              <BudgetStory budget={result.budget} />
               {terminal ? (
                 <>
                   <h3>{result.user_request ?? `${statusLabel(result.status)} delegated research`}</h3>

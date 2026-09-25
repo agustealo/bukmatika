@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 import { ResearchDelegationComposer } from "./research-delegation-composer";
+import { ResearchGroundedAnswer } from "./research-grounded-answer";
 
 type LibraryItem = {
   library_entry_id: string;
@@ -350,6 +351,12 @@ export function ResearchClient() {
                   </strong>
                   <span>{selectionLabel(searchResults.selected_library_entry_ids.length)}</span>
                 </div>
+
+                <ResearchGroundedAnswer
+                  question={searchResults.query}
+                  libraryEntryIds={searchResults.selected_library_entry_ids}
+                  hasEvidence={searchResults.passages.length > 0}
+                />
 
                 {searchResults.passages.length === 0 ? (
                   <div className="empty-surface">

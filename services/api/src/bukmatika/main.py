@@ -24,6 +24,7 @@ from bukmatika.acquisition.jobs import (
 from bukmatika.acquisition.storage import LocalObjectStore
 from bukmatika.ai.delegation_jobs import DelegationJobWorker
 from bukmatika.ai.factory import build_model_gateway
+from bukmatika.ai.research_workspace_routes import router as research_workspace_answer_router
 from bukmatika.ai.routes import router as ai_router
 from bukmatika.catalog import CatalogResolver
 from bukmatika.config import get_settings
@@ -179,6 +180,7 @@ app.include_router(reader_router)
 app.include_router(research_router)
 app.include_router(personalization_router)
 app.include_router(ai_router)
+app.include_router(research_workspace_answer_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.web_origin],

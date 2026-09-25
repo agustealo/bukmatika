@@ -132,7 +132,10 @@ async def test_dossier_provenance_exposes_conflicting_assertions_without_raw_pay
     assert all(assertion.confidence == 1.0 for assertion in edition.assertions)
     assert all(assertion.parser_version == "provenance-test-v1" for assertion in edition.assertions)
     assert all(assertion.observation_count == 1 for assertion in edition.assertions)
-    assert all(assertion.source_url.startswith("https://example.org/") for assertion in edition.assertions)
+    assert all(
+        assertion.source_url.startswith("https://example.org/")
+        for assertion in edition.assertions
+    )
     assert "provider_private_note" not in {
         assertion.field_name for assertion in dossier.assertions + edition.assertions
     }

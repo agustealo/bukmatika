@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import { readerSourceHref } from "../lib/reader-links";
 import styles from "./delegation-results.module.css";
 
 type ResearchPassage = {
@@ -57,15 +58,6 @@ type DelegationResult = {
 };
 
 const REFRESH_INTERVAL_MS = 5_000;
-
-function sourceHref(passage: ResearchPassage): string {
-  const section = encodeURIComponent(String(passage.section_ordinal));
-  const offset = encodeURIComponent(String(passage.char_start));
-  return (
-    `/library/${passage.library_entry_id}/read/${passage.document_id}` +
-    `?section=${section}&offset=${offset}#reader-section-${passage.section_id}`
-  );
-}
 
 function statusLabel(status: DelegationOutcomeStatus): string {
   switch (status) {
@@ -274,7 +266,16 @@ export function DelegationResults() {
                             <span>{passage.edition_title}</span>
                           </div>
                           <p>{passage.text}</p>
-                          <a className={styles.sourceLink} href={sourceHref(passage)}>
+                          <a
+                            className={styles.sourceLink}
+                            href={readerSourceHref(
+                              passage.library_entry_id,
+                              passage.document_id,
+                              passage.section_id,
+                              passage.section_ordinal,
+                              passage.char_start,
+                            )}
+                          >
                             Open source
                           </a>
                         </li>

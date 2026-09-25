@@ -81,9 +81,18 @@ class DiscoveryCandidate(BaseModel):
 
 
 class DiscoverySourceStatus(BaseModel):
-    status: Literal["ok", "error", "timeout"]
+    status: Literal["ok", "error", "timeout", "rate_limited"]
     elapsed_ms: int = Field(ge=0)
     result_count: int = Field(ge=0)
+    error_code: Literal[
+        "timeout",
+        "rate_limited",
+        "http_error",
+        "transport_error",
+        "provider_error",
+    ] | None = None
+    http_status_code: int | None = Field(default=None, ge=100, le=599)
+    retry_after_seconds: int | None = Field(default=None, ge=0, le=86_400)
 
 
 class DiscoveryResponse(BaseModel):

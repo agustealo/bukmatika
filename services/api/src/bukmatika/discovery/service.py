@@ -1,9 +1,15 @@
 import asyncio
+import math
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Literal
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
+from typing import Literal, cast
 from uuid import UUID, uuid4
+
+import httpx
+import structlog
 
 from bukmatika.discovery.base import DiscoveredRecord
 from bukmatika.discovery.registry import ProviderRegistration, ProviderRegistry
@@ -14,6 +20,17 @@ from bukmatika.domain import (
     RightsState,
     SearchIntent,
 )
+from bukmatika.observability import StructuredEventLogger
+
+_MAX_RETRY_AFTER_SECONDS = 86_400
+ProviderStatus = Literal["ok", "error", "timeout", "rate_limited"]
+ProviderErrorCode = Literal[
+    "timeout",
+    "rate_limited",
+    "http_error",
+    "transport_error",
+    "provider_error",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,9 +51,12 @@ class DiscoveryBatch:
 class _AdapterResult:
     name: str
     records: list[DiscoveredRecord]
-    status: Literal["ok", "error", "timeout"]
+    status: ProviderStatus
     elapsed_ms: int
     error: str | None = None
+    error_code: ProviderErrorCode | None = None
+    http_status_code: int | None = None
+    retry_after_seconds: int | None = None
 
 
 class DiscoveryService:
@@ -46,6 +66,7 @@ class DiscoveryService:
         *,
         session_timeout_seconds: float,
         max_records: int,
+        logger: StructuredEventLogger | None = None,
     ) -> None:
         if session_timeout_seconds <= 0:
             raise ValueError("session_timeout_seconds must be positive")
@@ -54,6 +75,10 @@ class DiscoveryService:
         self._registry = registry
         self._session_timeout_seconds = session_timeout_seconds
         self._max_records = max_records
+        self._logger = logger or cast(
+            StructuredEventLogger,
+            structlog.get_logger("bukmatika.discovery"),
+        )
 
     def create_session(self) -> SearchSession:
         return SearchSession(
@@ -73,6 +98,9 @@ class DiscoveryService:
             *(self._safe_search(registration, intent, session) for registration in registrations)
         )
 
+        for result in results:
+            self._emit_provider_telemetry(result)
+
         errors = {
             result.name: result.error
             for result in results
@@ -89,6 +117,9 @@ class DiscoveryService:
                 status=result.status,
                 elapsed_ms=result.elapsed_ms,
                 result_count=len(result.records),
+                error_code=result.error_code,
+                http_status_code=result.http_status_code,
+                retry_after_seconds=result.retry_after_seconds,
             )
             for result in results
         }
@@ -123,7 +154,8 @@ class DiscoveryService:
                 records=[],
                 status="timeout",
                 elapsed_ms=0,
-                error="search session deadline reached before provider execution",
+                error="provider timed out",
+                error_code="timeout",
             )
 
         timeout_seconds = min(registration.timeout_seconds, remaining)
@@ -137,24 +169,35 @@ class DiscoveryService:
                 name=registration.name,
                 records=records[: registration.max_results],
                 status="ok",
-                elapsed_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+                elapsed_ms=_elapsed_ms(started_at),
             )
         except TimeoutError:
             return _AdapterResult(
                 name=registration.name,
                 records=[],
                 status="timeout",
-                elapsed_ms=max(0, int((time.monotonic() - started_at) * 1000)),
-                error=f"provider timed out after {timeout_seconds:.2f}s",
+                elapsed_ms=_elapsed_ms(started_at),
+                error="provider timed out",
+                error_code="timeout",
             )
         except Exception as exc:  # source degradation must not collapse federated search
-            return _AdapterResult(
-                name=registration.name,
-                records=[],
-                status="error",
-                elapsed_ms=max(0, int((time.monotonic() - started_at) * 1000)),
-                error=f"{type(exc).__name__}: {exc}",
+            return _classify_provider_failure(
+                registration.name,
+                exc,
+                elapsed_ms=_elapsed_ms(started_at),
             )
+
+    def _emit_provider_telemetry(self, result: _AdapterResult) -> None:
+        self._logger.info(
+            "discovery.provider.completed",
+            source=result.name,
+            status=result.status,
+            elapsed_ms=result.elapsed_ms,
+            result_count=len(result.records),
+            error_code=result.error_code,
+            http_status_code=result.http_status_code,
+            retry_after_seconds=result.retry_after_seconds,
+        )
 
     @staticmethod
     def _deduplicate(records: Iterable[DiscoveredRecord]) -> list[DiscoveredRecord]:
@@ -186,3 +229,98 @@ class DiscoveryService:
             + 0.04 * min(len(candidate.subjects), 4) / 4,
         )
         return candidate.source_score + rights_bonus + metadata_bonus
+
+
+def _classify_provider_failure(
+    source: str,
+    error: Exception,
+    *,
+    elapsed_ms: int,
+) -> _AdapterResult:
+    if isinstance(error, httpx.TimeoutException):
+        return _AdapterResult(
+            name=source,
+            records=[],
+            status="timeout",
+            elapsed_ms=elapsed_ms,
+            error="provider timed out",
+            error_code="timeout",
+        )
+
+    if isinstance(error, httpx.HTTPStatusError):
+        status_code = error.response.status_code
+        retry_after_seconds = _retry_after_seconds(error.response.headers.get("Retry-After"))
+        if status_code == 429:
+            return _AdapterResult(
+                name=source,
+                records=[],
+                status="rate_limited",
+                elapsed_ms=elapsed_ms,
+                error="provider rate limited the request",
+                error_code="rate_limited",
+                http_status_code=status_code,
+                retry_after_seconds=retry_after_seconds,
+            )
+        return _AdapterResult(
+            name=source,
+            records=[],
+            status="error",
+            elapsed_ms=elapsed_ms,
+            error=f"provider returned HTTP {status_code}",
+            error_code="http_error",
+            http_status_code=status_code,
+            retry_after_seconds=retry_after_seconds,
+        )
+
+    if isinstance(error, httpx.TransportError):
+        return _AdapterResult(
+            name=source,
+            records=[],
+            status="error",
+            elapsed_ms=elapsed_ms,
+            error="provider request failed",
+            error_code="transport_error",
+        )
+
+    return _AdapterResult(
+        name=source,
+        records=[],
+        status="error",
+        elapsed_ms=elapsed_ms,
+        error="provider search failed",
+        error_code="provider_error",
+    )
+
+
+def _retry_after_seconds(
+    value: str | None,
+    *,
+    now: datetime | None = None,
+) -> int | None:
+    if value is None:
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+
+    if candidate.isdecimal():
+        return min(int(candidate), _MAX_RETRY_AFTER_SECONDS)
+
+    try:
+        retry_at = parsedate_to_datetime(candidate)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=UTC)
+
+    current_time = now or datetime.now(UTC)
+    seconds = max(0, math.ceil((retry_at - current_time).total_seconds()))
+    return min(seconds, _MAX_RETRY_AFTER_SECONDS)
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return max(0, int((time.monotonic() - started_at) * 1000))
+
+
+def normalize_candidates(records: list[DiscoveredRecord]) -> list[DiscoveryCandidate]:
+    return [record.candidate for record in records]

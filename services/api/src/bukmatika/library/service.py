@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.acquisition.domain import AcquisitionRequestStatus, AcquisitionStatus
 from bukmatika.domain import RightsEvidence
 from bukmatika.library.domain import (
     AssetStatusResponse,
@@ -29,6 +30,7 @@ from bukmatika.library.domain import (
     WorkDossierResponse,
 )
 from bukmatika.persistence import session_scope
+from bukmatika.persistence.acquisition_requests import AcquisitionRequestRepository
 from bukmatika.persistence.library import (
     DossierIdentityConflict,
     DossierNotFound,
@@ -42,7 +44,7 @@ from bukmatika.persistence.library_organization import (
 )
 from bukmatika.persistence.library_organization_models import LibrarySmartShelf
 from bukmatika.persistence.library_resume import LibraryResumeRepository
-from bukmatika.persistence.models import Asset, LibraryEntry, RightsEvidenceRecord
+from bukmatika.persistence.models import Acquisition, Asset, LibraryEntry, RightsEvidenceRecord
 from bukmatika.rights import RightsEngine
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
@@ -69,7 +71,12 @@ class LibraryService:
         async with self._session_scope() as database_session:
             repository = LibraryRepository(database_session)
             work_id = await repository.resolve_source_work_id(provider, provider_record_id)
-            return await self._dossier(repository, principal_id=principal_id, work_id=work_id)
+            return await self._dossier(
+                database_session,
+                repository,
+                principal_id=principal_id,
+                work_id=work_id,
+            )
 
     async def dossier_for_work(
         self,
@@ -79,7 +86,12 @@ class LibraryService:
     ) -> WorkDossierResponse:
         async with self._session_scope() as database_session:
             repository = LibraryRepository(database_session)
-            return await self._dossier(repository, principal_id=principal_id, work_id=work_id)
+            return await self._dossier(
+                database_session,
+                repository,
+                principal_id=principal_id,
+                work_id=work_id,
+            )
 
     async def list_library(
         self,
@@ -455,6 +467,7 @@ class LibraryService:
 
     async def _dossier(
         self,
+        database_session: AsyncSession,
         repository: LibraryRepository,
         *,
         principal_id: UUID,
@@ -470,7 +483,12 @@ class LibraryService:
             specific_entry_id = await repository.edition_library_entry_id(principal_id, edition.id)
             effective_entry_id = specific_entry_id or work_entry_id
             assets = [
-                await self._asset_status(repository, asset)
+                await self._asset_status(
+                    database_session,
+                    repository,
+                    principal_id=principal_id,
+                    asset=asset,
+                )
                 for asset in await repository.assets_for_edition(edition.id)
             ]
             editions.append(
@@ -497,7 +515,10 @@ class LibraryService:
 
     async def _asset_status(
         self,
+        database_session: AsyncSession,
         repository: LibraryRepository,
+        *,
+        principal_id: UUID,
         asset: Asset,
     ) -> AssetStatusResponse:
         acquisition = await repository.acquisition_for_asset(asset.id)
@@ -517,6 +538,31 @@ class LibraryService:
             rights_state = policy.state.value
             acquisition_allowed = policy.unattended_acquisition_allowed
 
+        principal_request = await AcquisitionRequestRepository(database_session).request_for_asset(
+            principal_id=principal_id,
+            asset_id=asset.id,
+        )
+        request_status: str | None = None
+        request_id: UUID | None = None
+        approval_mode: str | None = None
+        if principal_request is not None:
+            request_id = principal_request.id
+            approval_mode = principal_request.approval_mode
+            acquisition_for_request: Acquisition | None = acquisition
+            if (
+                principal_request.acquisition_id is not None
+                and (acquisition is None or acquisition.id != principal_request.acquisition_id)
+            ):
+                acquisition_for_request = await AcquisitionRequestRepository(
+                    database_session
+                ).acquisition(principal_request.acquisition_id)
+            request_status = _acquisition_request_status(
+                principal_request.cancelled_at is not None,
+                principal_request.approved_at is not None,
+                asset.stored_object_id is not None,
+                acquisition_for_request,
+            )
+
         return AssetStatusResponse(
             asset_id=asset.id,
             format=asset.format,
@@ -525,6 +571,9 @@ class LibraryService:
             stored=asset.stored_object_id is not None,
             acquisition_id=acquisition.id if acquisition is not None else None,
             acquisition_status=acquisition.status if acquisition is not None else None,
+            acquisition_request_id=request_id,
+            acquisition_request_status=request_status,
+            acquisition_approval_mode=approval_mode,
             processing_status=processing.status if processing is not None else None,
             processing_error_code=processing.error_code if processing is not None else None,
             ocr_job_id=ocr_job.id if ocr_job is not None else None,
@@ -604,6 +653,28 @@ def _smart_shelf_response(shelf: LibrarySmartShelf, item_count: int) -> SmartShe
         ),
         item_count=item_count,
     )
+
+
+def _acquisition_request_status(
+    cancelled: bool,
+    approved: bool,
+    stored: bool,
+    acquisition: Acquisition | None,
+) -> str:
+    if cancelled:
+        return AcquisitionRequestStatus.CANCELLED.value
+    acquisition_status = (
+        AcquisitionStatus(acquisition.status) if acquisition is not None else None
+    )
+    if stored or acquisition_status is AcquisitionStatus.STORED:
+        return AcquisitionRequestStatus.STORED.value
+    if acquisition_status is AcquisitionStatus.QUARANTINED:
+        return AcquisitionRequestStatus.QUARANTINED.value
+    if acquisition_status is AcquisitionStatus.FAILED:
+        return AcquisitionRequestStatus.FAILED.value
+    if approved:
+        return AcquisitionRequestStatus.ACTIVE.value
+    return AcquisitionRequestStatus.PENDING_APPROVAL.value
 
 
 def _rights_evidence(record: RightsEvidenceRecord) -> RightsEvidence:

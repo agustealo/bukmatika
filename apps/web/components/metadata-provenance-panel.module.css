@@ -54,7 +54,7 @@
 .group {
   border: 1px solid var(--line);
   border-radius: 0.8rem;
-  background: var(--surface);
+  background: var(--panel-2);
   overflow: hidden;
 }
 

@@ -1,8 +1,8 @@
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
@@ -27,7 +27,9 @@ from bukmatika.persistence.privacy_models import PrivacyErasureObject
 from bukmatika.privacy.service import AccountPrivacyService
 
 
-def _scope(session: AsyncSession) -> Callable[[], object]:
+def _scope(
+    session: AsyncSession,
+) -> Callable[[], AbstractAsyncContextManager[AsyncSession]]:
     @asynccontextmanager
     async def scope() -> AsyncIterator[AsyncSession]:
         yield session
@@ -158,7 +160,7 @@ async def test_account_export_includes_owned_data_without_session_or_worker_secr
 
     service = AccountPrivacyService(
         storage=LocalObjectStore(tmp_path),
-        session_scope_factory=_scope(session),  # type: ignore[arg-type]
+        session_scope_factory=_scope(session),
     )
     exported = await service.export(principal_id=principal.id)
 
@@ -166,11 +168,15 @@ async def test_account_export_includes_owned_data_without_session_or_worker_secr
     assert exported.principal.external_subject == principal.external_subject
     assert len(exported.library.entries) == 1
     session_record = next(
-        record for record in exported.operational_records if record.record_type == "principal_sessions"
+        record
+        for record in exported.operational_records
+        if record.record_type == "principal_sessions"
     )
     assert "token_sha256" not in session_record.data
     events = [
-        record for record in exported.operational_records if record.record_type == "interaction_events"
+        record
+        for record in exported.operational_records
+        if record.record_type == "interaction_events"
     ]
     assert len(events) == 1
     assert events[0].data["context"] == {"query": "private research question"}
@@ -229,7 +235,7 @@ async def test_account_delete_erases_private_local_import_events_and_bytes(
 
     service = AccountPrivacyService(
         storage=LocalObjectStore(tmp_path),
-        session_scope_factory=_scope(session),  # type: ignore[arg-type]
+        session_scope_factory=_scope(session),
     )
     result = await service.delete_account(principal_id=principal.id)
     await session.flush()
@@ -293,7 +299,7 @@ async def test_account_delete_preserves_content_addressed_bytes_still_referenced
 
     service = AccountPrivacyService(
         storage=LocalObjectStore(tmp_path),
-        session_scope_factory=_scope(session),  # type: ignore[arg-type]
+        session_scope_factory=_scope(session),
     )
     result = await service.delete_account(principal_id=principal.id)
     await session.flush()

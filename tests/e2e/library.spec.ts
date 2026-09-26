@@ -42,21 +42,28 @@ function libraryCard(page: Page, title: string) {
 }
 
 async function openOrganizer(page: Page, title: string) {
-  const card = libraryCard(page, title);
-  const details = card.locator("details.library-card-organizer");
-  if (!(await details.getAttribute("open"))) {
-    await details.getByText("Organize", { exact: true }).click();
+  const details = libraryCard(page, title).locator("details.library-card-organizer");
+  const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
+  if (!isOpen) {
+    await details.locator("summary").click();
   }
-  await expect(details).toHaveAttribute("open", "");
-  return details;
+  await expect
+    .poll(async () =>
+      libraryCard(page, title)
+        .locator("details.library-card-organizer")
+        .evaluate((element) => (element as HTMLDetailsElement).open),
+    )
+    .toBe(true);
+  return libraryCard(page, title).locator("details.library-card-organizer");
 }
 
 async function openManageOrganization(page: Page) {
   const details = page.locator("details.library-manage-organizing");
-  if (!(await details.getAttribute("open"))) {
-    await details.getByText("Manage shelves & tags", { exact: true }).click();
+  const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
+  if (!isOpen) {
+    await details.locator("summary").click();
   }
-  await expect(details).toHaveAttribute("open", "");
+  await expect(details).toHaveJSProperty("open", true);
   return details;
 }
 
@@ -84,12 +91,14 @@ test("Library organization persists collections, tags, and live smart shelves", 
 
   const readyOrganizer = await openOrganizer(page, seed.titles.ready);
   await readyOrganizer.getByRole("checkbox", { name: COLLECTION_NAME }).click();
+  await expect(libraryCard(page, seed.titles.ready)).toContainText(COLLECTION_NAME);
   await expect(
     collectionFilter.getByRole("option", { name: `${COLLECTION_NAME} (1)`, exact: true }),
   ).toBeAttached();
 
   const failedOrganizer = await openOrganizer(page, seed.titles.failed);
   await failedOrganizer.getByRole("checkbox", { name: COLLECTION_NAME }).click();
+  await expect(libraryCard(page, seed.titles.failed)).toContainText(COLLECTION_NAME);
   await expect(
     collectionFilter.getByRole("option", { name: `${COLLECTION_NAME} (2)`, exact: true }),
   ).toBeAttached();

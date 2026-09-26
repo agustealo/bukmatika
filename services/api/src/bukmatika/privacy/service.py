@@ -5,7 +5,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from pydantic import JsonValue
-from sqlalchemy import delete, exists, select
+from sqlalchemy import delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.acquisition.storage import LocalObjectStore
@@ -31,6 +31,7 @@ from bukmatika.persistence.models import (
     LibraryEntry,
     Principal,
     RightsDecision,
+    RightsEvidenceSubject,
     SourceObservation,
     SourceRecord,
     SourceRecordLink,
@@ -93,6 +94,7 @@ class AccountPrivacyService:
                 principal=PrincipalExport(
                     principal_id=principal.id,
                     kind=principal.kind,
+                    external_subject=principal.external_subject,
                     created_at=principal.created_at,
                     updated_at=principal.updated_at,
                 ),
@@ -149,6 +151,12 @@ class AccountPrivacyService:
                             RightsDecision.subject_id.in_(asset_ids),
                         )
                     )
+                    await database_session.execute(
+                        delete(RightsEvidenceSubject).where(
+                            RightsEvidenceSubject.subject_type == "asset",
+                            RightsEvidenceSubject.subject_id.in_(asset_ids),
+                        )
+                    )
                 if stored_object_ids:
                     stored_objects = list(
                         await database_session.scalars(
@@ -168,29 +176,33 @@ class AccountPrivacyService:
                 private_local_imports_deleted = len(private_work_ids)
                 await database_session.flush()
 
-            if contributor_ids:
-                for contributor_id in contributor_ids:
-                    still_used = await database_session.scalar(
-                        select(exists().where(WorkContributor.contributor_id == contributor_id))
-                    )
-                    if not still_used:
-                        contributor = await database_session.get(Contributor, contributor_id)
-                        if contributor is not None:
-                            await database_session.delete(contributor)
+            for contributor_id in contributor_ids:
+                still_used = await database_session.scalar(
+                    select(exists().where(WorkContributor.contributor_id == contributor_id))
+                )
+                if not still_used:
+                    contributor = await database_session.get(Contributor, contributor_id)
+                    if contributor is not None:
+                        await database_session.delete(contributor)
 
             for stored_object in stored_objects:
                 if await self._stored_object_is_referenced(database_session, stored_object.id):
                     continue
-                database_session.add(
-                    PrivacyErasureObject(storage_key=stored_object.storage_key, status="pending")
-                )
+                await self._queue_storage_erasure(database_session, stored_object.storage_key)
                 await database_session.delete(stored_object)
                 storage_objects_queued += 1
 
-            result = await database_session.execute(
+            interaction_events_deleted = int(
+                await database_session.scalar(
+                    select(func.count())
+                    .select_from(InteractionEvent)
+                    .where(InteractionEvent.principal_id == principal_id)
+                )
+                or 0
+            )
+            await database_session.execute(
                 delete(InteractionEvent).where(InteractionEvent.principal_id == principal_id)
             )
-            interaction_events_deleted = result.rowcount or 0
             await database_session.delete(principal)
 
         cleanup = await self.cleanup_pending_storage()
@@ -219,6 +231,13 @@ class AccountPrivacyService:
             for row in rows:
                 row.attempt_count += 1
                 row.last_attempt_at = datetime.now(UTC)
+                live_again = await database_session.scalar(
+                    select(exists().where(StoredObject.storage_key == row.storage_key))
+                )
+                if live_again:
+                    row.status = "retained"
+                    row.last_error_code = None
+                    continue
                 try:
                     path = await self._storage.resolve_path(row.storage_key)
                     await self._storage.discard(path)
@@ -233,6 +252,23 @@ class AccountPrivacyService:
                 row.deleted_at = datetime.now(UTC)
                 deleted_count += 1
         return {"deleted": deleted_count, "pending": pending_count}
+
+    async def _queue_storage_erasure(
+        self,
+        database_session: AsyncSession,
+        storage_key: str,
+    ) -> None:
+        queued = await database_session.scalar(
+            select(PrivacyErasureObject)
+            .where(PrivacyErasureObject.storage_key == storage_key)
+            .with_for_update()
+        )
+        if queued is None:
+            database_session.add(PrivacyErasureObject(storage_key=storage_key, status="pending"))
+            return
+        queued.status = "pending"
+        queued.last_error_code = None
+        queued.deleted_at = None
 
     async def _operational_records(
         self,
@@ -344,18 +380,19 @@ class AccountPrivacyService:
         *,
         omitted: frozenset[str] = frozenset(),
     ) -> OperationalRecordExport:
-        table = row.__class__.__table__
+        mapped_row = cast(Any, row)
+        table = mapped_row.__table__
         data: dict[str, JsonValue] = {}
         record_id = ""
         for column in table.columns:
             if column.name in omitted or column.name == "principal_id":
                 continue
-            value = getattr(row, column.name)
+            value = getattr(mapped_row, column.name)
             if column.name == "id":
                 record_id = str(value)
             data[column.name] = cls._json_value(value)
         if not record_id:
-            principal_value = getattr(row, "principal_id", None)
+            principal_value = getattr(mapped_row, "principal_id", None)
             record_id = str(principal_value) if principal_value is not None else record_type
         return OperationalRecordExport(
             record_type=record_type,

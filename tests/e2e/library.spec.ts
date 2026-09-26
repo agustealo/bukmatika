@@ -78,15 +78,21 @@ test("Library organization persists collections, tags, and live smart shelves", 
   await manage.getByRole("button", { name: "Add collection" }).click();
 
   const collectionFilter = page.locator(".library-filter-selects").getByLabel("Collection");
-  await expect(collectionFilter.locator("option")).toContainText(`${COLLECTION_NAME} (0)`);
+  await expect(
+    collectionFilter.getByRole("option", { name: `${COLLECTION_NAME} (0)`, exact: true }),
+  ).toBeAttached();
 
   const readyOrganizer = await openOrganizer(page, seed.titles.ready);
   await readyOrganizer.getByRole("checkbox", { name: COLLECTION_NAME }).check();
-  await expect(collectionFilter.locator("option")).toContainText(`${COLLECTION_NAME} (1)`);
+  await expect(
+    collectionFilter.getByRole("option", { name: `${COLLECTION_NAME} (1)`, exact: true }),
+  ).toBeAttached();
 
   const failedOrganizer = await openOrganizer(page, seed.titles.failed);
   await failedOrganizer.getByRole("checkbox", { name: COLLECTION_NAME }).check();
-  await expect(collectionFilter.locator("option")).toContainText(`${COLLECTION_NAME} (2)`);
+  await expect(
+    collectionFilter.getByRole("option", { name: `${COLLECTION_NAME} (2)`, exact: true }),
+  ).toBeAttached();
 
   const readyTagOrganizer = await openOrganizer(page, seed.titles.ready);
   await readyTagOrganizer.getByLabel("Tag this book").fill(TAG_NAME);
@@ -98,7 +104,9 @@ test("Library organization persists collections, tags, and live smart shelves", 
   await expect(libraryCard(page, seed.titles.failed)).toContainText(`#${TAG_NAME}`);
 
   const tagFilter = page.locator(".library-filter-selects").getByLabel("Tag");
-  await expect(tagFilter.locator("option")).toContainText(`${TAG_NAME} (2)`);
+  await expect(
+    tagFilter.getByRole("option", { name: `${TAG_NAME} (2)`, exact: true }),
+  ).toBeAttached();
 
   await collectionFilter.selectOption({ label: `${COLLECTION_NAME} (2)` });
   await expect(page.locator("article.library-card")).toHaveCount(2);

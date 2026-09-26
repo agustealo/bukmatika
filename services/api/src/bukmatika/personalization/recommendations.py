@@ -2,7 +2,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -127,7 +127,7 @@ class PersonalizedRecommendationService:
                         RecommendationReason(
                             claim_id=claim.id,
                             preference_key=claim.key,
-                            source=cast(str, claim.source),
+                            source=_claim_source(claim.source),
                             confidence=claim.confidence,
                             signal=signal,
                             matched_values=sorted(matched_values, key=str.casefold),
@@ -215,20 +215,20 @@ async def _matches_for_claim(
         )
         if not targets:
             return {}
-        rows = (
+        subject_rows = (
             await session.execute(
                 select(WorkSubject.work_id, Subject.display_name)
                 .join(Subject, Subject.id == WorkSubject.subject_id)
                 .where(Subject.normalized_name.in_(targets))
             )
         ).all()
-        return _group_rows(rows)
+        return _group_rows([(work_id, name) for work_id, name in subject_rows])
 
     if signal == "author":
         targets = _normalized_interest_values(claim.value, "author", "authors")
         if not targets:
             return {}
-        rows = (
+        author_rows = (
             await session.execute(
                 select(WorkContributor.work_id, Contributor.display_name)
                 .join(Contributor, Contributor.id == WorkContributor.contributor_id)
@@ -238,7 +238,7 @@ async def _matches_for_claim(
                 )
             )
         ).all()
-        return _group_rows(rows)
+        return _group_rows([(work_id, name) for work_id, name in author_rows])
 
     if signal == "format":
         targets = {
@@ -248,14 +248,14 @@ async def _matches_for_claim(
         targets.discard("")
         if not targets:
             return {}
-        rows = (
+        format_rows = (
             await session.execute(
                 select(Edition.work_id, Asset.format)
                 .join(Asset, Asset.edition_id == Edition.id)
                 .where(func.lower(Asset.format).in_(targets))
             )
         ).all()
-        return _group_rows(rows)
+        return _group_rows([(work_id, asset_format) for work_id, asset_format in format_rows])
 
     if signal == "language":
         targets = {
@@ -265,13 +265,13 @@ async def _matches_for_claim(
         targets.discard("")
         if not targets:
             return {}
-        rows = (
+        language_rows = (
             await session.execute(
                 select(Edition.work_id, Edition.language).where(Edition.language.is_not(None))
             )
         ).all()
         grouped: defaultdict[UUID, set[str]] = defaultdict(set)
-        for work_id, language in rows:
+        for work_id, language in language_rows:
             if language is not None and canonical_language(language) in targets:
                 grouped[work_id].add(language)
         return dict(grouped)
@@ -281,7 +281,7 @@ async def _matches_for_claim(
         if period is None:
             return {}
         year_from, year_to = period
-        rows = (
+        period_rows = (
             await session.execute(
                 select(Edition.work_id, Edition.publication_year).where(
                     Edition.publication_year.is_not(None),
@@ -291,7 +291,7 @@ async def _matches_for_claim(
             )
         ).all()
         return _group_rows(
-            [(work_id, str(year)) for work_id, year in rows if year is not None]
+            [(work_id, str(year)) for work_id, year in period_rows if year is not None]
         )
 
     if signal == "source":
@@ -308,7 +308,7 @@ async def _matches_for_claim(
         targets.discard("")
         if not targets:
             return {}
-        work_rows = (
+        work_source_rows = (
             await session.execute(
                 select(SourceRecordLink.entity_id, SourceRecord.provider)
                 .join(SourceRecord, SourceRecord.id == SourceRecordLink.source_record_id)
@@ -318,7 +318,7 @@ async def _matches_for_claim(
                 )
             )
         ).all()
-        edition_rows = (
+        edition_source_rows = (
             await session.execute(
                 select(Edition.work_id, SourceRecord.provider)
                 .join(
@@ -330,7 +330,10 @@ async def _matches_for_claim(
                 .where(SourceRecord.provider.in_(targets))
             )
         ).all()
-        return _group_rows([*work_rows, *edition_rows])
+        source_pairs = [
+            (work_id, provider) for work_id, provider in work_source_rows
+        ] + [(work_id, provider) for work_id, provider in edition_source_rows]
+        return _group_rows(source_pairs)
 
     return {}
 
@@ -339,6 +342,14 @@ def _claim_contribution(*, claim: PreferenceClaim, signal: RecommendationSignal)
     weight = _SIGNAL_WEIGHTS[signal]
     authority = 1.0 if claim.source == "explicit" else 0.75 * claim.confidence
     return round(weight * authority, 4)
+
+
+def _claim_source(value: str) -> Literal["explicit", "inferred"]:
+    if value == "explicit":
+        return "explicit"
+    if value == "inferred":
+        return "inferred"
+    raise ValueError(f"Unsupported preference source: {value}")
 
 
 def _string_values(value: dict[str, Any], *keys: str) -> list[str]:
@@ -376,11 +387,10 @@ def _period_bounds(value: dict[str, Any]) -> tuple[int, int] | None:
     return year_from, year_to
 
 
-def _group_rows(rows: list[tuple[UUID, Any]]) -> dict[UUID, set[str]]:
+def _group_rows(rows: list[tuple[UUID, str]]) -> dict[UUID, set[str]]:
     grouped: defaultdict[UUID, set[str]] = defaultdict(set)
     for work_id, value in rows:
-        if value is not None:
-            grouped[work_id].add(str(value))
+        grouped[work_id].add(value)
     return dict(grouped)
 
 
@@ -392,13 +402,13 @@ async def _candidate_metadata(
     if not work_ids:
         return {}
 
-    titles = dict(
-        (
-            await session.execute(
-                select(Work.id, Work.canonical_title).where(Work.id.in_(work_ids))
-            )
-        ).all()
-    )
+    title_rows = (
+        await session.execute(
+            select(Work.id, Work.canonical_title).where(Work.id.in_(work_ids))
+        )
+    ).all()
+    titles: dict[UUID, str] = {work_id: title for work_id, title in title_rows}
+
     authors: defaultdict[UUID, set[str]] = defaultdict(set)
     for work_id, name in (
         await session.execute(

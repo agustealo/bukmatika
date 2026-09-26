@@ -329,7 +329,10 @@ class LocalLibraryImportService:
 
             title = received.metadata.title
             if title is None:
-                raise LocalImportError("LOCAL_IMPORT_TITLE_REQUIRED", "Local import title is missing.")
+                raise LocalImportError(
+                    "LOCAL_IMPORT_TITLE_REQUIRED",
+                    "Local import title is missing.",
+                )
             work = await catalog.create_work(title=title, normalized_title=normalize_text(title))
             if received.metadata.author is not None:
                 await catalog.add_author(

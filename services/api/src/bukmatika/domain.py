@@ -140,6 +140,14 @@ class DiscoveredAsset(BaseModel):
     rights: list[RightsEvidence] = Field(default_factory=list)
 
 
+class DiscoveredCover(BaseModel):
+    url: HttpUrl
+    kind: Literal["cover", "thumbnail"] = "cover"
+    media_type: str | None = None
+    width: int | None = Field(default=None, ge=1, le=20_000)
+    height: int | None = Field(default=None, ge=1, le=20_000)
+
+
 class DiscoveryCandidate(BaseModel):
     source: str
     source_record_id: str
@@ -156,6 +164,7 @@ class DiscoveryCandidate(BaseModel):
     landing_url: HttpUrl
     formats: list[str] = Field(default_factory=list)
     assets: list[DiscoveredAsset] = Field(default_factory=list)
+    covers: list[DiscoveredCover] = Field(default_factory=list, max_length=8)
     rights: list[RightsEvidence] = Field(default_factory=list)
     source_score: Annotated[float, Field(ge=0, le=1)] = 0.5
 

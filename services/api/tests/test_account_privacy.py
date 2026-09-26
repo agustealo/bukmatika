@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.acquisition.storage import LocalObjectStore
+from bukmatika.library.local_import_identity import local_import_source_key
 from bukmatika.persistence.identity_models import PrincipalSession
 from bukmatika.persistence.models import (
     Asset,
@@ -81,7 +82,7 @@ async def _local_import(
     )
     source = SourceRecord(
         provider="local-import",
-        provider_record_id=uuid4().hex,
+        provider_record_id=local_import_source_key(principal.id, stored_object.sha256),
         canonical_url=f"bukmatika://local-import/{uuid4().hex}",
     )
     session.add(source)
@@ -194,6 +195,67 @@ async def test_account_export_includes_owned_data_without_session_or_worker_secr
         "filename": "private-notes.txt",
         "title": "Private Notes",
     }
+
+
+@pytest.mark.asyncio
+async def test_local_import_provenance_stays_bound_to_importing_principal(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    owner = await _principal(session)
+    other = await _principal(session)
+    sha256 = "4" * 64
+    storage_key, path = _stored_path(tmp_path, sha256)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"owner-private provenance")
+    stored = StoredObject(
+        sha256=sha256,
+        storage_key=storage_key,
+        byte_size=path.stat().st_size,
+        media_type="text/plain",
+    )
+    session.add(stored)
+    await session.flush()
+    work, source = await _local_import(
+        session,
+        principal=owner,
+        stored_object=stored,
+        title="Owner Import",
+        filename="owner-secret-name.txt",
+    )
+    edition = await session.scalar(select(Edition).where(Edition.work_id == work.id))
+    assert edition is not None
+    session.add(
+        LibraryEntry(
+            principal_id=other.id,
+            work_id=work.id,
+            edition_id=edition.id,
+            status="saved",
+        )
+    )
+    await session.flush()
+
+    service = AccountPrivacyService(
+        storage=LocalObjectStore(tmp_path),
+        session_scope_factory=_scope(session),
+    )
+    owner_export = await service.export(principal_id=owner.id)
+    other_export = await service.export(principal_id=other.id)
+
+    assert any(
+        record.record_type == "local_import_observation"
+        for record in owner_export.operational_records
+    )
+    assert all(
+        record.record_type not in {"local_import_source", "local_import_observation"}
+        for record in other_export.operational_records
+    )
+
+    await service.delete_account(principal_id=other.id)
+    await session.flush()
+    assert await session.get(SourceRecord, source.id) is not None
+    assert await session.get(Work, work.id) is not None
+    assert path.exists()
 
 
 @pytest.mark.asyncio

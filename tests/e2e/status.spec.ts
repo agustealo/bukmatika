@@ -132,7 +132,9 @@ test("Status Center projects canonical pipeline state, filters it, and hands rea
 
   await statusCard(page, seed.titles.blocked).getByRole("link", { name: "Details" }).click();
   await expect(page).toHaveURL(new RegExp(`/dossier\\?work_id=${seed.blocked_work_id}$`));
-  await expect(page.getByRole("heading", { name: seed.titles.blocked })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: seed.titles.blocked, exact: true }),
+  ).toBeVisible();
 
   await page.goto("/status");
   await chooseFilter(page, "Ready", 1);

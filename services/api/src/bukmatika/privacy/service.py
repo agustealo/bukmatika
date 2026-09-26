@@ -9,6 +9,7 @@ from sqlalchemy import delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.acquisition.storage import LocalObjectStore
+from bukmatika.library.local_import_identity import local_import_source_key
 from bukmatika.library.portability import LibraryPortabilityService
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.acquisition_request_models import AcquisitionPolicy, AcquisitionRequest
@@ -39,8 +40,13 @@ from bukmatika.persistence.models import (
     Work,
     WorkContributor,
 )
-from bukmatika.persistence.personalization_models import ActionApproval
+from bukmatika.persistence.personalization_models import (
+    ActionApproval,
+    PreferenceClaim,
+    PreferenceClaimEvidence,
+)
 from bukmatika.persistence.privacy_models import PrivacyErasureObject
+from bukmatika.persistence.storage_locks import content_publication_lock
 from bukmatika.personalization.portability import PersonalizationPortabilityService
 from bukmatika.privacy.domain import (
     AccountDeleteResponse,
@@ -50,6 +56,8 @@ from bukmatika.privacy.domain import (
 )
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+_ERASURE_RETRY_STATES = ("pending", "retry")
+_INFLIGHT_STORAGE_STATES = ("verifying",)
 
 
 class PrincipalNotFound(RuntimeError):
@@ -188,9 +196,18 @@ class AccountPrivacyService:
             for stored_object in stored_objects:
                 if await self._stored_object_is_referenced(database_session, stored_object.id):
                     continue
-                await self._queue_storage_erasure(database_session, stored_object.storage_key)
+                await self._queue_storage_erasure(database_session, stored_object)
                 await database_session.delete(stored_object)
                 storage_objects_queued += 1
+
+            preference_claim_ids = select(PreferenceClaim.id).where(
+                PreferenceClaim.principal_id == principal_id
+            )
+            await database_session.execute(
+                delete(PreferenceClaimEvidence).where(
+                    PreferenceClaimEvidence.preference_claim_id.in_(preference_claim_ids)
+                )
+            )
 
             interaction_events_deleted = int(
                 await database_session.scalar(
@@ -215,57 +232,99 @@ class AccountPrivacyService:
             storage_objects_pending_retry=cleanup["pending"],
         )
 
-    async def cleanup_pending_storage(self, *, limit: int = 100) -> dict[str, int]:
-        deleted_count = 0
-        pending_count = 0
+    async def cleanup_pending_storage(self) -> dict[str, int]:
         async with self._session_scope() as database_session:
-            rows = list(
-                await database_session.scalars(
-                    select(PrivacyErasureObject)
-                    .where(PrivacyErasureObject.status == "pending")
-                    .order_by(PrivacyErasureObject.queued_at, PrivacyErasureObject.id)
-                    .limit(limit)
-                    .with_for_update(skip_locked=True)
-                )
+            queued = list(
+                (
+                    await database_session.execute(
+                        select(PrivacyErasureObject.id, PrivacyErasureObject.sha256)
+                        .where(PrivacyErasureObject.status.in_(_ERASURE_RETRY_STATES))
+                        .order_by(PrivacyErasureObject.queued_at, PrivacyErasureObject.id)
+                    )
+                ).all()
             )
-            for row in rows:
-                row.attempt_count += 1
-                row.last_attempt_at = datetime.now(UTC)
-                live_again = await database_session.scalar(
-                    select(exists().where(StoredObject.storage_key == row.storage_key))
-                )
-                if live_again:
-                    row.status = "retained"
+
+        deleted_count = 0
+        for queue_id, sha256 in queued:
+            async with content_publication_lock(
+                sha256,
+                session_scope_factory=self._session_scope,
+            ):
+                async with self._session_scope() as database_session:
+                    row = await database_session.scalar(
+                        select(PrivacyErasureObject)
+                        .where(PrivacyErasureObject.id == queue_id)
+                        .with_for_update()
+                    )
+                    if row is None or row.status not in _ERASURE_RETRY_STATES:
+                        continue
+                    row.attempt_count += 1
+                    row.last_attempt_at = datetime.now(UTC)
+                    live_again = await database_session.scalar(
+                        select(exists().where(StoredObject.sha256 == row.sha256))
+                    )
+                    if live_again:
+                        row.status = "retained"
+                        row.last_error_code = None
+                        row.deleted_at = None
+                        continue
+                    in_flight = await database_session.scalar(
+                        select(
+                            exists().where(
+                                Acquisition.sha256 == row.sha256,
+                                Acquisition.status.in_(_INFLIGHT_STORAGE_STATES),
+                            )
+                        )
+                    )
+                    if in_flight:
+                        row.status = "retry"
+                        row.last_error_code = "CONTENT_PUBLICATION_IN_FLIGHT"
+                        continue
+                    try:
+                        path = await self._storage.resolve_path(row.storage_key)
+                        await self._storage.discard(path)
+                    except FileNotFoundError:
+                        pass
+                    except (OSError, ValueError):
+                        row.status = "retry"
+                        row.last_error_code = "STORAGE_DELETE_FAILED"
+                        continue
+                    row.status = "deleted"
                     row.last_error_code = None
-                    continue
-                try:
-                    path = await self._storage.resolve_path(row.storage_key)
-                    await self._storage.discard(path)
-                except FileNotFoundError:
-                    pass
-                except (OSError, ValueError):
-                    row.last_error_code = "STORAGE_DELETE_FAILED"
-                    pending_count += 1
-                    continue
-                row.status = "deleted"
-                row.last_error_code = None
-                row.deleted_at = datetime.now(UTC)
-                deleted_count += 1
+                    row.deleted_at = datetime.now(UTC)
+                    deleted_count += 1
+
+        async with self._session_scope() as database_session:
+            pending_count = int(
+                await database_session.scalar(
+                    select(func.count())
+                    .select_from(PrivacyErasureObject)
+                    .where(PrivacyErasureObject.status.in_(_ERASURE_RETRY_STATES))
+                )
+                or 0
+            )
         return {"deleted": deleted_count, "pending": pending_count}
 
     async def _queue_storage_erasure(
         self,
         database_session: AsyncSession,
-        storage_key: str,
+        stored_object: StoredObject,
     ) -> None:
         queued = await database_session.scalar(
             select(PrivacyErasureObject)
-            .where(PrivacyErasureObject.storage_key == storage_key)
+            .where(PrivacyErasureObject.storage_key == stored_object.storage_key)
             .with_for_update()
         )
         if queued is None:
-            database_session.add(PrivacyErasureObject(storage_key=storage_key, status="pending"))
+            database_session.add(
+                PrivacyErasureObject(
+                    sha256=stored_object.sha256,
+                    storage_key=stored_object.storage_key,
+                    status="pending",
+                )
+            )
             return
+        queued.sha256 = stored_object.sha256
         queued.status = "pending"
         queued.last_error_code = None
         queued.deleted_at = None
@@ -326,22 +385,25 @@ class AccountPrivacyService:
     ) -> tuple[list[SourceRecord], set[UUID]]:
         rows = (
             await database_session.execute(
-                select(SourceRecord, LibraryEntry.work_id)
+                select(SourceRecord, Edition.work_id, StoredObject.sha256)
                 .join(SourceRecordLink, SourceRecordLink.source_record_id == SourceRecord.id)
                 .join(
-                    LibraryEntry,
-                    (SourceRecordLink.entity_type == "work")
-                    & (SourceRecordLink.entity_id == LibraryEntry.work_id),
+                    Asset,
+                    (SourceRecordLink.entity_type == "asset")
+                    & (SourceRecordLink.entity_id == Asset.id),
                 )
-                .where(
-                    SourceRecord.provider == "local-import",
-                    LibraryEntry.principal_id == principal_id,
-                )
-                .distinct()
+                .join(Edition, Edition.id == Asset.edition_id)
+                .join(StoredObject, StoredObject.id == Asset.stored_object_id)
+                .where(SourceRecord.provider == "local-import")
             )
         ).all()
-        sources_by_id = {source.id: source for source, _ in rows}
-        work_ids = {work_id for _, work_id in rows}
+        sources_by_id: dict[UUID, SourceRecord] = {}
+        work_ids: set[UUID] = set()
+        for source, work_id, sha256 in rows:
+            if source.provider_record_id != local_import_source_key(principal_id, sha256):
+                continue
+            sources_by_id[source.id] = source
+            work_ids.add(work_id)
         if not work_ids:
             return list(sources_by_id.values()), set()
         shared_work_ids = set(

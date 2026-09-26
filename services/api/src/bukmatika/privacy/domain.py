@@ -11,6 +11,7 @@ from bukmatika.personalization.portability_domain import PersonalizationExportRe
 class PrincipalExport(BaseModel):
     principal_id: UUID
     kind: str
+    external_subject: str
     created_at: datetime
     updated_at: datetime
 

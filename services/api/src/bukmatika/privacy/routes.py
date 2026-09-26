@@ -1,6 +1,9 @@
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response, status
 
 from bukmatika.acquisition.storage import LocalObjectStore
 from bukmatika.config import get_settings
@@ -11,10 +14,34 @@ from bukmatika.privacy.domain import (
     AccountPrivacyExportResponse,
 )
 from bukmatika.privacy.service import AccountPrivacyService, PrincipalNotFound
+from bukmatika.privacy.worker import PrivacyErasureWorker
 
 settings = get_settings()
-router = APIRouter(prefix="/account", tags=["privacy"])
 _account_privacy_service = AccountPrivacyService(storage=LocalObjectStore(settings.storage_root))
+
+
+@asynccontextmanager
+async def privacy_lifespan(_: FastAPI) -> AsyncIterator[None]:
+    worker_task: asyncio.Task[None] | None = None
+    if settings.privacy_erasure_worker_enabled:
+        worker = PrivacyErasureWorker(
+            _account_privacy_service,
+            poll_seconds=settings.privacy_erasure_worker_poll_seconds,
+        )
+        worker_task = asyncio.create_task(
+            worker.run(),
+            name="bukmatika-privacy-erasure-worker",
+        )
+    try:
+        yield
+    finally:
+        if worker_task is not None:
+            worker_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker_task
+
+
+router = APIRouter(prefix="/account", tags=["privacy"], lifespan=privacy_lifespan)
 
 
 def privacy_service() -> AccountPrivacyService:

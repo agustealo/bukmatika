@@ -143,9 +143,7 @@ async def test_local_import_creates_private_canonical_asset_without_acquisition(
     assert decision.permissions["export"] is False
     assert decision.permissions["share"] is False
 
-    source = await session.scalar(
-        select(SourceRecord).where(SourceRecord.provider == "local-import")
-    )
+    source = await session.scalar(select(SourceRecord).where(SourceRecord.provider == "local-import"))
     assert source is not None
     assert source.canonical_url.startswith("bukmatika://local-import/")
 
@@ -207,7 +205,9 @@ async def test_local_import_is_idempotent_for_same_principal_and_content(
         )
     )
     source_count = await session.scalar(
-        select(func.count()).select_from(SourceRecord).where(SourceRecord.provider == "local-import")
+        select(func.count())
+        .select_from(SourceRecord)
+        .where(SourceRecord.provider == "local-import")
     )
     assert asset_count == 1
     assert entry_count == 1
@@ -290,8 +290,10 @@ async def test_local_import_rejects_spoofed_pdf_before_catalog_mutation(
         )
 
     assert caught.value.code == "LOCAL_IMPORT_FORMAT_VERIFICATION_FAILED"
-    assert await session.scalar(select(func.count()).select_from(SourceRecord)) == source_count_before
-    assert await session.scalar(select(func.count()).select_from(Work)) == work_count_before
+    source_count_after = await session.scalar(select(func.count()).select_from(SourceRecord))
+    work_count_after = await session.scalar(select(func.count()).select_from(Work))
+    assert source_count_after == source_count_before
+    assert work_count_after == work_count_before
 
 
 async def test_local_import_rejects_unsafe_filename_and_oversized_payload(

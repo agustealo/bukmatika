@@ -1,6 +1,7 @@
 import re
 import xml.etree.ElementTree as ET
-from typing import ClassVar
+from typing import ClassVar, Literal
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import HttpUrl
@@ -9,6 +10,7 @@ from bukmatika.config import Settings
 from bukmatika.discovery.base import DiscoveredRecord
 from bukmatika.domain import (
     DiscoveredAsset,
+    DiscoveredCover,
     DiscoveryCandidate,
     RightsEvidence,
     RightsState,
@@ -26,6 +28,8 @@ class ProjectGutenbergAdapter:
 
     _atom = "{http://www.w3.org/2005/Atom}"
     _acquisition_prefix = "http://opds-spec.org/acquisition"
+    _image_rel = "http://opds-spec.org/image"
+    _thumbnail_rel = "http://opds-spec.org/image/thumbnail"
     _media_types: ClassVar[dict[str, tuple[str, str]]] = {
         "application/epub+zip": ("EPUB", "application/epub+zip"),
         "text/plain": ("TXT", "text/plain"),
@@ -103,6 +107,7 @@ class ProjectGutenbergAdapter:
             if "language" not in item["scheme"].casefold()
         ]
         assets, links = cls._assets(entry)
+        covers, cover_links = cls._covers(entry)
         landing_url = HttpUrl(f"https://www.gutenberg.org/ebooks/{ebook_id}")
         rights = (
             [
@@ -144,6 +149,7 @@ class ProjectGutenbergAdapter:
             landing_url=landing_url,
             formats=sorted({asset.format for asset in assets}),
             assets=assets,
+            covers=covers,
             rights=rights,
             source_score=0.9,
         )
@@ -156,6 +162,7 @@ class ProjectGutenbergAdapter:
                 "authors": authors,
                 "categories": categories,
                 "acquisition_links": links,
+                "cover_links": cover_links,
             },
             parser_version=cls.parser_version,
         )
@@ -190,6 +197,55 @@ class ProjectGutenbergAdapter:
                 )
             )
         return assets, links
+
+    @classmethod
+    def _covers(
+        cls,
+        entry: ET.Element,
+    ) -> tuple[list[DiscoveredCover], list[dict[str, str]]]:
+        covers: list[DiscoveredCover] = []
+        links: list[dict[str, str]] = []
+        seen: set[str] = set()
+        cover_relations: tuple[tuple[str, Literal["cover", "thumbnail"]], ...] = (
+            (cls._image_rel, "cover"),
+            (cls._thumbnail_rel, "thumbnail"),
+        )
+        for rel_value, kind in cover_relations:
+            for link in entry.findall(f"{cls._atom}link"):
+                rel = (link.get("rel") or "").strip()
+                if rel != rel_value:
+                    continue
+                href = cls._gutenberg_https_url(link.get("href"))
+                if href is None or href in seen:
+                    continue
+                media_type = (link.get("type") or "").split(";", 1)[0].strip().casefold()
+                if media_type and not media_type.startswith("image/"):
+                    continue
+                seen.add(href)
+                links.append({"href": href, "rel": rel, "type": media_type})
+                covers.append(
+                    DiscoveredCover(
+                        url=HttpUrl(href),
+                        kind=kind,
+                        media_type=media_type or None,
+                    )
+                )
+                if len(covers) >= 4:
+                    return covers, links
+        return covers, links
+
+    @staticmethod
+    def _gutenberg_https_url(value: object) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        raw = value.strip()
+        parsed = urlsplit(raw)
+        hostname = (parsed.hostname or "").casefold()
+        if parsed.scheme != "https" or not (
+            hostname == "gutenberg.org" or hostname.endswith(".gutenberg.org")
+        ):
+            return None
+        return raw
 
     @classmethod
     def _ebook_id(cls, raw_id: str | None, entry: ET.Element) -> str | None:

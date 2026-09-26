@@ -97,9 +97,6 @@ export function PersonalizedRecommendations() {
             alter live search, rights decisions, or acquisition eligibility.
           </p>
         </div>
-        <button type="button" className={styles.refresh} onClick={() => void load()} disabled={loading}>
-          {loading ? "Refreshing…" : "Refresh"}
-        </button>
       </div>
 
       {error ? (

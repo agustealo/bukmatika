@@ -40,11 +40,7 @@ from bukmatika.persistence.models import (
     Work,
     WorkContributor,
 )
-from bukmatika.persistence.personalization_models import (
-    ActionApproval,
-    PreferenceClaim,
-    PreferenceClaimEvidence,
-)
+from bukmatika.persistence.personalization_models import ActionApproval, PreferenceClaimEvidence
 from bukmatika.persistence.privacy_models import PrivacyErasureObject
 from bukmatika.persistence.storage_locks import content_publication_lock
 from bukmatika.personalization.portability import PersonalizationPortabilityService
@@ -200,12 +196,12 @@ class AccountPrivacyService:
                 await database_session.delete(stored_object)
                 storage_objects_queued += 1
 
-            preference_claim_ids = select(PreferenceClaim.id).where(
-                PreferenceClaim.principal_id == principal_id
+            interaction_event_ids = select(InteractionEvent.id).where(
+                InteractionEvent.principal_id == principal_id
             )
             await database_session.execute(
                 delete(PreferenceClaimEvidence).where(
-                    PreferenceClaimEvidence.preference_claim_id.in_(preference_claim_ids)
+                    PreferenceClaimEvidence.interaction_event_id.in_(interaction_event_ids)
                 )
             )
 

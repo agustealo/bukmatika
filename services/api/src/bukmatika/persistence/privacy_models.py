@@ -11,8 +11,8 @@ from bukmatika.persistence.models import Base
 class PrivacyErasureObject(Base):
     """Durable storage cleanup intent that survives principal deletion.
 
-    Only canonical storage keys are retained. No principal identity, title, filename, prompt,
-    annotation, or other user content is copied into this queue.
+    Only canonical content/storage identity is retained. No principal identity, title, filename,
+    prompt, annotation, or other user content is copied into this queue.
     """
 
     __tablename__ = "privacy_erasure_objects"
@@ -22,6 +22,7 @@ class PrivacyErasureObject(Base):
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

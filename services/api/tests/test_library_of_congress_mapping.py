@@ -42,6 +42,38 @@ def test_loc_digitized_pdf_does_not_become_download_authority() -> None:
     assert candidate.identifiers["lccn"] == ["2020123456"]
 
 
+def test_loc_image_urls_map_to_covers_with_loc_host_fence() -> None:
+    record = LibraryOfCongressAdapter._record(
+        {
+            "id": "https://www.loc.gov/item/cover-test/",
+            "title": "LOC Cover Test",
+        },
+        {
+            "item": {
+                "id": "https://www.loc.gov/item/cover-test/",
+                "title": "LOC Cover Test",
+            },
+            "resources": [],
+            "image_url": [
+                "http://tile.loc.gov/storage-services/service/cover-test/cover.jpg",
+                "https://cdn.loc.gov/cover-test/cover.png",
+                "https://evil.example/not-allowed.jpg",
+            ],
+        },
+    )
+
+    assert record is not None
+    assert [str(cover.url) for cover in record.candidate.covers] == [
+        "https://tile.loc.gov/storage-services/service/cover-test/cover.jpg",
+        "https://cdn.loc.gov/cover-test/cover.png",
+    ]
+    assert [cover.media_type for cover in record.candidate.covers] == [
+        "image/jpeg",
+        "image/png",
+    ]
+    assert record.candidate.assets == []
+
+
 def test_loc_access_restriction_outranks_resource_presence() -> None:
     record = LibraryOfCongressAdapter._record(
         {

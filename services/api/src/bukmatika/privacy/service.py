@@ -246,53 +246,55 @@ class AccountPrivacyService:
 
         deleted_count = 0
         for queue_id, sha256 in queued:
-            async with content_publication_lock(
-                sha256,
-                session_scope_factory=self._session_scope,
+            async with (
+                content_publication_lock(
+                    sha256,
+                    session_scope_factory=self._session_scope,
+                ),
+                self._session_scope() as database_session,
             ):
-                async with self._session_scope() as database_session:
-                    row = await database_session.scalar(
-                        select(PrivacyErasureObject)
-                        .where(PrivacyErasureObject.id == queue_id)
-                        .with_for_update()
-                    )
-                    if row is None or row.status not in _ERASURE_RETRY_STATES:
-                        continue
-                    row.attempt_count += 1
-                    row.last_attempt_at = datetime.now(UTC)
-                    live_again = await database_session.scalar(
-                        select(exists().where(StoredObject.sha256 == row.sha256))
-                    )
-                    if live_again:
-                        row.status = "retained"
-                        row.last_error_code = None
-                        row.deleted_at = None
-                        continue
-                    in_flight = await database_session.scalar(
-                        select(
-                            exists().where(
-                                Acquisition.sha256 == row.sha256,
-                                Acquisition.status.in_(_INFLIGHT_STORAGE_STATES),
-                            )
+                row = await database_session.scalar(
+                    select(PrivacyErasureObject)
+                    .where(PrivacyErasureObject.id == queue_id)
+                    .with_for_update()
+                )
+                if row is None or row.status not in _ERASURE_RETRY_STATES:
+                    continue
+                row.attempt_count += 1
+                row.last_attempt_at = datetime.now(UTC)
+                live_again = await database_session.scalar(
+                    select(exists().where(StoredObject.sha256 == row.sha256))
+                )
+                if live_again:
+                    row.status = "retained"
+                    row.last_error_code = None
+                    row.deleted_at = None
+                    continue
+                in_flight = await database_session.scalar(
+                    select(
+                        exists().where(
+                            Acquisition.sha256 == row.sha256,
+                            Acquisition.status.in_(_INFLIGHT_STORAGE_STATES),
                         )
                     )
-                    if in_flight:
-                        row.status = "retry"
-                        row.last_error_code = "CONTENT_PUBLICATION_IN_FLIGHT"
-                        continue
-                    try:
-                        path = await self._storage.resolve_path(row.storage_key)
-                        await self._storage.discard(path)
-                    except FileNotFoundError:
-                        pass
-                    except (OSError, ValueError):
-                        row.status = "retry"
-                        row.last_error_code = "STORAGE_DELETE_FAILED"
-                        continue
-                    row.status = "deleted"
-                    row.last_error_code = None
-                    row.deleted_at = datetime.now(UTC)
-                    deleted_count += 1
+                )
+                if in_flight:
+                    row.status = "retry"
+                    row.last_error_code = "CONTENT_PUBLICATION_IN_FLIGHT"
+                    continue
+                try:
+                    path = await self._storage.resolve_path(row.storage_key)
+                    await self._storage.discard(path)
+                except FileNotFoundError:
+                    pass
+                except (OSError, ValueError):
+                    row.status = "retry"
+                    row.last_error_code = "STORAGE_DELETE_FAILED"
+                    continue
+                row.status = "deleted"
+                row.last_error_code = None
+                row.deleted_at = datetime.now(UTC)
+                deleted_count += 1
 
         async with self._session_scope() as database_session:
             pending_count = int(

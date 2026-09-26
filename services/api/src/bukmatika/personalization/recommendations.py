@@ -206,7 +206,13 @@ async def _matches_for_claim(
     signal: RecommendationSignal,
 ) -> dict[UUID, set[str]]:
     if signal in {"subject", "region"}:
-        targets = _normalized_interest_values(claim.value, "subject", "subjects", "region", "regions")
+        targets = _normalized_interest_values(
+            claim.value,
+            "subject",
+            "subjects",
+            "region",
+            "regions",
+        )
         if not targets:
             return {}
         rows = (

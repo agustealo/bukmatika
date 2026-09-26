@@ -1,11 +1,10 @@
 import asyncio
 import hashlib
-import json
 import unicodedata
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, suppress
 from pathlib import Path
-from typing import Literal
+from typing import Any, BinaryIO, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, ValidationError
@@ -198,9 +197,9 @@ class LocalLibraryImportService:
     async def _write_payload(
         self,
         *,
-        handle: object,
+        handle: BinaryIO,
         chunk: bytes,
-        digest: object,
+        digest: Any,
         byte_size: int,
         max_bytes: int,
     ) -> int:
@@ -210,8 +209,8 @@ class LocalLibraryImportService:
                 "LOCAL_IMPORT_TOO_LARGE",
                 f"Local import exceeds the processable byte limit of {max_bytes} bytes.",
             )
-        digest.update(chunk)  # type: ignore[attr-defined]
-        await asyncio.to_thread(handle.write, chunk)  # type: ignore[attr-defined]
+        digest.update(chunk)
+        await asyncio.to_thread(handle.write, chunk)
         return next_size
 
     def _parse_metadata(self, payload: bytes) -> LocalImportEnvelopeMetadata:

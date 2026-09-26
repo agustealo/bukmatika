@@ -2,6 +2,8 @@ import asyncio
 import json
 from contextlib import suppress
 
+import pytest
+
 from bukmatika.runtime_diagnostics import RuntimeDiagnostics
 
 
@@ -199,27 +201,23 @@ async def test_unexpected_worker_cancellation_degrades_readiness() -> None:
     }
 
 
-def test_worker_names_must_be_unique() -> None:
+async def test_worker_names_must_be_unique() -> None:
     logger = RecordingLogger()
+    stop = asyncio.Event()
 
     async def worker() -> None:
-        return None
+        await stop.wait()
 
     diagnostics = RuntimeDiagnostics(database_probe=_healthy_database, logger=logger)
-    first = asyncio.new_event_loop().create_task(worker())
-    second = asyncio.new_event_loop().create_task(worker())
+    first = asyncio.create_task(worker(), name="first-worker")
+    second = asyncio.create_task(worker(), name="second-worker")
     try:
         diagnostics.register_worker("worker", first)
-        try:
+        with pytest.raises(ValueError, match="unique"):
             diagnostics.register_worker("worker", second)
-        except ValueError as exc:
-            assert "unique" in str(exc)
-        else:
-            raise AssertionError("duplicate worker name should fail")
     finally:
+        diagnostics.begin_shutdown()
         first.cancel()
         second.cancel()
-        first.get_loop().run_until_complete(asyncio.gather(first, return_exceptions=True))
-        second.get_loop().run_until_complete(asyncio.gather(second, return_exceptions=True))
-        first.get_loop().close()
-        second.get_loop().close()
+        await asyncio.gather(first, second, return_exceptions=True)
+        await asyncio.sleep(0)

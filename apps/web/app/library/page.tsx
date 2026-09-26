@@ -1,3 +1,4 @@
+import { LibraryCitationExport } from "../../components/library-citation-export";
 import { LibraryClient } from "../../components/library-client";
 
 export default function LibraryPage() {
@@ -19,6 +20,7 @@ export default function LibraryPage() {
       </header>
 
       <LibraryClient />
+      <LibraryCitationExport />
     </main>
   );
 }

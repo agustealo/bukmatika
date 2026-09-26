@@ -11,7 +11,7 @@ from xml.etree import ElementTree
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
-from bukmatika.config import DEFAULT_ARCHIVE_MAX_MEMBERS
+from bukmatika.config import get_settings
 from bukmatika.processing.domain import ParsedDocument, ParsedSection
 
 
@@ -179,8 +179,13 @@ class EpubDocumentParser:
         {"application/xhtml+xml", "text/html"}
     )
 
-    def __init__(self, *, max_archive_members: int = DEFAULT_ARCHIVE_MAX_MEMBERS) -> None:
-        self._max_archive_members = _validated_archive_member_limit(max_archive_members)
+    def __init__(self, *, max_archive_members: int | None = None) -> None:
+        configured_limit = (
+            get_settings().archive_max_members
+            if max_archive_members is None
+            else max_archive_members
+        )
+        self._max_archive_members = _validated_archive_member_limit(configured_limit)
 
     def parse(self, path: Path, *, max_bytes: int) -> ParsedDocument:
         _validate_bounded_file(path, max_bytes=max_bytes)
@@ -238,8 +243,13 @@ class DocxDocumentParser:
 
     _document_path = "word/document.xml"
 
-    def __init__(self, *, max_archive_members: int = DEFAULT_ARCHIVE_MAX_MEMBERS) -> None:
-        self._max_archive_members = _validated_archive_member_limit(max_archive_members)
+    def __init__(self, *, max_archive_members: int | None = None) -> None:
+        configured_limit = (
+            get_settings().archive_max_members
+            if max_archive_members is None
+            else max_archive_members
+        )
+        self._max_archive_members = _validated_archive_member_limit(configured_limit)
 
     def parse(self, path: Path, *, max_bytes: int) -> ParsedDocument:
         _validate_bounded_file(path, max_bytes=max_bytes)

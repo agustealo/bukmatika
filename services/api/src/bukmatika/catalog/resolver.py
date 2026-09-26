@@ -185,11 +185,13 @@ class CatalogResolver:
         edition: Edition | None,
     ) -> None:
         candidate = record.candidate
+        covers = [cover.model_dump(mode="json", exclude_none=True) for cover in candidate.covers]
         work_fields = {
             "title": candidate.title,
             "authors": candidate.authors,
             "subjects": candidate.subjects,
             "first_publish_year": candidate.first_publish_year,
+            "covers": covers,
         }
         for field_name, value in work_fields.items():
             if value in (None, [], ""):
@@ -201,7 +203,7 @@ class CatalogResolver:
                 value=value,
                 source_observation_id=observation_id,
                 confidence=candidate.source_score,
-                normalization_method="bukmatika-normalize-v1",
+                normalization_method=_normalization_method(field_name),
             )
 
         if edition is None:
@@ -212,6 +214,7 @@ class CatalogResolver:
             "publisher": candidate.publisher,
             "languages": candidate.languages,
             "formats": candidate.formats,
+            "covers": covers,
         }
         for field_name, value in edition_fields.items():
             if value in (None, [], ""):
@@ -223,5 +226,11 @@ class CatalogResolver:
                 value=value,
                 source_observation_id=observation_id,
                 confidence=candidate.source_score,
-                normalization_method="bukmatika-normalize-v1",
+                normalization_method=_normalization_method(field_name),
             )
+
+
+def _normalization_method(field_name: str) -> str:
+    if field_name == "covers":
+        return "bukmatika-cover-normalize-v1"
+    return "bukmatika-normalize-v1"

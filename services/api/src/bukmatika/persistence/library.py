@@ -1,3 +1,4 @@
+import hashlib
 from uuid import UUID
 
 from sqlalchemy import select
@@ -17,12 +18,15 @@ from bukmatika.persistence.models import (
     RightsEvidenceSubject,
     SourceRecord,
     SourceRecordLink,
+    StoredObject,
     Subject,
     Work,
     WorkContributor,
     WorkSubject,
 )
 from bukmatika.persistence.reader_models import ReadingState
+
+_LOCAL_IMPORT_PROVIDER = "local-import"
 
 
 class LibraryTargetNotFound(LookupError):
@@ -81,6 +85,8 @@ class LibraryRepository:
         return next(iter(work_ids))
 
     async def get_work(self, work_id: UUID) -> Work | None:
+        if await self._is_local_import_work(work_id):
+            return None
         return await self._session.get(Work, work_id)
 
     async def authors_for_work(self, work_id: UUID) -> list[str]:
@@ -140,7 +146,8 @@ class LibraryRepository:
         )
 
     async def save_work(self, principal_id: UUID, work_id: UUID) -> LibraryEntry:
-        if await self._session.get(Work, work_id) is None:
+        work = await self._session.get(Work, work_id)
+        if work is None or await self._is_local_import_work(work_id):
             raise LibraryTargetNotFound("Work does not exist")
         statement = (
             insert(LibraryEntry)
@@ -175,6 +182,12 @@ class LibraryRepository:
     async def save_edition(self, principal_id: UUID, edition_id: UUID) -> LibraryEntry:
         edition = await self._session.get(Edition, edition_id)
         if edition is None:
+            raise LibraryTargetNotFound("Edition does not exist")
+        local_import_owner = await self._local_import_edition_owner_matches(
+            principal_id=principal_id,
+            edition_id=edition_id,
+        )
+        if local_import_owner is False:
             raise LibraryTargetNotFound("Edition does not exist")
         statement = (
             insert(LibraryEntry)
@@ -299,3 +312,49 @@ class LibraryRepository:
                 ReadingState.document_id == document_id,
             )
         )
+
+    async def _is_local_import_work(self, work_id: UUID) -> bool:
+        source_id = await self._session.scalar(
+            select(SourceRecordLink.source_record_id)
+            .join(SourceRecord, SourceRecord.id == SourceRecordLink.source_record_id)
+            .where(
+                SourceRecordLink.entity_type == "work",
+                SourceRecordLink.entity_id == work_id,
+                SourceRecord.provider == _LOCAL_IMPORT_PROVIDER,
+            )
+            .limit(1)
+        )
+        return source_id is not None
+
+    async def _local_import_edition_owner_matches(
+        self,
+        *,
+        principal_id: UUID,
+        edition_id: UUID,
+    ) -> bool | None:
+        row = (
+            await self._session.execute(
+                select(SourceRecord.provider_record_id, StoredObject.sha256)
+                .join(SourceRecordLink, SourceRecordLink.source_record_id == SourceRecord.id)
+                .join(Asset, Asset.id == SourceRecordLink.entity_id)
+                .join(StoredObject, StoredObject.id == Asset.stored_object_id)
+                .where(
+                    SourceRecord.provider == _LOCAL_IMPORT_PROVIDER,
+                    SourceRecordLink.entity_type == "asset",
+                    Asset.edition_id == edition_id,
+                )
+                .limit(1)
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+
+        provider_record_id, sha256 = row
+        try:
+            content_digest = bytes.fromhex(sha256)
+        except ValueError:
+            return False
+        digest = hashlib.sha256()
+        digest.update(principal_id.bytes)
+        digest.update(content_digest)
+        return provider_record_id == digest.hexdigest()

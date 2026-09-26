@@ -85,8 +85,6 @@ class LibraryRepository:
         return next(iter(work_ids))
 
     async def get_work(self, work_id: UUID) -> Work | None:
-        if await self._is_local_import_work(work_id):
-            return None
         return await self._session.get(Work, work_id)
 
     async def authors_for_work(self, work_id: UUID) -> list[str]:

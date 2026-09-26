@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     acquisition_worker_poll_seconds: float = Field(default=0.5, gt=0, le=30)
     acquisition_job_lease_seconds: float = Field(default=180.0, ge=30, le=3600)
     acquisition_job_heartbeat_seconds: float = Field(default=30.0, ge=5, le=300)
+    cover_timeout_seconds: float = Field(default=15.0, gt=0, le=60)
+    cover_max_bytes: int = Field(default=8_388_608, ge=65_536, le=33_554_432)
+    cover_redirect_limit: int = Field(default=3, ge=0, le=5)
+    cover_max_source_pixels: int = Field(default=40_000_000, ge=1_000_000, le=100_000_000)
+    cover_max_dimension: int = Field(default=1600, ge=128, le=4096)
+    cover_max_cached_bytes: int = Field(default=12_582_912, ge=65_536, le=33_554_432)
     delegation_worker_enabled: bool = True
     delegation_worker_poll_seconds: float = Field(default=0.5, gt=0, le=30)
     delegation_job_lease_seconds: float = Field(default=120.0, gt=60, le=3600)

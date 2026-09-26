@@ -29,9 +29,10 @@ test("personalized discovery explains deterministic fit without model authority"
 
   await page.goto("/");
 
-  const surface = page.getByRole("heading", {
+  const recommendationHeading = page.getByRole("heading", {
     name: "Why these books may fit you",
-  }).locator("..", { hasText: "Personalized discovery" }).locator("..");
+  });
+  const surface = page.locator("section").filter({ has: recommendationHeading });
   await expect(surface).toBeVisible();
   await expect(
     surface.getByText(

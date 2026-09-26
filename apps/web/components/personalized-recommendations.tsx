@@ -46,10 +46,7 @@ type PersonalizedRecommendationsResponse = {
 };
 
 function dossierHref(item: PersonalizedRecommendation): string {
-  const params = new URLSearchParams({
-    provider: item.source,
-    record_id: item.source_record_id,
-  });
+  const params = new URLSearchParams({ work_id: item.work_id });
   return `/dossier?${params.toString()}`;
 }
 

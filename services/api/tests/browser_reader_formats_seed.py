@@ -24,6 +24,14 @@ class ReaderFormatSeed:
     passages: tuple[str, str, str]
 
 
+def _long_passage(opening: str, label: str) -> str:
+    supporting = [
+        f"{label} supporting paragraph {index} keeps the canonical section taller than the viewport."
+        for index in range(1, 25)
+    ]
+    return "\n".join((opening, *supporting))
+
+
 FORMATS = (
     ReaderFormatSeed(
         title="Browser PDF Reader",
@@ -36,9 +44,18 @@ FORMATS = (
             "PDF closing page",
         ),
         passages=(
-            "PDF page one introduces the canonical reader acceptance journey.",
-            "PDF page two preserves exact page navigation and source coordinates.",
-            "PDF page three proves durable progress, bookmarks, highlights, and notes.",
+            _long_passage(
+                "PDF page one introduces the canonical reader acceptance journey.",
+                "PDF page one",
+            ),
+            _long_passage(
+                "PDF page two preserves exact page navigation and source coordinates.",
+                "PDF page two",
+            ),
+            _long_passage(
+                "PDF page three proves durable progress, bookmarks, highlights, and notes.",
+                "PDF page three",
+            ),
         ),
     ),
     ReaderFormatSeed(
@@ -52,9 +69,18 @@ FORMATS = (
             "EPUB Closing",
         ),
         passages=(
-            "EPUB spine one introduces the canonical reader acceptance journey.",
-            "EPUB spine two preserves exact section navigation and source coordinates.",
-            "EPUB spine three proves durable reading progress and resume behavior.",
+            _long_passage(
+                "EPUB spine one introduces the canonical reader acceptance journey.",
+                "EPUB spine one",
+            ),
+            _long_passage(
+                "EPUB spine two preserves exact section navigation and source coordinates.",
+                "EPUB spine two",
+            ),
+            _long_passage(
+                "EPUB spine three proves durable reading progress and resume behavior.",
+                "EPUB spine three",
+            ),
         ),
     ),
 )
@@ -85,9 +111,7 @@ async def _seed_format(
     )
     stored_object = StoredObject(
         sha256=digest,
-        storage_key=(
-            f"browser-reader-format/{principal_id}/{fixture.storage_suffix}"
-        ),
+        storage_key=f"browser-reader-format/{principal_id}/{fixture.storage_suffix}",
         byte_size=sum(len(passage.encode()) for passage in fixture.passages),
         media_type=fixture.media_type,
     )
@@ -126,11 +150,7 @@ async def _seed_format(
         zip(fixture.headings, fixture.passages, strict=True)
     ):
         coordinate = ordinal + 1
-        locator = (
-            {"page": coordinate}
-            if fixture.format == "PDF"
-            else {"spine": coordinate}
-        )
+        locator = {"page": coordinate} if fixture.format == "PDF" else {"spine": coordinate}
         section = DocumentSection(
             document_id=document.id,
             ordinal=ordinal,

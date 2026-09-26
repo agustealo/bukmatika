@@ -130,7 +130,13 @@ test("consumer shells stay within mobile width and honor reduced motion", async 
     .evaluate((element) => getComputedStyle(element).transitionDuration);
   expect(navTransition).toBe("0s");
 
-  for (const route of ["/library", "/status", "/research", "/personalization"]) {
+  for (const route of [
+    "/library",
+    "/library/transfer",
+    "/status",
+    "/research",
+    "/personalization",
+  ]) {
     await page.goto(route);
     await expect(page.locator("main")).toHaveCount(1);
     await assertNoHorizontalOverflow(page);

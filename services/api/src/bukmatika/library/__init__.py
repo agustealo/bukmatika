@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from bukmatika.library.cover_routes import router as cover_router
 from bukmatika.library.domain import (
     AssetStatusResponse,
     CollectionCreate,
@@ -60,6 +61,7 @@ router.include_router(library_router)
 router.include_router(status_router)
 router.include_router(portability_router)
 router.include_router(provenance_router)
+router.include_router(cover_router)
 
 __all__ = [
     "AssetStatusResponse",

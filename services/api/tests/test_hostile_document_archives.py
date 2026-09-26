@@ -60,6 +60,33 @@ def test_epub_rejects_compressed_expansion_beyond_processing_budget(tmp_path: Pa
         EpubDocumentParser().parse(path, max_bytes=8_192)
 
 
+def test_epub_rejects_archive_member_count_over_limit_before_member_map(tmp_path: Path) -> None:
+    path = tmp_path / "too-many.epub"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("META-INF/container.xml", _epub_container())
+        archive.writestr("OEBPS/content.opf", _epub_package("chapter.xhtml"))
+        archive.writestr("OEBPS/chapter.xhtml", _chapter("Readable chapter"))
+        archive.writestr("extras/one.txt", "1")
+        archive.writestr("extras/two.txt", "2")
+        archive.writestr("extras/three.txt", "3")
+
+    assert path.stat().st_size < 64_000
+    with pytest.raises(DocumentParseError, match="archive member count exceeds configured limit"):
+        EpubDocumentParser(max_archive_members=5).parse(path, max_bytes=64_000)
+
+
+def test_epub_accepts_archive_at_exact_member_limit(tmp_path: Path) -> None:
+    path = tmp_path / "exact-limit.epub"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("META-INF/container.xml", _epub_container())
+        archive.writestr("OEBPS/content.opf", _epub_package("chapter.xhtml"))
+        archive.writestr("OEBPS/chapter.xhtml", _chapter("Exact EPUB limit"))
+
+    parsed = EpubDocumentParser(max_archive_members=3).parse(path, max_bytes=64_000)
+
+    assert [section.text for section in parsed.sections] == ["Exact EPUB limit"]
+
+
 def test_docx_rejects_unsafe_member_path_even_when_not_document_xml(tmp_path: Path) -> None:
     path = tmp_path / "traversal.docx"
     with zipfile.ZipFile(path, "w") as archive:
@@ -89,6 +116,37 @@ def test_docx_rejects_compressed_expansion_beyond_processing_budget(tmp_path: Pa
     assert path.stat().st_size < 4_096
     with pytest.raises(DocumentParseError, match="expanded content exceeds processing byte limit"):
         DocxDocumentParser().parse(path, max_bytes=4_096)
+
+
+def test_docx_rejects_archive_member_count_over_limit_before_member_map(tmp_path: Path) -> None:
+    path = tmp_path / "too-many.docx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("word/document.xml", _docx_document("Readable paragraph"))
+        archive.writestr("docProps/one.xml", "<one/>")
+        archive.writestr("docProps/two.xml", "<two/>")
+        archive.writestr("docProps/three.xml", "<three/>")
+
+    assert path.stat().st_size < 64_000
+    with pytest.raises(DocumentParseError, match="archive member count exceeds configured limit"):
+        DocxDocumentParser(max_archive_members=3).parse(path, max_bytes=64_000)
+
+
+def test_docx_accepts_archive_at_exact_member_limit(tmp_path: Path) -> None:
+    path = tmp_path / "exact-limit.docx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("word/document.xml", _docx_document("Exact DOCX limit"))
+
+    parsed = DocxDocumentParser(max_archive_members=1).parse(path, max_bytes=64_000)
+
+    assert [section.text for section in parsed.sections] == ["Exact DOCX limit"]
+
+
+@pytest.mark.parametrize("parser_type", [EpubDocumentParser, DocxDocumentParser])
+def test_archive_backed_parsers_reject_nonpositive_member_limits(
+    parser_type: type[EpubDocumentParser] | type[DocxDocumentParser],
+) -> None:
+    with pytest.raises(ValueError, match="max_archive_members must be positive"):
+        parser_type(max_archive_members=0)
 
 
 def _epub_container() -> str:

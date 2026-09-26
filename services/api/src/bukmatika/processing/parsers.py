@@ -11,6 +11,7 @@ from xml.etree import ElementTree
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
+from bukmatika.config import get_settings
 from bukmatika.processing.domain import ParsedDocument, ParsedSection
 
 
@@ -178,11 +179,23 @@ class EpubDocumentParser:
         {"application/xhtml+xml", "text/html"}
     )
 
+    def __init__(self, *, max_archive_members: int | None = None) -> None:
+        configured_limit = (
+            get_settings().archive_max_members
+            if max_archive_members is None
+            else max_archive_members
+        )
+        self._max_archive_members = _validated_archive_member_limit(configured_limit)
+
     def parse(self, path: Path, *, max_bytes: int) -> ParsedDocument:
         _validate_bounded_file(path, max_bytes=max_bytes)
         try:
             with zipfile.ZipFile(path) as archive:
-                members = _safe_archive_members(archive, label="EPUB")
+                members = _safe_archive_members(
+                    archive,
+                    label="EPUB",
+                    max_members=self._max_archive_members,
+                )
                 budget = _ArchiveReadBudget(max_bytes, label="EPUB")
                 container_info = members.get(self._container_path)
                 if container_info is None:
@@ -230,11 +243,23 @@ class DocxDocumentParser:
 
     _document_path = "word/document.xml"
 
+    def __init__(self, *, max_archive_members: int | None = None) -> None:
+        configured_limit = (
+            get_settings().archive_max_members
+            if max_archive_members is None
+            else max_archive_members
+        )
+        self._max_archive_members = _validated_archive_member_limit(configured_limit)
+
     def parse(self, path: Path, *, max_bytes: int) -> ParsedDocument:
         _validate_bounded_file(path, max_bytes=max_bytes)
         try:
             with zipfile.ZipFile(path) as archive:
-                members = _safe_archive_members(archive, label="DOCX")
+                members = _safe_archive_members(
+                    archive,
+                    label="DOCX",
+                    max_members=self._max_archive_members,
+                )
                 budget = _ArchiveReadBudget(max_bytes, label="DOCX")
                 document_info = members.get(self._document_path)
                 if document_info is None:
@@ -543,13 +568,24 @@ def _docx_style_is_heading(style: str | None) -> bool:
     return normalized.startswith(("heading", "title", "subtitle"))
 
 
+def _validated_archive_member_limit(value: int) -> int:
+    if value < 1:
+        raise ValueError("max_archive_members must be positive")
+    return value
+
+
 def _safe_archive_members(
     archive: zipfile.ZipFile,
     *,
     label: str,
+    max_members: int,
 ) -> dict[str, zipfile.ZipInfo]:
+    infos = archive.infolist()
+    if len(infos) > max_members:
+        raise DocumentParseError(f"{label} archive member count exceeds configured limit")
+
     members: dict[str, zipfile.ZipInfo] = {}
-    for info in archive.infolist():
+    for info in infos:
         if info.is_dir():
             continue
         normalized = _normalize_archive_path(info.filename, label=label)

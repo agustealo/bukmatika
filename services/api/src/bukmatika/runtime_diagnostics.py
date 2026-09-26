@@ -61,7 +61,7 @@ class RuntimeDiagnostics:
             structlog.get_logger("bukmatika.runtime"),
         )
         self._workers: dict[str, asyncio.Task[None]] = {}
-        self._worker_failures: dict[str, tuple[str, str | None]] = {}
+        self._worker_failures: dict[str, str] = {}
         self._database_failed = False
         self._stopping = False
 
@@ -71,10 +71,10 @@ class RuntimeDiagnostics:
 
     @property
     def worker_names(self) -> tuple[str, ...]:
-        return tuple(sorted(self._workers))
+        return tuple(sorted(self._workers.keys() | self._worker_failures.keys()))
 
     def register_worker(self, name: str, task: asyncio.Task[None]) -> None:
-        if not name or name in self._workers:
+        if not name or name in self._workers or name in self._worker_failures:
             raise ValueError(f"Worker name must be unique and non-empty: {name!r}")
         self._workers[name] = task
         self._logger.info("runtime.worker.started", worker=name)
@@ -103,7 +103,13 @@ class RuntimeDiagnostics:
         }
         checks.update(
             {
-                f"worker:{name}": self._worker_check(name, task)
+                f"worker:{name}": RuntimeCheck(status="failed", code=code)
+                for name, code in self._worker_failures.items()
+            }
+        )
+        checks.update(
+            {
+                f"worker:{name}": self._worker_check(task)
                 for name, task in self._workers.items()
             }
         )
@@ -129,10 +135,8 @@ class RuntimeDiagnostics:
         self._database_failed = False
         return RuntimeCheck(status="ok")
 
-    def _worker_check(self, name: str, task: asyncio.Task[None]) -> RuntimeCheck:
-        failure = self._worker_failures.get(name)
-        if failure is not None:
-            return RuntimeCheck(status="failed", code=failure[0])
+    @staticmethod
+    def _worker_check(task: asyncio.Task[None]) -> RuntimeCheck:
         if not task.done():
             return RuntimeCheck(status="ok")
         if task.cancelled():
@@ -179,7 +183,8 @@ class RuntimeDiagnostics:
         code: str,
         error_type: str | None,
     ) -> None:
-        self._worker_failures[name] = (code, error_type)
+        self._workers.pop(name, None)
+        self._worker_failures[name] = code
         event: dict[str, object] = {
             "worker": name,
             "error_code": code,

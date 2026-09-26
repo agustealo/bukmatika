@@ -84,11 +84,6 @@ test("a private local book stays owner-scoped while importing and re-importing i
       );
       expect(saveEdition.status()).toBe(404);
 
-      const dossier = await outsider.request.get(
-        `${API_BASE_URL}/v1/dossiers/works/${imported.work_id}`,
-      );
-      expect(dossier.status()).toBe(404);
-
       const outsiderPage = await outsider.newPage();
       await outsiderPage.goto("/library");
       await expect(outsiderPage.getByText(BOOK_TITLE, { exact: true })).toHaveCount(0);

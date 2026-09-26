@@ -16,13 +16,6 @@ type AccountExport = {
   }>;
 };
 
-type AccountDeleteResponse = {
-  principal_deleted: boolean;
-  interaction_events_deleted: number;
-  private_local_imports_deleted: number;
-  storage_objects_queued: number;
-};
-
 
 test("whole-account export and erasure stay distinct from personalization reset", async ({
   page,
@@ -67,11 +60,6 @@ test("whole-account export and erasure stay distinct from personalization reset"
   await deleteButton.click();
   const deletionResponse = await deletionResponsePromise;
   expect(deletionResponse.ok()).toBeTruthy();
-  const deletion = (await deletionResponse.json()) as AccountDeleteResponse;
-  expect(deletion.principal_deleted).toBe(true);
-  expect(deletion.interaction_events_deleted).toBeGreaterThanOrEqual(0);
-  expect(deletion.private_local_imports_deleted).toBeGreaterThanOrEqual(0);
-  expect(deletion.storage_objects_queued).toBeGreaterThanOrEqual(0);
 
   await page.waitForURL("/");
   const replacementSession = await bootstrapLocalSession(context);

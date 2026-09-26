@@ -26,6 +26,7 @@ class SemanticEventType(StrEnum):
     ACQUISITION_FAILED = "acquisition.failed"
     ACQUISITION_QUARANTINED = "acquisition.quarantined"
     ACQUISITION_STORED = "acquisition.stored"
+    LIBRARY_LOCAL_IMPORT_STORED = "library.local_import_stored"
     DOCUMENT_PROCESSING_STARTED = "document.processing_started"
     DOCUMENT_PROCESSING_COMPLETED = "document.processing_completed"
     DOCUMENT_PROCESSING_FAILED = "document.processing_failed"

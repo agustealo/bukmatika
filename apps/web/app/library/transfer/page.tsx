@@ -1,4 +1,5 @@
 import { LibraryPortabilityClient } from "../../../components/library-portability-client";
+import { LocalLibraryImport } from "../../../components/local-library-import";
 
 export default function LibraryTransferPage() {
   return (
@@ -11,13 +12,14 @@ export default function LibraryTransferPage() {
         <nav className="top-nav" aria-label="Primary navigation">
           <a href="/">Discover</a>
           <a href="/library">Library</a>
-          <a href="/library/transfer" aria-current="page">Backup</a>
+          <a href="/library/transfer" aria-current="page">Transfer</a>
           <a href="/status">Status</a>
           <a href="/research">Research</a>
           <a href="/personalization">AI</a>
         </nav>
       </header>
 
+      <LocalLibraryImport />
       <LibraryPortabilityClient />
     </main>
   );

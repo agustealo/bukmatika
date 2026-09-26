@@ -6,11 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence.models import (
     Contributor,
+    SourceRecord,
+    SourceRecordLink,
     Subject,
     Work,
     WorkContributor,
     WorkSubject,
 )
+
+_LOCAL_IMPORT_PROVIDER = "local-import"
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,7 +25,7 @@ class CatalogWorkMatch:
 
 
 class CatalogSearchRepository:
-    """Search the canonical PostgreSQL catalog without a second search authority."""
+    """Search the shared canonical catalog without exposing principal-private imports."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -56,6 +60,16 @@ class CatalogSearchRepository:
             )
             .exists()
         )
+        private_local_import = (
+            select(SourceRecordLink.source_record_id)
+            .join(SourceRecord, SourceRecord.id == SourceRecordLink.source_record_id)
+            .where(
+                SourceRecordLink.entity_type == "work",
+                SourceRecordLink.entity_id == Work.id,
+                SourceRecord.provider == _LOCAL_IMPORT_PROVIDER,
+            )
+            .exists()
+        )
         score = func.greatest(
             rank,
             similarity,
@@ -66,12 +80,13 @@ class CatalogSearchRepository:
         result = await self._session.execute(
             select(Work.id, Work.canonical_title, score.label("score"))
             .where(
+                ~private_local_import,
                 or_(
                     vector.op("@@")(ts_query),
                     similarity >= 0.2,
                     author_match,
                     subject_match,
-                )
+                ),
             )
             .order_by(score.desc(), Work.canonical_title.asc())
             .limit(limit)

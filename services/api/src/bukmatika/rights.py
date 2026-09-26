@@ -30,11 +30,21 @@ class RightsDecision:
     reason: str
 
 
-class RightsEngine:
-    """Canonical unattended-acquisition policy.
+@dataclass(frozen=True, slots=True)
+class LocalImportRightsDecision:
+    state: RightsState
+    permissions: dict[str, bool]
+    jurisdiction: str
+    policy_version: str
+    reason: str
 
-    Adapters supply evidence. This engine makes the decision so provider code can never
-    silently become an authorization bypass.
+
+class RightsEngine:
+    """Canonical policy for network acquisition and private user-supplied retention.
+
+    Provider evidence controls unattended network acquisition. User-supplied local bytes use a
+    separate private-retention decision that never upgrades unknown copyright/license state into
+    download, export, or sharing authority.
     """
 
     def decide(self, evidence: list[RightsEvidence]) -> RightsDecision:
@@ -60,6 +70,28 @@ class RightsEngine:
             ),
         )
 
+    def decide_user_supplied_local_import(self) -> LocalImportRightsDecision:
+        return LocalImportRightsDecision(
+            state=RightsState.UNKNOWN,
+            permissions={
+                "discover": True,
+                "display_metadata": True,
+                "download": False,
+                "retain": True,
+                "process": True,
+                "ocr": True,
+                "export": False,
+                "share": False,
+            },
+            jurisdiction="US",
+            policy_version="local-import-private-v1",
+            reason=(
+                "The user explicitly supplied these bytes for private local retention and "
+                "processing. Copyright and license status remain unknown; no download, export, "
+                "or sharing authority is inferred."
+            ),
+        )
+
     @staticmethod
     def _priority(item: RightsEvidence) -> float:
         if item.state in _DENY_PRIORITY:
@@ -67,3 +99,6 @@ class RightsEngine:
         else:
             base = _ALLOW_PRIORITY.get(item.state, 0)
         return base + item.confidence
+
+
+__all__ = ["LocalImportRightsDecision", "RightsDecision", "RightsEngine"]

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 import styles from "./dossier-cover.module.css";
@@ -9,18 +9,21 @@ type DossierCoverProps =
   | { workId: string; provider?: never; recordId?: never }
   | { workId?: never; provider: string; recordId: string };
 
-export function DossierCover(props: DossierCoverProps) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
-  const [available, setAvailable] = useState(true);
-
-  const coverPath = useMemo(() => {
-    if (props.workId) return `/v1/covers/works/${props.workId}`;
+function coverPathFor(props: DossierCoverProps): string {
+  if (typeof props.provider === "string" && typeof props.recordId === "string") {
     const params = new URLSearchParams({
       provider: props.provider,
       record_id: props.recordId,
     });
     return `/v1/covers/source?${params.toString()}`;
-  }, [props]);
+  }
+  return `/v1/covers/works/${props.workId}`;
+}
+
+export function DossierCover(props: DossierCoverProps) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [available, setAvailable] = useState(true);
+  const coverPath = coverPathFor(props);
 
   useEffect(() => {
     const controller = new AbortController();

@@ -27,8 +27,8 @@ export default function Home() {
         </p>
       </section>
 
-      <PersonalizedRecommendations />
       <DiscoveryClient />
+      <PersonalizedRecommendations />
 
       <section className="principles" aria-label="Product principles">
         <article>

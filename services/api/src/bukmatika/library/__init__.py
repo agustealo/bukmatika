@@ -75,6 +75,7 @@ router.include_router(citation_router)
 router.include_router(opds_router)
 
 __all__ = [
+    "OPDS_MEDIA_TYPE",
     "AssetStatusResponse",
     "CitationExport",
     "CitationExportNotFound",
@@ -108,7 +109,6 @@ __all__ = [
     "LibraryStatusSummary",
     "MetadataAssertionResponse",
     "MetadataProvenanceService",
-    "OPDS_MEDIA_TYPE",
     "OpdsCatalogService",
     "SmartShelfContentsResponse",
     "SmartShelfCreate",

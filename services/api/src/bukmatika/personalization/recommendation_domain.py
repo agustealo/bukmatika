@@ -3,7 +3,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 RecommendationSignal = Literal[
     "subject",
     "author",

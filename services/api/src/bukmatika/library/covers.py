@@ -208,7 +208,10 @@ def _cover_selections(records: list[MetadataProvenanceRecord]) -> list[_CoverSel
     selections: list[_CoverSelection] = []
     for record in records:
         assertion = record.assertion
-        if assertion.field_name != "covers" or assertion.normalization_method != "bukmatika-cover-normalize-v1":
+        if (
+            assertion.field_name != "covers"
+            or assertion.normalization_method != "bukmatika-cover-normalize-v1"
+        ):
             continue
         if not isinstance(assertion.value, list):
             continue

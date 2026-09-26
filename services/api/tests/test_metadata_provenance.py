@@ -9,7 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.catalog import CatalogResolver
 from bukmatika.discovery.base import DiscoveredRecord
-from bukmatika.domain import DiscoveredAsset, DiscoveryCandidate, RightsEvidence, RightsState
+from bukmatika.domain import (
+    DiscoveredAsset,
+    DiscoveredCover,
+    DiscoveryCandidate,
+    RightsEvidence,
+    RightsState,
+)
 from bukmatika.library.provenance import MetadataProvenanceService
 from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.models import Work
@@ -29,6 +35,7 @@ def _edition_record(
     record_id: str,
     year: int,
     publisher: str,
+    covers: list[DiscoveredCover] | None = None,
     payload_extra: dict[str, Any] | None = None,
 ) -> DiscoveredRecord:
     payload: dict[str, Any] = {
@@ -63,6 +70,7 @@ def _edition_record(
                     size_bytes=100,
                 )
             ],
+            covers=covers or [],
             rights=[
                 RightsEvidence(
                     state=RightsState.UNKNOWN,
@@ -94,7 +102,17 @@ async def test_dossier_provenance_exposes_conflicting_assertions_without_raw_pay
             record_id="edition-a",
             year=1900,
             publisher="First Press",
-            payload_extra={"provider_private_note": "must not leak"},
+            covers=[
+                DiscoveredCover(
+                    url=HttpUrl("https://images.example.org/edition-a.jpg"),
+                    kind="cover",
+                    media_type="image/jpeg",
+                )
+            ],
+            payload_extra={
+                "provider_private_note": "must not leak",
+                "untrusted_imageish_field": "https://evil.example/tracker.gif",
+            },
         )
     )
     await resolver.ingest(
@@ -123,6 +141,12 @@ async def test_dossier_provenance_exposes_conflicting_assertions_without_raw_pay
     publisher_assertions = [
         assertion for assertion in edition.assertions if assertion.field_name == "publisher"
     ]
+    work_cover_assertions = [
+        assertion for assertion in dossier.assertions if assertion.field_name == "covers"
+    ]
+    edition_cover_assertions = [
+        assertion for assertion in edition.assertions if assertion.field_name == "covers"
+    ]
 
     assert {assertion.value for assertion in year_assertions} == {1900, 1901}
     assert {assertion.provider for assertion in year_assertions} == {"provider-a", "provider-b"}
@@ -130,6 +154,19 @@ async def test_dossier_provenance_exposes_conflicting_assertions_without_raw_pay
         "First Press",
         "Revised Press",
     }
+    assert len(work_cover_assertions) == 1
+    assert len(edition_cover_assertions) == 1
+    expected_cover_value = [
+        {
+            "url": "https://images.example.org/edition-a.jpg",
+            "kind": "cover",
+            "media_type": "image/jpeg",
+        }
+    ]
+    assert work_cover_assertions[0].value == expected_cover_value
+    assert edition_cover_assertions[0].value == expected_cover_value
+    assert work_cover_assertions[0].normalization_method == "bukmatika-cover-normalize-v1"
+    assert edition_cover_assertions[0].normalization_method == "bukmatika-cover-normalize-v1"
     assert all(assertion.confidence == 1.0 for assertion in edition.assertions)
     assert all(assertion.parser_version == "provenance-test-v1" for assertion in edition.assertions)
     assert all(assertion.observation_count == 1 for assertion in edition.assertions)
@@ -137,9 +174,9 @@ async def test_dossier_provenance_exposes_conflicting_assertions_without_raw_pay
         assertion.source_url.startswith("https://example.org/")
         for assertion in edition.assertions
     )
-    assert "provider_private_note" not in {
-        assertion.field_name for assertion in dossier.assertions + edition.assertions
-    }
+    assert {"provider_private_note", "untrusted_imageish_field"}.isdisjoint(
+        {assertion.field_name for assertion in dossier.assertions + edition.assertions}
+    )
 
 
 async def test_source_identity_resolves_same_provenance_projection(session: AsyncSession) -> None:

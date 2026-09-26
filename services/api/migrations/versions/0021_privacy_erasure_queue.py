@@ -16,6 +16,7 @@ def upgrade() -> None:
     op.create_table(
         "privacy_erasure_objects",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("sha256", sa.String(length=64), nullable=False),
         sa.Column("storage_key", sa.Text(), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("attempt_count", sa.Integer(), nullable=False),

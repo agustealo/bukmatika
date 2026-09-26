@@ -173,7 +173,10 @@ async def test_recommendations_explain_preference_fit_and_exclude_owned_work(
     assert first.title == "Atlantic Worlds"
     assert first.fit_score == 1.5
     assert [reason.signal for reason in first.reasons] == ["subject", "format"]
-    assert [reason.claim_id for reason in first.reasons] == [subject_claim.claim_id, format_claim.claim_id]
+    assert [reason.claim_id for reason in first.reasons] == [
+        subject_claim.claim_id,
+        format_claim.claim_id,
+    ]
     assert [reason.source for reason in first.reasons] == ["explicit", "explicit"]
     assert first.reasons[0].matched_values == ["Maritime History"]
     assert first.reasons[0].contribution == 1.0

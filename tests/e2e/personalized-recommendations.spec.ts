@@ -74,5 +74,7 @@ test("personalized discovery explains deterministic fit without model authority"
 
   await expect(page).toHaveURL(/\/dossier\?work_id=[0-9a-f-]+$/i);
   await expect(page.getByText("Canonical work dossier", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Browser Maritime Recommendation" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Browser Maritime Recommendation", exact: true }),
+  ).toBeVisible();
 });

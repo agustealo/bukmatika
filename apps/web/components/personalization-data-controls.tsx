@@ -22,13 +22,13 @@ export function PersonalizationDataControls() {
   const [busy, setBusy] = useState<"export" | "reset" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function exportPersonalization() {
+  async function exportBukmatikaData() {
     setBusy("export");
     setError(null);
     try {
-      const response = await apiFetch("/v1/personalization/export");
+      const response = await apiFetch("/v1/privacy/export");
       if (!response.ok) {
-        throw await responseError(response, "Could not export personalization data");
+        throw await responseError(response, "Could not export Bukmatika data");
       }
       const payload = (await response.json()) as unknown;
       const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -37,13 +37,13 @@ export function PersonalizationDataControls() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `bukmatika-personalization-${new Date().toISOString().slice(0, 10)}.json`;
+      anchor.download = `bukmatika-data-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not export personalization data.");
+      setError(caught instanceof Error ? caught.message : "Could not export Bukmatika data.");
     } finally {
       setBusy(null);
     }
@@ -79,11 +79,12 @@ export function PersonalizationDataControls() {
       <div className={styles.sectionHeading}>
         <div>
           <span className={styles.sectionIndex}>07</span>
-          <h2 id="data-controls-heading">Your personalization data</h2>
+          <h2 id="data-controls-heading">Your data &amp; privacy</h2>
         </div>
         <p>
-          Export the finite AI/personalization record or reset it without touching your library,
-          documents, reading progress, bookmarks, or research corpus.
+          Export your principal-owned library metadata, reading state, and AI/personalization record.
+          Book file bytes stay under the separate rights-gated Library backup. Personalization reset
+          remains deliberately narrower and does not touch your library or documents.
         </p>
       </div>
 
@@ -97,19 +98,21 @@ export function PersonalizationDataControls() {
         <article className={styles.exportCard}>
           <div>
             <span className={styles.dataEyebrow}>Portability</span>
-            <h3>Export my personalization</h3>
+            <h3>Export my Bukmatika data</h3>
             <p>
-              Download your user model, preference claims and evidence references, goals, plans,
-              policy decisions, and outcome history as versioned JSON.
+              Download one versioned JSON envelope containing your library metadata, collections,
+              tags, shelves, reading progress, bookmarks and highlights alongside your user model,
+              preference claims, goals, plans, policy decisions, and outcome history. Portable book
+              bytes are not embedded in this JSON and remain available through the Library backup.
             </p>
           </div>
           <button
             type="button"
             className={styles.dataAction}
             disabled={busy !== null}
-            onClick={() => void exportPersonalization()}
+            onClick={() => void exportBukmatikaData()}
           >
-            {busy === "export" ? "Preparing export…" : "Download JSON export"}
+            {busy === "export" ? "Preparing export…" : "Download data export"}
           </button>
         </article>
 
@@ -120,6 +123,7 @@ export function PersonalizationDataControls() {
             <p>
               Deletes personalization claims, goals, AI plans, policy decisions, and outcomes.
               Existing behavior events remain append-only but become ineligible for future learning.
+              This is not whole-account or library erasure.
             </p>
           </div>
           <label className={styles.resetConfirmation}>

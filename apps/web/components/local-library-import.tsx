@@ -63,10 +63,9 @@ async function responsePayload(response: Response): Promise<unknown> {
 
 async function importOne(
   file: File,
-  *,
-  titleOverride: string,
-  author: string,
+  options: { titleOverride: string; author: string },
 ): Promise<ImportedFileResult> {
+  const { titleOverride, author } = options;
   const metadata = {
     schema_version: 1,
     filename: file.name,

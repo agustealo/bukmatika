@@ -1,5 +1,6 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Annotated, AsyncIterator
+from typing import Annotated
 from uuid import UUID
 
 import httpx
@@ -63,7 +64,10 @@ async def work_cover(
         async with _cover_service() as service:
             cover = await service.cover_for_work(work_id=work_id)
     except CoverNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cover not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cover not found",
+        ) from exc
     except CoverUnavailable as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -85,7 +89,10 @@ async def source_cover(
                 provider_record_id=record_id,
             )
     except (CoverNotFound, DossierNotFound) as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cover not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cover not found",
+        ) from exc
     except DossierIdentityConflict as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

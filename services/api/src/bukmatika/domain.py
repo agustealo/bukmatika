@@ -169,7 +169,6 @@ class DiscoveryCandidate(BaseModel):
     source_score: Annotated[float, Field(ge=0, le=1)] = 0.5
 
     @computed_field
-    @property
     def has_cover(self) -> bool:
         return bool(self.covers)
 

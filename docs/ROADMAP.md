@@ -231,7 +231,8 @@ Acceptance for any future expansion: the delegated capability can never expand i
 - [ ] Privacy/export/delete controls.
 - [ ] Installer/deployment path.
 - [ ] Observability and crash diagnostics.
-- [x] Security review and hostile-file burn tests.
+- [ ] Security review.
+- [x] Hostile-file burn tests.
 - [x] Source adapter contract tests.
 - [ ] Consumer onboarding and empty-state polish.
 - [ ] Personalization calibration/evaluation suite.

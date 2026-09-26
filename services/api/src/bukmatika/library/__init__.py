@@ -39,6 +39,13 @@ from bukmatika.library.portability_domain import (
 )
 from bukmatika.library.portability_import import LibraryPortabilityImportPlanner
 from bukmatika.library.portability_routes import router as portability_router
+from bukmatika.library.provenance import MetadataProvenanceService
+from bukmatika.library.provenance_domain import (
+    EditionMetadataProvenanceResponse,
+    MetadataAssertionResponse,
+    WorkMetadataProvenanceResponse,
+)
+from bukmatika.library.provenance_routes import router as provenance_router
 from bukmatika.library.routes import router as library_router
 from bukmatika.library.service import (
     LibraryOrganizationConflict,
@@ -52,6 +59,7 @@ router = APIRouter()
 router.include_router(library_router)
 router.include_router(status_router)
 router.include_router(portability_router)
+router.include_router(provenance_router)
 
 __all__ = [
     "AssetStatusResponse",
@@ -60,6 +68,7 @@ __all__ = [
     "CollectionSummaryResponse",
     "CollectionUpdate",
     "EditionDossierResponse",
+    "EditionMetadataProvenanceResponse",
     "LibraryAssetAggregateStatus",
     "LibraryAssetStage",
     "LibraryAssetStatusItem",
@@ -80,6 +89,8 @@ __all__ = [
     "LibraryStatusResponse",
     "LibraryStatusService",
     "LibraryStatusSummary",
+    "MetadataAssertionResponse",
+    "MetadataProvenanceService",
     "SmartShelfContentsResponse",
     "SmartShelfCreate",
     "SmartShelfResponse",
@@ -90,5 +101,6 @@ __all__ = [
     "TagSummaryResponse",
     "TagUpdate",
     "WorkDossierResponse",
+    "WorkMetadataProvenanceResponse",
     "router",
 ]

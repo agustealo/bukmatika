@@ -1,7 +1,8 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from bukmatika.acquisition.storage import LocalObjectStore
 from bukmatika.config import get_settings
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.privacy.domain import (
@@ -12,14 +13,12 @@ from bukmatika.privacy.domain import (
 from bukmatika.privacy.service import AccountPrivacyService, PrincipalNotFound
 
 settings = get_settings()
-router = APIRouter(prefix="/v1/privacy", tags=["privacy"])
+router = APIRouter(prefix="/account", tags=["privacy"])
+_account_privacy_service = AccountPrivacyService(storage=LocalObjectStore(settings.storage_root))
 
 
-def privacy_service(request: Request) -> AccountPrivacyService:
-    service = request.app.state.account_privacy
-    if not isinstance(service, AccountPrivacyService):
-        raise RuntimeError("Account privacy service is not initialized")
-    return service
+def privacy_service() -> AccountPrivacyService:
+    return _account_privacy_service
 
 
 @router.get("/export", response_model=AccountPrivacyExportResponse)
@@ -27,6 +26,7 @@ async def export_account_data(
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[AccountPrivacyService, Depends(privacy_service)],
 ) -> AccountPrivacyExportResponse:
+    await service.cleanup_pending_storage()
     try:
         return await service.export(principal_id=identity.principal_id)
     except PrincipalNotFound as exc:
@@ -43,7 +43,7 @@ async def delete_account_data(
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[AccountPrivacyService, Depends(privacy_service)],
 ) -> AccountDeleteResponse:
-    del deletion
+    _ = deletion
     try:
         result = await service.delete_account(principal_id=identity.principal_id)
     except PrincipalNotFound as exc:

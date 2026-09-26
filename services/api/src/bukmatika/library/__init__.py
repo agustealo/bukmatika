@@ -70,6 +70,7 @@ from bukmatika.library.service import (
 )
 from bukmatika.library.status import LibraryStatusService
 from bukmatika.library.status_routes import router as status_router
+from bukmatika.privacy.routes import router as privacy_router
 
 router = APIRouter()
 router.include_router(library_router)
@@ -80,6 +81,7 @@ router.include_router(provenance_router)
 router.include_router(cover_router)
 router.include_router(citation_router)
 router.include_router(opds_router)
+router.include_router(privacy_router)
 
 __all__ = [
     "LOCAL_IMPORT_MEDIA_TYPE",

@@ -2,18 +2,18 @@
 
 The roadmap is organized by vertical slices. A slice is complete only when the real user path works end-to-end.
 
-## Current engineering checkpoint - 2026-09-25
+## Current engineering checkpoint - 2026-09-26
 
-- Current production base: `main@eeb5ab03386d25597226ee438082adcdfd6b0663` after merged PR #137.
-- Post-merge Quality #590 is green on that exact production commit across API, Web, and Browser quality.
+- Current production base: `main@3ef890794e6380208b7aa1239d15a4a20f970bbc` after merged PR #146.
+- Post-merge Quality #615 is green on that exact production commit across API, Web, and Browser quality.
 - Phase 0 foundation is implementation-complete: the canonical local bootstrap owns prerequisite validation, non-destructive environment setup, PostgreSQL 18 Compose lifecycle, dependency installation, database readiness, and migrations; structured request correlation provides canonical `X-Request-ID` propagation and privacy-bounded JSON access logging. PR #130 further fences structured logging to Bukmatika-owned/server logger families so raw HTTP client URLs cannot become a second telemetry authority.
 - Phase 1 listed discovery capabilities are implementation-complete: all four canonical source adapters remain independently degradable; provider health/rate-limit telemetry is bounded and privacy-safe; normalized results persist through the PostgreSQL catalog; and explicit language, format, era, rights-state, and source preferences can transparently nudge ranking by at most `0.05` without suppressing providers, rewriting rights evidence, or changing acquisition eligibility.
 - Phase 2 now has principal-owned acquisition intent and approval policy over the installation-wide exact-asset transfer authority. PR #133 added `always_ask` / `auto_eligible` policy, exact principal request/approve/cancel state, shared-transfer cancellation fencing, and a real Chromium lifecycle while preserving the `RightsEngine` as the final unattended-acquisition authority.
 - Phase 3 metadata confidence/provenance is inspectable through the existing `MetadataAssertion` / `SourceObservation` authority, with conflicting provider claims preserved rather than collapsed. PR #134 proves that projection in PostgreSQL and Chromium without exposing raw provider payloads or introducing a second provenance store.
 - Phase 3 cover handling is complete through PRs #135-#136: provider cover metadata is normalized into canonical provenance, safely materialized server-side through the existing SSRF-safe downloader, bounded/sanitized with Pillow, cached only as disposable Bukmatika-owned presentation bytes, served through authenticated endpoints, and proven in real Chromium without browser requests to provider URLs.
-- Phase 4 now has explicit product-level acceptance for the result dossier and edition picker. PR #137 proves two distinct canonical editions remain independently visible and distinguishable, the exact chosen edition persists as saved, the alternate edition remains selectable, and the canonical Library handoff survives reload.
+- Phase 4 product acceptance is complete for the listed consumer surfaces. PR #137 proves result dossier and exact edition selection, #139 proves the aggregate Status Center, #142 proves collections/tags/smart shelves, #143 proves PDF/EPUB Reader navigation plus progress/bookmarks/highlights/notes, #144 proves the live Discovery workspace, and #146 proves keyboard/focus/reduced-motion plus phone/tablet responsive behavior. The first #146 browser burn caught a real 391px Library shell at a 390px viewport; the corrected bounded mobile navigation then passed the full Chromium rail on the exact merged production line.
 - The API gate covers development Compose validation, Ruff, strict MyPy, the current migration chain, and the complete PostgreSQL/API test suite. The Web gate covers TypeScript typecheck and production build. The Browser gate builds the production web app, starts the real API against PostgreSQL, installs Chromium, and runs the no-mock consumer journeys through the production surfaces.
-- The real Chromium rail proves Research-to-Reader source handoff, balanced comparison with no-match sources preserved, stale cross-tab bookmark/highlight mutation rejection, principal-owned acquisition request/approval/cancel continuity, dossier metadata provenance and sanitized-cover rendering, and exact multi-edition selection persistence.
+- The real Chromium rail proves Discovery ranking/provenance/degradation, dossier and exact edition handoff, aggregate status, Library organization, PDF/EPUB Reader behavior, Research-to-Reader source handoff, balanced comparison with no-match sources preserved, stale cross-tab bookmark/highlight mutation rejection, principal-owned acquisition request/approval/cancel continuity, metadata provenance and sanitized-cover rendering, keyboard traversal and visible focus, reduced-motion behavior, and phone/tablet responsive layout without horizontal shell overflow.
 - Grounded reader research is live behind the canonical `ModelGateway` with loopback-only Ollama, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, a public real-model smoke command, and a rollback-only grounded-runtime proof command.
 - Consumer research includes selected-book lexical retrieval, grounded Q&A, balanced source/edition comparison, explicit-highlight grounding, deterministic timelines, deterministic people/place/concept mention extraction, measured retrieval evaluation over canonical evidence, ranked PostgreSQL fallback, and explicit request-local semantic retrieval behind the canonical embedding gateway.
 - Semantic retrieval implementation is shipped but remains unpromoted in ordinary consumer Research until the hardened semantic recall burn passes against a real configured local Ollama embedding model. The request-local semantic path creates no persistent vector authority.
@@ -86,19 +86,19 @@ Acceptance: public-domain/open/otherwise-authorized assets download reproducibly
 
 ## Phase 4 - Consumer library + reader
 
-- [ ] Polished discovery workspace.
+- [x] Polished discovery workspace.
 - [x] Result dossier and edition picker.
-- [ ] Download queue/status center.
-- [ ] Library shelves/collections.
-- [ ] EPUB reader.
-- [ ] PDF reader.
-- [ ] Highlights, notes, bookmarks, progress.
-- [ ] Keyboard and accessibility pass.
-- [ ] Responsive/mobile behavior.
+- [x] Download queue/status center.
+- [x] Library shelves/collections.
+- [x] EPUB reader.
+- [x] PDF reader.
+- [x] Highlights, notes, bookmarks, progress.
+- [x] Keyboard and accessibility pass.
+- [x] Responsive/mobile behavior.
 - [x] User goals and session continuity.
 - [x] Explicit preference management.
 
-Phase 4 remains deliberately conservative in this sheet until each consumer surface receives an explicit product-level acceptance pass. Backend capability existing is not sufficient to mark a consumer experience complete. The dossier/edition item is checked only because #137 now supplies that explicit acceptance evidence.
+Phase 4 product acceptance is complete for the listed surfaces through real PostgreSQL + Chromium journeys. The accessibility acceptance is deliberately bounded to the behavior actually proven by the product rail: semantic labels/landmarks, keyboard traversal, visible focus, reduced-motion behavior, and phone/tablet responsive layout without horizontal shell overflow. It is not a claim of third-party WCAG certification.
 
 ## Phase 5 - Adaptive research intelligence
 

@@ -35,6 +35,12 @@ from bukmatika.library.domain import (
     TagUpdate,
     WorkDossierResponse,
 )
+from bukmatika.library.local_import import (
+    LOCAL_IMPORT_MEDIA_TYPE,
+    LocalImportResponse,
+    LocalLibraryImportService,
+)
+from bukmatika.library.local_import_routes import router as local_import_router
 from bukmatika.library.opds import OPDS_MEDIA_TYPE, OpdsCatalogService
 from bukmatika.library.opds_routes import router as opds_router
 from bukmatika.library.portability import LibraryPortabilityService
@@ -69,12 +75,14 @@ router = APIRouter()
 router.include_router(library_router)
 router.include_router(status_router)
 router.include_router(portability_router)
+router.include_router(local_import_router)
 router.include_router(provenance_router)
 router.include_router(cover_router)
 router.include_router(citation_router)
 router.include_router(opds_router)
 
 __all__ = [
+    "LOCAL_IMPORT_MEDIA_TYPE",
     "OPDS_MEDIA_TYPE",
     "AssetStatusResponse",
     "CitationExport",
@@ -107,6 +115,8 @@ __all__ = [
     "LibraryStatusResponse",
     "LibraryStatusService",
     "LibraryStatusSummary",
+    "LocalImportResponse",
+    "LocalLibraryImportService",
     "MetadataAssertionResponse",
     "MetadataProvenanceService",
     "OpdsCatalogService",

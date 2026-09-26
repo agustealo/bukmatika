@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     acquisition_worker_poll_seconds: float = Field(default=0.5, gt=0, le=30)
     acquisition_job_lease_seconds: float = Field(default=180.0, ge=30, le=3600)
     acquisition_job_heartbeat_seconds: float = Field(default=30.0, ge=5, le=300)
+    privacy_erasure_worker_enabled: bool = True
+    privacy_erasure_worker_poll_seconds: float = Field(default=30.0, gt=0, le=3600)
     cover_timeout_seconds: float = Field(default=15.0, gt=0, le=60)
     cover_max_bytes: int = Field(default=8_388_608, ge=65_536, le=33_554_432)
     cover_redirect_limit: int = Field(default=3, ge=0, le=5)

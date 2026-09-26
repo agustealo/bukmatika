@@ -170,6 +170,7 @@ async def test_failed_request_preserves_request_id_without_logging_private_conte
         "status_code",
         "duration_ms",
         "error_type",
+        "error_frames",
     }
     assert values["request_id"] == "failure-request"
     assert values["method"] == "GET"
@@ -177,6 +178,8 @@ async def test_failed_request_preserves_request_id_without_logging_private_conte
     assert values["status_code"] == 500
     assert values["error_type"] == "RuntimeError"
     assert isinstance(values["duration_ms"], float)
+    assert isinstance(values["error_frames"], list)
+    assert values["error_frames"]
     rendered = repr(values)
     assert "private failure detail" not in rendered
     assert "private-book-identifier" not in rendered

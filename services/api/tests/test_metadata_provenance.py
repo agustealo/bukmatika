@@ -156,17 +156,16 @@ async def test_dossier_provenance_exposes_conflicting_assertions_without_raw_pay
     }
     assert len(work_cover_assertions) == 1
     assert len(edition_cover_assertions) == 1
-    expected_cover_value = [
-        {
-            "url": "https://images.example.org/edition-a.jpg",
-            "kind": "cover",
-            "media_type": "image/jpeg",
-        }
-    ]
+    expected_cover_value = {
+        "cover_count": 1,
+        "kinds": ["cover"],
+        "media_types": ["image/jpeg"],
+    }
     assert work_cover_assertions[0].value == expected_cover_value
     assert edition_cover_assertions[0].value == expected_cover_value
     assert work_cover_assertions[0].normalization_method == "bukmatika-cover-normalize-v1"
     assert edition_cover_assertions[0].normalization_method == "bukmatika-cover-normalize-v1"
+    assert "images.example.org" not in dossier.model_dump_json()
     assert all(assertion.confidence == 1.0 for assertion in edition.assertions)
     assert all(assertion.parser_version == "provenance-test-v1" for assertion in edition.assertions)
     assert all(assertion.observation_count == 1 for assertion in edition.assertions)

@@ -26,7 +26,10 @@ class ReaderFormatSeed:
 
 def _long_passage(opening: str, label: str) -> str:
     supporting = [
-        f"{label} supporting paragraph {index} keeps the canonical section taller than the viewport."
+        (
+            f"{label} supporting paragraph {index} keeps the canonical section "
+            "taller than the viewport."
+        )
         for index in range(1, 25)
     ]
     return "\n".join((opening, *supporting))

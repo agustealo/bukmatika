@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.acquisition.storage import AcquisitionObjectStore
 from bukmatika.acquisition.verification import FormatVerificationError, verify_download
 from bukmatika.config import Settings
+from bukmatika.library.local_import_identity import local_import_source_key
 from bukmatika.normalization import normalize_text
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.acquisition import AcquisitionRepository
@@ -20,6 +21,7 @@ from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.library import LibraryRepository
 from bukmatika.persistence.local_import import LocalImportIdentityConflict, LocalImportRepository
+from bukmatika.persistence.storage_locks import content_publication_lock
 from bukmatika.rights import RightsEngine
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
@@ -118,11 +120,15 @@ class LocalLibraryImportService:
         try:
             received = await self._receive(stream=stream, temp_path=temp_path)
             await self._verify(temp_path, received)
-            return await self._commit(
-                principal_id=principal_id,
-                temp_path=temp_path,
-                received=received,
-            )
+            async with content_publication_lock(
+                received.sha256,
+                session_scope_factory=self._session_scope,
+            ):
+                return await self._commit(
+                    principal_id=principal_id,
+                    temp_path=temp_path,
+                    received=received,
+                )
         finally:
             with suppress(FileNotFoundError):
                 await self._storage.discard(temp_path)
@@ -271,7 +277,7 @@ class LocalLibraryImportService:
         temp_path: Path,
         received: _ReceivedLocalFile,
     ) -> LocalImportResponse:
-        source_key = self._source_key(principal_id, received.sha256)
+        source_key = local_import_source_key(principal_id, received.sha256)
         async with self._session_scope() as database_session:
             catalog = CatalogRepository(database_session)
             local_imports = LocalImportRepository(database_session)
@@ -480,13 +486,6 @@ class LocalLibraryImportService:
                 "idempotent": idempotent,
             },
         )
-
-    @staticmethod
-    def _source_key(principal_id: UUID, sha256: str) -> str:
-        digest = hashlib.sha256()
-        digest.update(principal_id.bytes)
-        digest.update(bytes.fromhex(sha256))
-        return digest.hexdigest()
 
     @staticmethod
     def _format(filename: str) -> tuple[str, str]:

@@ -5,6 +5,8 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEFAULT_ARCHIVE_MAX_MEMBERS = 20_000
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -47,7 +49,7 @@ class Settings(BaseSettings):
     delegation_job_heartbeat_seconds: float = Field(default=20.0, ge=5, le=300)
     delegation_job_max_attempts: int = Field(default=3, ge=1, le=10)
     delegation_retry_seconds: float = Field(default=1.0, gt=0, le=60)
-    archive_max_members: int = Field(default=20_000, ge=1, le=100_000)
+    archive_max_members: int = Field(default=DEFAULT_ARCHIVE_MAX_MEMBERS, ge=1, le=100_000)
     archive_max_uncompressed_bytes: int = Field(
         default=2_147_483_648,
         ge=1,

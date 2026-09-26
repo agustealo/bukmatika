@@ -83,13 +83,13 @@ test("Library organization persists collections, tags, and live smart shelves", 
   ).toBeAttached();
 
   const readyOrganizer = await openOrganizer(page, seed.titles.ready);
-  await readyOrganizer.getByRole("checkbox", { name: COLLECTION_NAME }).check();
+  await readyOrganizer.getByRole("checkbox", { name: COLLECTION_NAME }).click();
   await expect(
     collectionFilter.getByRole("option", { name: `${COLLECTION_NAME} (1)`, exact: true }),
   ).toBeAttached();
 
   const failedOrganizer = await openOrganizer(page, seed.titles.failed);
-  await failedOrganizer.getByRole("checkbox", { name: COLLECTION_NAME }).check();
+  await failedOrganizer.getByRole("checkbox", { name: COLLECTION_NAME }).click();
   await expect(
     collectionFilter.getByRole("option", { name: `${COLLECTION_NAME} (2)`, exact: true }),
   ).toBeAttached();

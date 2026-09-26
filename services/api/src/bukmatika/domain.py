@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field, HttpUrl, computed_field, field_validator
 
 
 class RightsState(StrEnum):
@@ -164,9 +164,13 @@ class DiscoveryCandidate(BaseModel):
     landing_url: HttpUrl
     formats: list[str] = Field(default_factory=list)
     assets: list[DiscoveredAsset] = Field(default_factory=list)
-    covers: list[DiscoveredCover] = Field(default_factory=list, max_length=8)
+    covers: list[DiscoveredCover] = Field(default_factory=list, max_length=8, exclude=True)
     rights: list[RightsEvidence] = Field(default_factory=list)
     source_score: Annotated[float, Field(ge=0, le=1)] = 0.5
+
+    @computed_field
+    def has_cover(self) -> bool:
+        return bool(self.covers)
 
 
 DiscoveryPreferenceDimension = Literal["language", "format", "era", "rights", "source"]

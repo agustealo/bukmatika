@@ -14,7 +14,7 @@ function seedMetadataProvenance(): string {
   ).trim();
 }
 
-test("dossier keeps conflicting metadata claims inspectable without raw payload leakage", async ({
+test("dossier renders sanitized cover bytes and inspectable metadata without provider leakage", async ({
   page,
 }) => {
   const workId = seedMetadataProvenance();
@@ -23,6 +23,16 @@ test("dossier keeps conflicting metadata claims inspectable without raw payload 
   await expect(
     page.getByRole("heading", { name: "Browser Metadata Provenance Fixture", level: 1 }),
   ).toBeVisible();
+
+  const cover = page.getByTestId("dossier-cover-image");
+  await expect(cover).toBeVisible();
+  await expect(cover).toHaveAttribute("src", /^blob:/);
+  await expect
+    .poll(async () => cover.evaluate((node) => (node as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(0);
+  await expect
+    .poll(async () => cover.evaluate((node) => (node as HTMLImageElement).naturalHeight))
+    .toBeGreaterThan(0);
 
   const panel = page.getByRole("region", { name: "Metadata provenance" });
   await expect(panel).toBeVisible();
@@ -41,4 +51,5 @@ test("dossier keeps conflicting metadata claims inspectable without raw payload 
 
   await expect(panel).not.toContainText("must never appear in the dossier");
   await expect(panel).not.toContainText("must also never appear in the dossier");
+  expect(await page.content()).not.toContain("images.example.org/browser-cover.jpg");
 });

@@ -1,0 +1,35 @@
+.surface {
+  display: flex;
+  justify-content: center;
+  margin: 0 auto 1.5rem;
+  max-width: 18rem;
+  min-height: 22rem;
+  width: 100%;
+}
+
+.image,
+.skeleton {
+  aspect-ratio: 2 / 3;
+  border-radius: 1rem;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 14%);
+  display: block;
+  max-height: 30rem;
+  object-fit: contain;
+  width: 100%;
+}
+
+.image {
+  background: var(--surface, #fff);
+}
+
+.skeleton {
+  background: linear-gradient(110deg, rgb(127 127 127 / 8%) 20%, rgb(127 127 127 / 18%) 35%, rgb(127 127 127 / 8%) 50%);
+  background-size: 200% 100%;
+  animation: dossier-cover-loading 1.3s linear infinite;
+}
+
+@keyframes dossier-cover-loading {
+  to {
+    background-position-x: -200%;
+  }
+}

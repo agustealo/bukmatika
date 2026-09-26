@@ -2,11 +2,7 @@ import { execFileSync } from "node:child_process";
 
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
-type SessionResponse = {
-  principal_id: string;
-  session_id: string;
-  expires_at: string;
-};
+import { bootstrapLocalSession } from "./session";
 
 type StatusSeed = {
   titles: {
@@ -24,15 +20,8 @@ type StatusSeed = {
   ready_heading: string;
 };
 
-async function seedStatusCenter(page: Page, context: BrowserContext): Promise<StatusSeed> {
-  await page.goto("/research");
-  await expect(
-    page.getByRole("heading", { name: "Search evidence. Compare sources." }),
-  ).toBeVisible();
-
-  const sessionResponse = await context.request.get("http://127.0.0.1:8000/v1/session");
-  expect(sessionResponse.ok()).toBeTruthy();
-  const session = (await sessionResponse.json()) as SessionResponse;
+async function seedStatusCenter(context: BrowserContext): Promise<StatusSeed> {
+  const session = await bootstrapLocalSession(context);
 
   const output = execFileSync(
     process.env.PYTHON ?? "python",
@@ -61,7 +50,7 @@ test("Status Center projects canonical pipeline state, filters it, and hands rea
   page,
   context,
 }) => {
-  const seed = await seedStatusCenter(page, context);
+  const seed = await seedStatusCenter(context);
   await page.goto("/status");
 
   await expect(

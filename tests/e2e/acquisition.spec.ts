@@ -1,25 +1,11 @@
 import { execFileSync } from "node:child_process";
 
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext } from "@playwright/test";
 
-type SessionResponse = {
-  principal_id: string;
-  session_id: string;
-  expires_at: string;
-};
+import { bootstrapLocalSession } from "./session";
 
-async function seedEligibleAcquisition(page: Page, context: BrowserContext): Promise<string> {
-  await page.goto("/research");
-  await expect(
-    page.getByRole("heading", { name: "Search evidence. Compare sources." }),
-  ).toBeVisible();
-
-  const sessionResponse = await context.request.get("http://127.0.0.1:8000/v1/session");
-  expect(sessionResponse.ok()).toBeTruthy();
-  const session = (await sessionResponse.json()) as SessionResponse;
-  expect(session.principal_id).toMatch(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-  );
+async function seedEligibleAcquisition(context: BrowserContext): Promise<string> {
+  const session = await bootstrapLocalSession(context);
 
   return execFileSync(
     process.env.PYTHON ?? "python",
@@ -36,7 +22,7 @@ test("principal acquisition approval, cancellation, and re-request stay coherent
   page,
   context,
 }) => {
-  const workId = await seedEligibleAcquisition(page, context);
+  const workId = await seedEligibleAcquisition(context);
   await page.goto(`/dossier?work_id=${workId}`);
 
   await expect(page.getByRole("heading", { name: /Browser Acquisition Fixture/ })).toBeVisible();

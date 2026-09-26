@@ -8,30 +8,20 @@ import {
   type Page,
 } from "@playwright/test";
 
-type SessionResponse = {
-  principal_id: string;
-  session_id: string;
-  expires_at: string;
-};
+import { bootstrapLocalSession } from "./session";
 
 const NAVIGATION_PASSAGE =
   "Mariners mapped obsidian navigation routes across the old world before 1492.";
 const HIGHLIGHT_TEXT = "Mariners mapped obsidian navigation routes";
 
 async function seedOwnedResearchSources(page: Page, context: BrowserContext): Promise<void> {
+  const session = await bootstrapLocalSession(context);
   await page.goto("/research");
 
   await expect(
     page.getByRole("heading", { name: "Search evidence. Compare sources." }),
   ).toBeVisible();
   await expect(page.getByText("Your library is empty.")).toBeVisible();
-
-  const sessionResponse = await context.request.get("http://127.0.0.1:8000/v1/session");
-  expect(sessionResponse.ok()).toBeTruthy();
-  const session = (await sessionResponse.json()) as SessionResponse;
-  expect(session.principal_id).toMatch(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-  );
 
   execFileSync(
     process.env.PYTHON ?? "python",

@@ -7,7 +7,13 @@ from pydantic import HttpUrl
 
 from bukmatika.config import Settings
 from bukmatika.discovery.base import DiscoveredRecord
-from bukmatika.domain import DiscoveryCandidate, RightsEvidence, RightsState, SearchIntent
+from bukmatika.domain import (
+    DiscoveredCover,
+    DiscoveryCandidate,
+    RightsEvidence,
+    RightsState,
+    SearchIntent,
+)
 
 
 class OpenLibraryAdapter:
@@ -58,7 +64,7 @@ class OpenLibraryAdapter:
             "limit": intent.limit,
             "fields": (
                 "key,title,author_name,first_publish_year,language,subject,edition_key,"
-                "ebook_access,public_scan_b,ia"
+                "ebook_access,public_scan_b,ia,cover_i"
             ),
         }
         clauses: list[str] = []
@@ -106,9 +112,25 @@ class OpenLibraryAdapter:
             subjects=cls._strings(row.get("subject"))[:24],
             landing_url=landing_url,
             formats=[],
+            covers=cls._covers(row),
             rights=cls._rights(row, landing_url),
             source_score=0.85,
         )
+
+    @classmethod
+    def _covers(cls, row: Mapping[str, Any]) -> list[DiscoveredCover]:
+        cover_id = cls._integer(row.get("cover_i"))
+        if cover_id is None or cover_id <= 0:
+            return []
+        return [
+            DiscoveredCover(
+                url=HttpUrl(
+                    f"https://covers.openlibrary.org/b/id/{cover_id}-L.jpg?default=false"
+                ),
+                kind="cover",
+                media_type="image/jpeg",
+            )
+        ]
 
     @staticmethod
     def _rights(row: Mapping[str, Any], evidence_url: HttpUrl) -> list[RightsEvidence]:

@@ -133,7 +133,7 @@ export function LibraryPortabilityClient() {
     setExportSummary(null);
     try {
       const response = await apiFetch("/v1/library/export/file", { cache: "no-store" });
-      if (!response.ok) throw new Error(await responseError(response, "Export failed with"));
+      if (!response.ok) throw new Error(await responseError(response, "Backup failed with"));
       const included = responseCount(response, "X-Bukmatika-Bytes-Included");
       const omitted = responseCount(response, "X-Bukmatika-Bytes-Omitted");
       if (included !== null && omitted !== null) {
@@ -144,7 +144,7 @@ export function LibraryPortabilityClient() {
       try {
         const link = document.createElement("a");
         link.href = objectUrl;
-        link.download = `bukmatika-library-${new Date().toISOString().slice(0, 10)}.bukmatika`;
+        link.download = `bukmatika-backup-${new Date().toISOString().slice(0, 10)}.bukmatika`;
         document.body.appendChild(link);
         link.click();
         link.remove();
@@ -152,7 +152,7 @@ export function LibraryPortabilityClient() {
         URL.revokeObjectURL(objectUrl);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Export failed.");
+      setError(caught instanceof Error ? caught.message : "Backup failed.");
     } finally {
       setBusy(null);
     }
@@ -169,11 +169,11 @@ export function LibraryPortabilityClient() {
         headers: { "Content-Type": BUNDLE_MEDIA_TYPE },
         body: file,
       });
-      if (!response.ok) throw new Error(await responseError(response, "Import review failed with"));
+      if (!response.ok) throw new Error(await responseError(response, "Backup review failed with"));
       setPlan((await response.json()) as BundlePlan);
     } catch (caught) {
       setPlan(null);
-      setError(caught instanceof Error ? caught.message : "Import review failed.");
+      setError(caught instanceof Error ? caught.message : "Backup review failed.");
     } finally {
       setBusy(null);
     }
@@ -194,16 +194,16 @@ export function LibraryPortabilityClient() {
         throw new Error(
           typeof body.detail === "object" && body.detail?.detail
             ? body.detail.detail
-            : `Import apply failed with HTTP ${response.status}.`,
+            : `Restore failed with HTTP ${response.status}.`,
         );
       }
-      if (!("manifest" in body)) throw new Error("Import apply returned an invalid response.");
+      if (!("manifest" in body)) throw new Error("Restore returned an invalid response.");
       setResult(body);
       if (!body.manifest.committed) {
-        setError("The destination changed after review. Nothing from the manifest was committed.");
+        setError("The destination changed after review. Nothing from the backup was restored.");
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Import apply failed.");
+      setError(caught instanceof Error ? caught.message : "Restore failed.");
     } finally {
       setBusy(null);
     }
@@ -218,12 +218,12 @@ export function LibraryPortabilityClient() {
     <section className={styles.surface}>
       <div className={styles.hero}>
         <div>
-          <p className="eyebrow">Library portability</p>
-          <h1>Move your library without blurring the rights line.</h1>
+          <p className="eyebrow">Backup &amp; restore</p>
+          <h1>Back up or restore your library.</h1>
           <p>
-            A Bukmatika transfer carries your catalog, reading state, organization, and only
-            the book bytes that the current source-side rights decision allows to leave this
-            installation. The destination checks retention rights again before accepting bytes.
+            A Bukmatika backup carries your catalog, reading state, and organization, plus only
+            the book bytes the current source-side rights decision allows to leave this installation.
+            Restore checks destination retention rights again before accepting any packaged bytes.
           </p>
         </div>
         <a className="secondary-action" href="/library">Back to library</a>
@@ -234,10 +234,10 @@ export function LibraryPortabilityClient() {
       <div className={styles.grid}>
         <article className={styles.card}>
           <span className={styles.step}>01</span>
-          <h2>Export a transfer file</h2>
+          <h2>Create a backup</h2>
           <p>
-            Create one bounded <code>.bukmatika</code> file. Assets that cannot be exported are
-            listed as omissions inside the package instead of being copied silently.
+            Create one bounded <code>.bukmatika</code> backup. Assets that cannot be exported are
+            recorded as omissions inside the package instead of being copied silently.
           </p>
           <button
             className="primary-action"
@@ -245,14 +245,14 @@ export function LibraryPortabilityClient() {
             disabled={busy !== null}
             onClick={() => void exportLibrary()}
           >
-            {busy === "export" ? "Building transfer…" : "Export library"}
+            {busy === "export" ? "Building backup…" : "Download backup"}
           </button>
           {exportSummary ? (
             <p className={styles.fileMeta} role="status">
               {exportSummary.included} byte payload{exportSummary.included === 1 ? "" : "s"} included ·{" "}
               {exportSummary.omitted} omitted by current export policy.
               {exportSummary.omitted > 0
-                ? " Omission reasons travel inside the transfer and are shown during import review."
+                ? " Omission reasons travel inside the backup and are shown during restore review."
                 : " No byte omissions were recorded."}
             </p>
           ) : null}
@@ -260,13 +260,13 @@ export function LibraryPortabilityClient() {
 
         <article className={styles.card}>
           <span className={styles.step}>02</span>
-          <h2>Review an import</h2>
+          <h2>Review a backup</h2>
           <p>
-            Select a Bukmatika transfer. Review is dry-run only: no library records or book bytes
-            are changed until you explicitly apply the reviewed file.
+            Select a Bukmatika backup. Review is dry-run only: no library records or book bytes
+            change until you explicitly restore the reviewed file.
           </p>
           <label className={styles.filePicker}>
-            <span>Transfer file</span>
+            <span>Backup file</span>
             <input type="file" accept=".bukmatika,application/zip" onChange={chooseFile} />
           </label>
           {file ? (
@@ -278,7 +278,7 @@ export function LibraryPortabilityClient() {
             disabled={file === null || busy !== null}
             onClick={() => void planImport()}
           >
-            {busy === "plan" ? "Reviewing…" : "Review transfer"}
+            {busy === "plan" ? "Reviewing…" : "Review backup"}
           </button>
         </article>
       </div>
@@ -288,7 +288,7 @@ export function LibraryPortabilityClient() {
           <div className={styles.reviewHeader}>
             <div>
               <p className="eyebrow">Dry-run result</p>
-              <h2>{plan.plan.can_apply ? "Ready for explicit apply" : "Conflicts need attention"}</h2>
+              <h2>{plan.plan.can_apply ? "Ready to restore" : "Conflicts need attention"}</h2>
             </div>
             <div className={styles.metrics}>
               <span><strong>{plan.plan.entries.length}</strong> library entries</span>
@@ -328,10 +328,10 @@ export function LibraryPortabilityClient() {
 
           <div className={styles.applyRow}>
             <div>
-              <strong>Apply only after reviewing the dry-run.</strong>
+              <strong>Restore only after reviewing the dry-run.</strong>
               <p>
                 Destination-local retention policy is checked again for every included byte at
-                apply time. Source rights snapshots never become destination permissions.
+                restore time. Source rights snapshots never become destination permissions.
               </p>
             </div>
             <button
@@ -340,7 +340,7 @@ export function LibraryPortabilityClient() {
               disabled={!plan.plan.can_apply || busy !== null}
               onClick={() => void applyImport()}
             >
-              {busy === "apply" ? "Applying…" : "Apply reviewed transfer"}
+              {busy === "apply" ? "Restoring…" : "Restore reviewed backup"}
             </button>
           </div>
         </section>
@@ -348,8 +348,8 @@ export function LibraryPortabilityClient() {
 
       {result ? (
         <section className={styles.result} aria-live="polite">
-          <p className="eyebrow">Apply result</p>
-          <h2>{result.manifest.committed ? "Manifest committed" : "Manifest not committed"}</h2>
+          <p className="eyebrow">Restore result</p>
+          <h2>{result.manifest.committed ? "Backup restored" : "Backup not restored"}</h2>
           <div className={styles.metrics}>
             <span><strong>{result.manifest.summary.works_created}</strong> works created</span>
             <span><strong>{result.manifest.summary.editions_created}</strong> editions created</span>
@@ -360,7 +360,7 @@ export function LibraryPortabilityClient() {
           <p className={styles.completion}>
             {result.content_complete
               ? "All packaged content was accepted through the destination authority."
-              : "The transfer is intentionally partial. Review source omissions or destination byte blocks below."}
+              : "The restore is intentionally partial. Review source omissions or destination byte blocks below."}
           </p>
           {result.bytes.some((item) => item.status !== "stored" && item.status !== "idempotent") ? (
             <div className={styles.listBlock}>

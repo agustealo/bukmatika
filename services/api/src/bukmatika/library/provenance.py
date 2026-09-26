@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -89,7 +90,7 @@ def _assertion_response(record: MetadataProvenanceRecord) -> MetadataAssertionRe
     source = record.source
     return MetadataAssertionResponse(
         field_name=assertion.field_name,
-        value=assertion.value,
+        value=_public_assertion_value(assertion.field_name, assertion.value),
         provider=source.provider,
         provider_record_id=source.provider_record_id,
         source_url=source.canonical_url,
@@ -101,6 +102,25 @@ def _assertion_response(record: MetadataProvenanceRecord) -> MetadataAssertionRe
         observation_count=observation.observation_count,
         assertion_created_at=assertion.created_at,
     )
+
+
+def _public_assertion_value(field_name: str, value: Any) -> Any:
+    if field_name != "covers":
+        return value
+    if not isinstance(value, list):
+        return {"available": False, "count": 0, "kinds": []}
+    kinds: list[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("kind")
+        if isinstance(kind, str) and kind in {"cover", "thumbnail"} and kind not in kinds:
+            kinds.append(kind)
+    return {
+        "available": bool(value),
+        "count": len(value),
+        "kinds": kinds,
+    }
 
 
 __all__ = ["MetadataProvenanceService"]

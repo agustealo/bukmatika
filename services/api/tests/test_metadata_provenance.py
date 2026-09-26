@@ -157,9 +157,9 @@ async def test_dossier_provenance_exposes_conflicting_assertions_without_raw_pay
     assert len(work_cover_assertions) == 1
     assert len(edition_cover_assertions) == 1
     expected_cover_value = {
-        "cover_count": 1,
+        "available": True,
+        "count": 1,
         "kinds": ["cover"],
-        "media_types": ["image/jpeg"],
     }
     assert work_cover_assertions[0].value == expected_cover_value
     assert edition_cover_assertions[0].value == expected_cover_value

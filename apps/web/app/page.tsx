@@ -1,4 +1,5 @@
 import { DiscoveryClient } from "../components/discovery-client";
+import { PersonalizedRecommendations } from "../components/personalized-recommendations";
 
 export default function Home() {
   return (
@@ -26,6 +27,7 @@ export default function Home() {
         </p>
       </section>
 
+      <PersonalizedRecommendations />
       <DiscoveryClient />
 
       <section className="principles" aria-label="Product principles">

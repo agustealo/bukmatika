@@ -4,8 +4,8 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 
 ## Current engineering checkpoint - 2026-09-26
 
-- Current production base: `main@c63ec639ed2a6d299b35ce0df8fe575b14a788ed` after merged PR #148 and the no-op cleanup commit.
-- Post-merge Quality #633 is green on that exact production commit across API, Web, and Browser quality.
+- Current production base: `main@1fa57c5d6c2b9bdef35ab7890903d6a2c334c9c1` after merged PR #156.
+- Post-merge Quality #662 is green on that exact production commit across API, Web, and Browser quality.
 - Phase 0 foundation is implementation-complete: the canonical local bootstrap owns prerequisite validation, non-destructive environment setup, PostgreSQL 18 Compose lifecycle, dependency installation, database readiness, and migrations; structured request correlation provides canonical `X-Request-ID` propagation and privacy-bounded JSON access logging. PR #130 further fences structured logging to Bukmatika-owned/server logger families so raw HTTP client URLs cannot become a second telemetry authority.
 - Phase 1 listed discovery capabilities are implementation-complete: all four canonical source adapters remain independently degradable; provider health/rate-limit telemetry is bounded and privacy-safe; normalized results persist through the PostgreSQL catalog; and explicit language, format, era, rights-state, and source preferences can transparently nudge ranking by at most `0.05` without suppressing providers, rewriting rights evidence, or changing acquisition eligibility.
 - Phase 2 now has principal-owned acquisition intent and approval policy over the installation-wide exact-asset transfer authority. PR #133 added `always_ask` / `auto_eligible` policy, exact principal request/approve/cancel state, shared-transfer cancellation fencing, and a real Chromium lifecycle while preserving the `RightsEngine` as the final unattended-acquisition authority.
@@ -13,14 +13,15 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 - Phase 3 cover handling is complete through PRs #135-#136: provider cover metadata is normalized into canonical provenance, safely materialized server-side through the existing SSRF-safe downloader, bounded/sanitized with Pillow, cached only as disposable Bukmatika-owned presentation bytes, served through authenticated endpoints, and proven in real Chromium without browser requests to provider URLs.
 - Phase 4 product acceptance is complete for the listed consumer surfaces. PR #137 proves result dossier and exact edition selection, #139 proves the aggregate Status Center, #142 proves collections/tags/smart shelves, #143 proves PDF/EPUB Reader navigation plus progress/bookmarks/highlights/notes, #144 proves the live Discovery workspace, and #146 proves keyboard/focus/reduced-motion plus phone/tablet responsive behavior. The first #146 browser burn caught a real 391px Library shell at a 390px viewport; the corrected bounded mobile navigation then passed the full Chromium rail on the exact merged production line.
 - PR #148 closes explainable personalized discovery/recommendations as a deterministic read projection over canonical catalog metadata and principal-owned ranking preferences. It returns exact reason contributions, preserves stronger explicit preference authority, excludes only the requesting principal's owned works, works with AI disabled, and leaves live federated ranking, rights, acquisition, and autonomy unchanged. The real Chromium journey proves explanation rendering, ownership isolation, retry-stable fixtures, and canonical dossier handoff.
+- Phase 7 interop has materially advanced without creating parallel authorities: PR #150 ships canonical CSL JSON/BibTeX/RIS citation export, PR #151 centralizes discovery adapter contract coverage, PRs #153-#154 harden hostile EPUB/DOCX archive handling and archive member ceilings, PR #155 ships authenticated principal-scoped OPDS 1.2, and PR #156 proves consumer backup/restore through the existing `.bukmatika` portability and destination-local rights authorities.
 - The API gate covers development Compose validation, Ruff, strict MyPy, the current migration chain, and the complete PostgreSQL/API test suite. The Web gate covers TypeScript typecheck and production build. The Browser gate builds the production web app, starts the real API against PostgreSQL, installs Chromium, and runs the no-mock consumer journeys through the production surfaces.
-- The real Chromium rail proves Discovery ranking/provenance/degradation, explainable personalized recommendation fit, dossier and exact edition handoff, aggregate status, Library organization, PDF/EPUB Reader behavior, Research-to-Reader source handoff, balanced comparison with no-match sources preserved, stale cross-tab bookmark/highlight mutation rejection, principal-owned acquisition request/approval/cancel continuity, metadata provenance and sanitized-cover rendering, keyboard traversal and visible focus, reduced-motion behavior, and phone/tablet responsive layout without horizontal shell overflow.
+- The real Chromium rail proves Discovery ranking/provenance/degradation, explainable personalized recommendation fit, dossier and exact edition handoff, aggregate status, Library organization, PDF/EPUB Reader behavior, Research-to-Reader source handoff, balanced comparison with no-match sources preserved, stale cross-tab bookmark/highlight mutation rejection, principal-owned acquisition request/approval/cancel continuity, metadata provenance and sanitized-cover rendering, backup download/dry-run/restore into a fresh principal, keyboard traversal and visible focus, reduced-motion behavior, and phone/tablet responsive layout without horizontal shell overflow.
 - Grounded reader research is live behind the canonical `ModelGateway` with loopback-only Ollama, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, a public real-model smoke command, and a rollback-only grounded-runtime proof command.
 - Consumer research includes selected-book lexical retrieval, grounded Q&A, balanced source/edition comparison, explicit-highlight grounding, deterministic timelines, deterministic people/place/concept mention extraction, measured retrieval evaluation over canonical evidence, ranked PostgreSQL fallback, and explicit request-local semantic retrieval behind the canonical embedding gateway.
 - Semantic retrieval implementation is shipped but remains unpromoted in ordinary consumer Research until the hardened semantic recall burn passes against a real configured local Ollama embedding model. The request-local semantic path creates no persistent vector authority.
 - The bounded Level 2 Research workflow is continuous in the Research surface: selected books and a question can produce an exact proposal, the user can approve or reject it, explicitly start or stop it, follow durable live state, recover active controls after reload or scope changes, see the newest active proposal first, and inspect terminal outcomes from the same server-backed delegation/result authorities.
 - Research surfaces canonical local-AI readiness for AI-disabled, unconfigured, runtime-offline, invalid-runtime, and missing-model states without becoming a second settings authority. Evidence-only research remains available and setup routes back to the canonical AI control center.
-- Consumer library portability includes versioned manifests, deterministic dry-run/apply, rights-gated byte export/import, bounded `.bukmatika` transport, archive hardening, and export omission transparency.
+- Consumer library portability includes versioned manifests, deterministic dry-run/apply, rights-gated byte export/import, bounded `.bukmatika` transport, archive hardening, export omission transparency, and a real Chromium backup/restore journey into a fresh principal without widening byte-retention authority.
 - Bounded Level 2 read-only delegation remains limited to explicitly selected `research.search` steps. It requires principal-owned consent, exact per-run approval, explicit start, immutable selection/budget fingerprints, finite runtime/retry/attempt ceilings, stop/revoke controls, current-state/policy/context revalidation, durable PostgreSQL dispatch, claim leases, restart recovery, and audit evidence.
 - The Level 2 lane is not standing permission. The model cannot approve, start, expand, reorder, rebudget, or silently replan delegated work.
 - Level 3, delegated writes, autonomous acquisition, consequential delegation, standing approvals, arbitrary tool/code/shell/SQL/filesystem access, and open-ended scheduler agents remain closed.
@@ -223,15 +224,16 @@ Acceptance for any future expansion: the delegated capability can never expand i
 
 ## Phase 7 - Interop + market readiness
 
-- [ ] OPDS export/server.
-- [ ] BibTeX/CSL JSON/RIS citation export.
+- [x] OPDS export/server.
+- [x] BibTeX/CSL JSON/RIS citation export.
 - [ ] Import existing local libraries.
-- [ ] Backup/restore.
+- [x] Backup/restore.
 - [ ] Privacy/export/delete controls.
 - [ ] Installer/deployment path.
 - [ ] Observability and crash diagnostics.
-- [ ] Security review and hostile-file burn tests.
-- [ ] Source adapter contract tests.
+- [ ] Security review.
+- [x] Hostile-file burn tests.
+- [x] Source adapter contract tests.
 - [ ] Consumer onboarding and empty-state polish.
 - [ ] Personalization calibration/evaluation suite.
 - [ ] Grounding/citation validity tests.

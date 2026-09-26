@@ -192,7 +192,9 @@ async def test_local_import_is_hidden_from_shared_catalog_and_cross_principal_sa
     library = LibraryRepository(session)
     owner_entry = await library.save_edition(owner_id, result.edition_id)
     assert owner_entry.id == result.library_entry_id
-    assert await library.get_work(result.work_id) is None
+    owner_work = await library.get_work(result.work_id)
+    assert owner_work is not None
+    assert owner_work.canonical_title == private_title
 
     with pytest.raises(LibraryTargetNotFound):
         await library.save_work(other_id, result.work_id)

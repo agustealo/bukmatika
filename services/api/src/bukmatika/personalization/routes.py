@@ -48,8 +48,10 @@ from bukmatika.personalization.portability_domain import (
 from bukmatika.personalization.recommendation_domain import PersonalizedRecommendationsResponse
 from bukmatika.personalization.recommendations import PersonalizedRecommendationService
 from bukmatika.personalization.service import PersonalizationService, PreferenceClaimNotFound
+from bukmatika.privacy.routes import router as account_privacy_router
 
 router = APIRouter(prefix="/v1/personalization", tags=["personalization"])
+router.include_router(account_privacy_router)
 _personalization_service = PersonalizationService()
 _control_service = PersonalizationControlService()
 _portability_service = PersonalizationPortabilityService()
@@ -246,6 +248,7 @@ async def reset_personalization(
         Depends(personalization_portability_service),
     ],
 ) -> PersonalizationResetResponse:
+    _ = request
     return await service.reset(principal_id=identity.principal_id)
 
 

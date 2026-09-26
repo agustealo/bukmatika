@@ -143,7 +143,9 @@ async def test_local_import_creates_private_canonical_asset_without_acquisition(
     assert decision.permissions["export"] is False
     assert decision.permissions["share"] is False
 
-    source = await session.scalar(select(SourceRecord).where(SourceRecord.provider == "local-import"))
+    source = await session.scalar(
+        select(SourceRecord).where(SourceRecord.provider == "local-import")
+    )
     assert source is not None
     assert source.canonical_url.startswith("bukmatika://local-import/")
 

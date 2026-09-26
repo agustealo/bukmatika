@@ -1,11 +1,13 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from bukmatika.library.portability_domain import LibraryPortabilityExportResponse
+from bukmatika.persistence.identity import AuthenticatedPrincipal
 from bukmatika.personalization.portability_domain import (
     PersonalizationExportResponse,
     UserModelExport,
 )
+from bukmatika.privacy.routes import export_principal_data
 from bukmatika.privacy.service import PrincipalDataExportService
 
 
@@ -61,15 +63,27 @@ def _personalization_export(now: datetime) -> PersonalizationExportResponse:
     )
 
 
+def _service(now: datetime) -> tuple[
+    PrincipalDataExportService,
+    LibraryExporterStub,
+    PersonalizationExporterStub,
+]:
+    library_exporter = LibraryExporterStub(_library_export(now))
+    personalization_exporter = PersonalizationExporterStub(_personalization_export(now))
+    return (
+        PrincipalDataExportService(
+            library_exporter=library_exporter,
+            personalization_exporter=personalization_exporter,
+        ),
+        library_exporter,
+        personalization_exporter,
+    )
+
+
 async def test_principal_export_composes_existing_domain_exports() -> None:
     principal_id = uuid4()
     now = datetime.now(UTC)
-    library_exporter = LibraryExporterStub(_library_export(now))
-    personalization_exporter = PersonalizationExporterStub(_personalization_export(now))
-    service = PrincipalDataExportService(
-        library_exporter=library_exporter,
-        personalization_exporter=personalization_exporter,
-    )
+    service, library_exporter, personalization_exporter = _service(now)
 
     response = await service.export(principal_id=principal_id)
 
@@ -86,9 +100,19 @@ async def test_principal_export_composes_existing_domain_exports() -> None:
     assert response.coverage.book_bytes_export_route == "/v1/library/export/file"
 
 
-def test_privacy_export_contract_does_not_claim_book_bytes() -> None:
+async def test_privacy_route_binds_export_to_authenticated_principal() -> None:
+    principal_id = uuid4()
     now = datetime.now(UTC)
-    payload = PrincipalDataExportService
-    assert payload is not None
-    response = _library_export(now)
-    assert response.content_mode == "metadata-and-state-only"
+    service, library_exporter, personalization_exporter = _service(now)
+    identity = AuthenticatedPrincipal(
+        principal_id=principal_id,
+        session_id=uuid4(),
+        expires_at=now + timedelta(hours=1),
+    )
+
+    response = await export_principal_data(identity=identity, service=service)
+
+    assert response.library.content_mode == "metadata-and-state-only"
+    assert response.coverage.book_bytes_included is False
+    assert library_exporter.principal_ids == [principal_id]
+    assert personalization_exporter.principal_ids == [principal_id]

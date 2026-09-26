@@ -1,4 +1,5 @@
 import { DossierClient } from "../../components/dossier-client";
+import { DossierCover } from "../../components/dossier-cover";
 import { MetadataProvenancePanel } from "../../components/metadata-provenance-panel";
 
 type DossierPageProps = {
@@ -31,12 +32,14 @@ export default async function DossierPage({ searchParams }: DossierPageProps) {
 
       {workId ? (
         <>
+          <DossierCover workId={workId} />
           <DossierClient workId={workId} />
           <MetadataProvenancePanel workId={workId} />
         </>
       ) : null}
       {!workId && hasSourceIdentity ? (
         <>
+          <DossierCover provider={provider!} recordId={recordId!} />
           <DossierClient provider={provider!} recordId={recordId!} />
           <MetadataProvenancePanel provider={provider!} recordId={recordId!} />
         </>

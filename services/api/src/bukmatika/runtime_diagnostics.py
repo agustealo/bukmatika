@@ -21,7 +21,7 @@ class RuntimeCheck:
     code: str | None = None
 
     def as_payload(self) -> dict[str, str]:
-        payload = {"status": self.status}
+        payload: dict[str, str] = {"status": self.status}
         if self.code is not None:
             payload["code"] = self.code
         return payload
@@ -142,7 +142,7 @@ class RuntimeDiagnostics:
             return RuntimeCheck(status="failed", code="WORKER_EXITED")
         return RuntimeCheck(status="failed", code="WORKER_CRASHED")
 
-    def _worker_done(self, name: str, task: asyncio.Task[None]) -> None:
+    def _worker_done(self, name: str, task: asyncio.Future[None]) -> None:
         if task.cancelled():
             if self._stopping:
                 self._logger.info("runtime.worker.stopped", worker=name)

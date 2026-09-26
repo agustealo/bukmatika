@@ -11,6 +11,7 @@ from bukmatika.config import Settings
 from bukmatika.discovery.base import DiscoveredRecord
 from bukmatika.domain import (
     DiscoveredAsset,
+    DiscoveredCover,
     DiscoveryCandidate,
     RightsEvidence,
     RightsState,
@@ -74,7 +75,7 @@ class LibraryOfCongressAdapter:
             async with self._hydrate_limit:
                 response = await self._client.get(
                     item_url,
-                    params={"fo": "json", "at": "item,resources"},
+                    params={"fo": "json", "at": "item,resources,image_url"},
                     headers=self._headers(),
                     timeout=self._settings.http_timeout_seconds,
                 )
@@ -145,6 +146,7 @@ class LibraryOfCongressAdapter:
         year = cls._year(source) or cls._year(row)
         resources = cls._resources(item_payload)
         assets = cls._assets(resources)
+        covers = cls._covers(item_payload, row)
         restricted = cls._restricted(source, resources)
         rights = cls._rights(source, landing, restricted)
         assets = [asset.model_copy(update={"rights": list(rights)}) for asset in assets]
@@ -165,6 +167,7 @@ class LibraryOfCongressAdapter:
             landing_url=HttpUrl(landing),
             formats=sorted({asset.format for asset in assets}),
             assets=assets,
+            covers=covers,
             rights=rights,
             source_score=0.87,
         )
@@ -174,6 +177,9 @@ class LibraryOfCongressAdapter:
                 "search": cls._safe_mapping(row),
                 "item": cls._safe_mapping(item),
                 "resources": [cls._safe_mapping(value) for value in resources],
+                "image_url": cls._strings(item_payload.get("image_url"))
+                if item_payload is not None
+                else [],
             },
             parser_version=cls.parser_version,
         )
@@ -243,6 +249,35 @@ class LibraryOfCongressAdapter:
                     )
                 )
         return assets
+
+    @classmethod
+    def _covers(
+        cls,
+        item_payload: Mapping[str, Any] | None,
+        search_row: Mapping[str, Any],
+    ) -> list[DiscoveredCover]:
+        raw_values = (
+            cls._strings(item_payload.get("image_url")) if item_payload is not None else []
+        )
+        if not raw_values:
+            raw_values = cls._strings(search_row.get("image_url"))
+        covers: list[DiscoveredCover] = []
+        seen: set[str] = set()
+        for raw in raw_values:
+            url = cls._loc_image_url(raw)
+            if url is None or url in seen:
+                continue
+            seen.add(url)
+            covers.append(
+                DiscoveredCover(
+                    url=HttpUrl(url),
+                    kind="cover",
+                    media_type=cls._image_media_type(url),
+                )
+            )
+            if len(covers) >= 4:
+                break
+        return covers
 
     @classmethod
     def _resource_files(
@@ -355,6 +390,17 @@ class LibraryOfCongressAdapter:
         }
         return mapping.get(format_name or "")
 
+    @staticmethod
+    def _image_media_type(url: str) -> str | None:
+        path = urlsplit(url).path.casefold()
+        if path.endswith((".jpg", ".jpeg")):
+            return "image/jpeg"
+        if path.endswith(".png"):
+            return "image/png"
+        if path.endswith(".webp"):
+            return "image/webp"
+        return None
+
     @classmethod
     def _year(cls, row: Mapping[str, Any]) -> int | None:
         for field in ("date_issued", "date", "dates_of_publication"):
@@ -386,6 +432,21 @@ class LibraryOfCongressAdapter:
             return f"https:{raw}"
         parsed = urlsplit(raw)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return None
+        return urlunsplit(("https", parsed.netloc, parsed.path, parsed.query, ""))
+
+    @staticmethod
+    def _loc_image_url(value: object) -> str | None:
+        raw = value.strip() if isinstance(value, str) else ""
+        if not raw:
+            return None
+        if raw.startswith("//"):
+            raw = f"https:{raw}"
+        parsed = urlsplit(raw)
+        hostname = (parsed.hostname or "").casefold()
+        if parsed.scheme not in {"http", "https"} or not (
+            hostname == "loc.gov" or hostname.endswith(".loc.gov")
+        ):
             return None
         return urlunsplit(("https", parsed.netloc, parsed.path, parsed.query, ""))
 

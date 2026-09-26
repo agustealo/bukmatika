@@ -1,7 +1,9 @@
 import logging
 import re
 import sys
+from pathlib import Path
 from time import perf_counter
+from traceback import extract_tb
 from typing import Protocol, cast
 from uuid import uuid4
 
@@ -21,6 +23,22 @@ class StructuredEventLogger(Protocol):
     def info(self, event: str, **event_kw: object) -> object: ...
 
     def error(self, event: str, **event_kw: object) -> object: ...
+
+
+class _UvicornExceptionPrivacyFilter(logging.Filter):
+    """Strip raw ASGI exception tracebacks after Bukmatika emits its safe correlated event."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if (
+            record.name == "uvicorn.error"
+            and isinstance(record.msg, str)
+            and record.msg.startswith("Exception in ASGI application")
+        ):
+            record.msg = "Unhandled ASGI application exception; see correlated request event"
+            record.args = ()
+            record.exc_info = None
+            record.exc_text = None
+        return True
 
 
 def configure_logging(*, level: str) -> None:
@@ -74,6 +92,20 @@ def configure_logging(*, level: str) -> None:
         logger.propagate = True
         logger.disabled = False
 
+    error_logger = logging.getLogger("uvicorn.error")
+    error_logger.filters = [
+        log_filter
+        for log_filter in error_logger.filters
+        if not isinstance(log_filter, _UvicornExceptionPrivacyFilter)
+    ]
+    error_logger.addFilter(_UvicornExceptionPrivacyFilter())
+
+    # HTTPX INFO access messages contain the complete outbound URL, including query strings.
+    # Keep transport diagnostics at warning-or-higher so user research terms cannot leak there.
+    dependency_level = max(numeric_level, logging.WARNING)
+    for logger_name in ("httpx", "httpcore"):
+        logging.getLogger(logger_name).setLevel(dependency_level)
+
 
 class RequestCorrelationMiddleware:
     """Bind a safe request ID and emit one privacy-bounded structured access event."""
@@ -117,6 +149,7 @@ class RequestCorrelationMiddleware:
                     status_code=status_code if status_code is not None else 500,
                     duration_ms=_duration_ms(started_at),
                     error_type=type(exc).__name__,
+                    error_frames=_error_frames(exc),
                 )
                 raise
             else:
@@ -200,6 +233,16 @@ def _scope_string(scope: Scope, key: str, *, fallback: str) -> str:
 
 def _duration_ms(started_at: float) -> float:
     return round(max(0.0, (perf_counter() - started_at) * 1000), 3)
+
+
+def _error_frames(exc: Exception) -> list[str]:
+    traceback = exc.__traceback__
+    if traceback is None:
+        return []
+    return [
+        f"{Path(frame.filename).name}:{frame.lineno}:{frame.name}"
+        for frame in extract_tb(traceback)[-8:]
+    ]
 
 
 __all__ = [

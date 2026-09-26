@@ -43,6 +43,20 @@ type ImportedFileResult = {
   documentId?: string;
 };
 
+function fileKey(file: File): string {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function failedResult(file: File, titleOverride: string, detail: string): ImportedFileResult {
+  return {
+    key: fileKey(file),
+    filename: file.name,
+    title: titleOverride.trim() || file.name,
+    state: "failed",
+    detail,
+  };
+}
+
 function messageFromResponse(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object" || !("detail" in payload)) return fallback;
   const detail = payload.detail;
@@ -65,6 +79,21 @@ async function importOne(
   file: File,
   options: { titleOverride: string; author: string },
 ): Promise<ImportedFileResult> {
+  try {
+    return await importOneRequest(file, options);
+  } catch (cause) {
+    const detail =
+      cause instanceof Error && cause.message.trim()
+        ? cause.message
+        : "Import request failed before the API returned a response.";
+    return failedResult(file, options.titleOverride, detail);
+  }
+}
+
+async function importOneRequest(
+  file: File,
+  options: { titleOverride: string; author: string },
+): Promise<ImportedFileResult> {
   const { titleOverride, author } = options;
   const metadata = {
     schema_version: 1,
@@ -83,19 +112,17 @@ async function importOne(
   });
   const payload = await responsePayload(response);
   if (!response.ok) {
-    return {
-      key: `${file.name}:${file.size}:${file.lastModified}`,
-      filename: file.name,
-      title: titleOverride.trim() || file.name,
-      state: "failed",
-      detail: messageFromResponse(payload, `Import failed with HTTP ${response.status}.`),
-    };
+    return failedResult(
+      file,
+      titleOverride,
+      messageFromResponse(payload, `Import failed with HTTP ${response.status}.`),
+    );
   }
 
   const imported = payload as LocalImportResponse;
   if (imported.document_id) {
     return {
-      key: `${file.name}:${file.size}:${file.lastModified}`,
+      key: fileKey(file),
       filename: file.name,
       title: imported.title,
       state: imported.idempotent ? "existing" : "imported",
@@ -110,7 +137,7 @@ async function importOne(
   if (processing.ok) {
     const document = processingPayload as DocumentResponse;
     return {
-      key: `${file.name}:${file.size}:${file.lastModified}`,
+      key: fileKey(file),
       filename: file.name,
       title: imported.title,
       state: imported.idempotent ? "existing" : "imported",
@@ -129,7 +156,7 @@ async function importOne(
   const serialized = JSON.stringify(processingPayload ?? {});
   if (processing.status === 422 && serialized.includes("DOCUMENT_REQUIRES_OCR")) {
     return {
-      key: `${file.name}:${file.size}:${file.lastModified}`,
+      key: fileKey(file),
       filename: file.name,
       title: imported.title,
       state: "ocr_required",
@@ -138,7 +165,7 @@ async function importOne(
     };
   }
   return {
-    key: `${file.name}:${file.size}:${file.lastModified}`,
+    key: fileKey(file),
     filename: file.name,
     title: imported.title,
     state: "processing_required",
@@ -235,7 +262,7 @@ export function LocalLibraryImport() {
           <span>{Math.max(1, Math.round(totalBytes / 1024))} KB total</span>
           <ul>
             {files.map((file) => (
-              <li key={`${file.name}:${file.size}:${file.lastModified}`}>
+              <li key={fileKey(file)}>
                 <span>{file.name}</span>
                 <small>{Math.max(1, Math.round(file.size / 1024))} KB</small>
               </li>

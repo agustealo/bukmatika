@@ -36,6 +36,7 @@ def _record(
     return DiscoveredRecord(
         candidate=DiscoveryCandidate(
             source=provider,
+            source_score=1.0,
             source_record_id=record_id,
             record_kind="edition",
             work_key=f"{provider}:{record_id}",

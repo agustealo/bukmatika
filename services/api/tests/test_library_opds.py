@@ -2,8 +2,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 from xml.etree import ElementTree
 
-from starlette.requests import Request
-
 from bukmatika.identity import AuthenticatedPrincipal
 from bukmatika.library.domain import LibraryItemResponse
 from bukmatika.library.opds import ATOM_NAMESPACE, OPDS_MEDIA_TYPE, render_opds_feed
@@ -54,7 +52,7 @@ def test_opds_feed_projects_canonical_library_metadata_and_reader_links() -> Non
             readable.library_entry_id: older,
             saved.library_entry_id: newer,
         },
-        self_url="http://api.local/v1/opds/library",
+        self_url="/v1/opds/library",
         web_origin="http://web.local",
         generated_at=datetime(2026, 9, 26, 13, 0, tzinfo=UTC),
     )
@@ -71,7 +69,7 @@ def test_opds_feed_projects_canonical_library_metadata_and_reader_links() -> Non
     }
     assert feed_links["self"] == {
         "rel": "self",
-        "href": "http://api.local/v1/opds/library",
+        "href": "/v1/opds/library",
         "type": OPDS_MEDIA_TYPE,
     }
     assert feed_links["alternate"]["href"] == "http://web.local/library"
@@ -113,7 +111,7 @@ def test_opds_empty_library_uses_generation_time_and_contains_no_entries() -> No
         principal_id=uuid4(),
         items=[],
         updated_by_entry={},
-        self_url="http://api.local/v1/opds/library",
+        self_url="/v1/opds/library",
         web_origin="http://web.local/",
         generated_at=generated,
     )
@@ -134,21 +132,6 @@ async def test_opds_route_is_private_and_passes_principal_scope_to_service() -> 
         session_id=uuid4(),
         expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
-    scope = {
-        "type": "http",
-        "asgi": {"version": "3.0"},
-        "http_version": "1.1",
-        "method": "GET",
-        "scheme": "http",
-        "path": "/v1/opds/library",
-        "raw_path": b"/v1/opds/library",
-        "query_string": b"",
-        "root_path": "",
-        "headers": [],
-        "client": ("127.0.0.1", 12345),
-        "server": ("api.local", 80),
-    }
-    request = Request(scope)
 
     class StubOpdsService:
         principal: object | None = None
@@ -163,13 +146,12 @@ async def test_opds_route_is_private_and_passes_principal_scope_to_service() -> 
 
     service = StubOpdsService()
     response = await personal_library_opds(
-        request=request,
         identity=identity,
         service=service,  # type: ignore[arg-type]
     )
 
     assert service.principal == principal_id
-    assert service.self_url == "http://api.local/v1/opds/library"
+    assert service.self_url == "/v1/opds/library"
     assert response.status_code == 200
     assert response.media_type == OPDS_MEDIA_TYPE
     assert response.headers["cache-control"] == "private, no-store"

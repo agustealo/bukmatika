@@ -45,12 +45,15 @@ from bukmatika.personalization.portability_domain import (
     PersonalizationResetRequest,
     PersonalizationResetResponse,
 )
+from bukmatika.personalization.recommendation_domain import PersonalizedRecommendationsResponse
+from bukmatika.personalization.recommendations import PersonalizedRecommendationService
 from bukmatika.personalization.service import PersonalizationService, PreferenceClaimNotFound
 
 router = APIRouter(prefix="/v1/personalization", tags=["personalization"])
 _personalization_service = PersonalizationService()
 _control_service = PersonalizationControlService()
 _portability_service = PersonalizationPortabilityService()
+_recommendation_service = PersonalizedRecommendationService()
 _delegation_operator_service = DelegationOperatorControlService()
 _delegation_result_service = DelegationResultProjectionService()
 
@@ -86,6 +89,10 @@ def personalization_portability_service() -> PersonalizationPortabilityService:
     return _portability_service
 
 
+def personalized_recommendation_service() -> PersonalizedRecommendationService:
+    return _recommendation_service
+
+
 def delegation_operator_control_service() -> DelegationOperatorControlService:
     return _delegation_operator_service
 
@@ -111,6 +118,21 @@ async def personalization_control_center(
     ],
 ) -> PersonalizationControlCenterResponse:
     return await service.snapshot(principal_id=identity.principal_id)
+
+
+@router.get("/recommendations", response_model=PersonalizedRecommendationsResponse)
+async def personalized_recommendations(
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[
+        PersonalizedRecommendationService,
+        Depends(personalized_recommendation_service),
+    ],
+    limit: Annotated[int, Query(ge=1, le=24)] = 8,
+) -> PersonalizedRecommendationsResponse:
+    return await service.recommend(
+        principal_id=identity.principal_id,
+        limit=limit,
+    )
 
 
 @router.get("/activity", response_model=ActivityLedgerResponse)

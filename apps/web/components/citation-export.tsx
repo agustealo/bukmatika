@@ -38,16 +38,13 @@ export function CitationExport({ workId, editionId, editionTitle }: CitationExpo
       const disposition = response.headers.get("content-disposition");
       const filename = disposition?.match(/filename="([^"]+)"/)?.[1] ?? `citation-${editionId}.${extension(format)}`;
       const url = URL.createObjectURL(blob);
-      try {
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = filename;
-        document.body.append(anchor);
-        anchor.click();
-        anchor.remove();
-      } finally {
-        URL.revokeObjectURL(url);
-      }
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Citation export failed.");
     } finally {

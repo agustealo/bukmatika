@@ -128,6 +128,7 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
   const [error, setError] = useState<string | null>(null);
   const lastPersistedPosition = useRef<string | null>(null);
   const documentEndVisible = useRef(false);
+  const pendingScrollPosition = useRef<ReaderPosition | null>(null);
 
   const basePath = useMemo(
     () => `/v1/library/${libraryEntryId}/documents/${documentId}`,
@@ -208,13 +209,9 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
             : targetId !== null && visible.reading_state?.section_id === targetId
               ? (visible.reading_state.char_offset ?? 0)
               : 0;
-        setActivePosition({ sectionId: targetId, charOffset: targetOffset });
-        if (targetId) {
-          requestAnimationFrame(() => {
-            documentElement(targetId)?.focus({ preventScroll: true });
-            readerPositionElement(targetId, targetOffset)?.scrollIntoView({ block: "start" });
-          });
-        }
+        const targetPosition = { sectionId: targetId, charOffset: targetOffset };
+        pendingScrollPosition.current = targetPosition;
+        setActivePosition(targetPosition);
       } catch (caught) {
         if (!cancelled) {
           setError(caught instanceof Error ? caught.message : "Reader failed.");
@@ -228,6 +225,19 @@ export function ReaderClient({ libraryEntryId, documentId }: ReaderClientProps) 
       cancelled = true;
     };
   }, [fetchPage]);
+
+  useEffect(() => {
+    const target = pendingScrollPosition.current;
+    if (!target?.sectionId || sections.length === 0) return;
+    const sectionElement = documentElement(target.sectionId);
+    const positionElement = readerPositionElement(target.sectionId, target.charOffset);
+    if (!sectionElement || !positionElement) return;
+
+    sectionElement.focus({ preventScroll: true });
+    positionElement.scrollIntoView({ block: "start" });
+    setActivePosition(target);
+    pendingScrollPosition.current = null;
+  }, [sections]);
 
   useEffect(() => {
     if (sections.length === 0) return;

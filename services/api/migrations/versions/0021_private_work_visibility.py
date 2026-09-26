@@ -1,4 +1,4 @@
-"""Add principal-private Work visibility authority."""
+"""Add principal-private Work scope authority."""
 
 from collections.abc import Sequence
 
@@ -13,48 +13,38 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "works",
+    op.create_table(
+        "private_work_scopes",
+        sa.Column("work_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("owner_principal_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column(
-            "visibility",
-            sa.String(length=16),
-            server_default="catalog",
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
             nullable=False,
         ),
-    )
-    op.add_column(
-        "works",
-        sa.Column("owner_principal_id", postgresql.UUID(as_uuid=True), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_works_owner_principal_id_principals",
-        "works",
-        "principals",
-        ["owner_principal_id"],
-        ["id"],
-        ondelete="CASCADE",
-    )
-    op.create_check_constraint(
-        "ck_works_visibility_owner",
-        "works",
-        "(visibility = 'catalog' AND owner_principal_id IS NULL) OR "
-        "(visibility = 'private' AND owner_principal_id IS NOT NULL)",
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(["work_id"], ["works.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["owner_principal_id"],
+            ["principals.id"],
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("work_id"),
     )
     op.create_index(
-        "ix_works_visibility_owner",
-        "works",
-        ["visibility", "owner_principal_id"],
+        "ix_private_work_scopes_owner",
+        "private_work_scopes",
+        ["owner_principal_id", "work_id"],
         unique=False,
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_works_visibility_owner", table_name="works")
-    op.drop_constraint("ck_works_visibility_owner", "works", type_="check")
-    op.drop_constraint(
-        "fk_works_owner_principal_id_principals",
-        "works",
-        type_="foreignkey",
-    )
-    op.drop_column("works", "owner_principal_id")
-    op.drop_column("works", "visibility")
+    op.drop_index("ix_private_work_scopes_owner", table_name="private_work_scopes")
+    op.drop_table("private_work_scopes")

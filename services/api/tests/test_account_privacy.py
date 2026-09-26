@@ -87,14 +87,19 @@ async def _local_import(
     )
     session.add(source)
     await session.flush()
-    session.add(
-        SourceRecordLink(
-            source_record_id=source.id,
-            entity_type="work",
-            entity_id=work.id,
-            relationship="describes",
+    for entity_type, entity_id in (
+        ("work", work.id),
+        ("edition", edition.id),
+        ("asset", asset.id),
+    ):
+        session.add(
+            SourceRecordLink(
+                source_record_id=source.id,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                relationship="describes",
+            )
         )
-    )
     session.add(
         SourceObservation(
             source_record_id=source.id,

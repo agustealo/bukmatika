@@ -16,7 +16,6 @@ from bukmatika.persistence.library_organization_models import (
 )
 from bukmatika.persistence.models import Edition, Identifier, LibraryEntry, Principal, Work
 
-
 TITLE = "The Browser Backup Ledger"
 EDITION_TITLE = "The Browser Backup Ledger, Portable Edition"
 COLLECTION_NAME = "Backup proof collection"

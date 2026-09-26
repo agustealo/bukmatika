@@ -20,6 +20,24 @@ def test_openlibrary_public_readability_does_not_become_copyright_authority() ->
     assert candidate.rights[0].state is RightsState.UNKNOWN
 
 
+def test_openlibrary_cover_id_maps_to_canonical_cover_metadata() -> None:
+    candidate = OpenLibraryAdapter._candidate(
+        {
+            "key": "/works/OLCOVERW",
+            "title": "Covered Work",
+            "cover_i": 123456,
+        }
+    )
+
+    assert candidate is not None
+    assert len(candidate.covers) == 1
+    cover = candidate.covers[0]
+    assert str(cover.url) == "https://covers.openlibrary.org/b/id/123456-L.jpg?default=false"
+    assert cover.kind == "cover"
+    assert cover.media_type == "image/jpeg"
+    assert candidate.assets == []
+
+
 def test_openlibrary_borrowable_never_maps_to_download_authority() -> None:
     candidate = OpenLibraryAdapter._candidate(
         {

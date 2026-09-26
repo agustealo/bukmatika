@@ -97,10 +97,12 @@ async def _subject(database_session: AsyncSession, name: str) -> Subject:
 async def _fixture_work(
     database_session: AsyncSession,
     *,
-    principal_id: UUID,
     fixture: RecommendationFixture,
 ) -> Work:
-    provider_record_id = f"{principal_id}-{fixture.slug}"
+    # Browser retries create a fresh principal but reuse the same PostgreSQL database.
+    # Keep catalog fixture identity stable across retries so a retry cannot duplicate
+    # recommendation cards merely because the local session principal changed.
+    provider_record_id = fixture.slug
     source_record = await database_session.scalar(
         select(SourceRecord).where(
             SourceRecord.provider == "browser_recommendations",
@@ -189,14 +191,11 @@ async def _fixture_work(
 
 async def seed(principal_id: UUID) -> None:
     async with session_scope() as database_session:
-        works: dict[str, Work] = {}
         for fixture in FIXTURES:
             work = await _fixture_work(
                 database_session,
-                principal_id=principal_id,
                 fixture=fixture,
             )
-            works[fixture.slug] = work
             if fixture.owned:
                 existing_entry = await database_session.scalar(
                     select(LibraryEntry).where(

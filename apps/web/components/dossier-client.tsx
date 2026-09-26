@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import { CitationExport } from "./citation-export";
 
 type AcquisitionApprovalMode = "always_ask" | "auto_eligible";
 
@@ -273,6 +274,12 @@ export function DossierClient(props: DossierClientProps) {
                 </button>
               )}
             </div>
+
+            <CitationExport
+              workId={dossier.work_id}
+              editionId={edition.edition_id}
+              editionTitle={edition.title}
+            />
 
             <div className="asset-list">
               {edition.assets.length === 0 ? (

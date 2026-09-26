@@ -75,6 +75,16 @@ Bukmatika emits structured JSON logs to standard output. HTTP requests use one b
 - raw `httpx` and `httpcore` transport logging is disabled because full outbound URLs can contain user-derived search parameters; bounded domain telemetry is the diagnostic authority for provider, acquisition, model, and readiness failures;
 - `BUKMATIKA_LOG_LEVEL` controls the application log threshold and defaults to `INFO`.
 
+Runtime probes deliberately separate liveness from readiness:
+
+- `GET /health` is a cheap process-liveness check and does not touch PostgreSQL or external providers;
+- `GET /ready` verifies canonical PostgreSQL connectivity plus every background worker enabled inside the API process;
+- readiness returns HTTP `200` only when all registered checks are healthy and HTTP `503` when the process is alive but degraded;
+- public readiness payloads contain only stable component names, `ok`/`failed` state, and bounded error codes such as `DATABASE_UNAVAILABLE`, `WORKER_CRASHED`, `WORKER_CANCELLED`, or `WORKER_EXITED`;
+- worker crashes emit a single `runtime.worker.failed` structured event with worker name, bounded error code, and exception class only; exception messages, job payloads, book identifiers, and private context are never copied into runtime diagnostics;
+- database readiness transitions emit bounded unavailable/recovered events and never expose the database URL, credentials, SQL text, or driver exception message;
+- expected worker cancellation during process shutdown is recorded as a normal stop rather than a crash.
+
 Discovery provider telemetry follows the same privacy boundary. Each attempted provider emits one `discovery.provider.completed` event containing only the provider name, bounded status/error code, elapsed time, result count, upstream HTTP status when available, and a clamped `Retry-After` duration when supplied. Provider exceptions are converted to stable public error descriptions before entering `source_errors`; upstream URLs, response bodies, exception messages, and user search text are not copied into discovery telemetry or error summaries. A `429` is surfaced explicitly as `rate_limited`; other HTTP, transport, timeout, and provider failures retain distinct bounded error codes without creating a second persistent health authority.
 
 When adding diagnostic fields, prefer identifiers, bounded state names, counts, timings, and error classes. Do not make private user content a logging shortcut.

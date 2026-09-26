@@ -8,6 +8,7 @@ from uuid import UUID
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from bukmatika.acquisition import (
     AcquisitionPolicyResponse,
@@ -82,6 +83,7 @@ from bukmatika.processing import (
 )
 from bukmatika.reader.routes import router as reader_router
 from bukmatika.research import router as research_router
+from bukmatika.runtime_diagnostics import RuntimeDiagnostics
 
 settings = get_settings()
 
@@ -89,6 +91,8 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging(level=settings.log_level)
+    runtime_diagnostics = RuntimeDiagnostics()
+    app.state.runtime_diagnostics = runtime_diagnostics
     discovery_client = httpx.AsyncClient(follow_redirects=False)
     acquisition_client = httpx.AsyncClient(follow_redirects=False, trust_env=False)
     model_client = httpx.AsyncClient(follow_redirects=False, trust_env=False)
@@ -156,34 +160,38 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         object_store,
         settings,
     )
-    worker_tasks: list[asyncio.Task[None]] = []
     if settings.acquisition_worker_enabled:
         acquisition_worker = AcquisitionJobWorker(acquisition_executor, settings)
-        worker_tasks.append(
+        runtime_diagnostics.register_worker(
+            "acquisition",
             asyncio.create_task(
                 acquisition_worker.run(),
                 name="bukmatika-acquisition-worker",
-            )
+            ),
         )
     if settings.delegation_worker_enabled:
         delegation_worker = DelegationJobWorker(settings)
-        worker_tasks.append(
+        runtime_diagnostics.register_worker(
+            "delegation",
             asyncio.create_task(
                 delegation_worker.run(),
                 name="bukmatika-delegation-worker",
-            )
+            ),
         )
+    runtime_diagnostics.mark_started(environment=settings.environment)
     try:
         yield
     finally:
-        for worker_task in worker_tasks:
+        runtime_diagnostics.begin_shutdown()
+        for worker_task in runtime_diagnostics.worker_tasks:
             worker_task.cancel()
-        for worker_task in worker_tasks:
+        for worker_task in runtime_diagnostics.worker_tasks:
             with suppress(asyncio.CancelledError):
                 await worker_task
         await model_client.aclose()
         await acquisition_client.aclose()
         await discovery_client.aclose()
+        runtime_diagnostics.mark_stopped()
 
 
 app = FastAPI(
@@ -217,6 +225,29 @@ app.add_middleware(RequestCorrelationMiddleware)
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def runtime_diagnostics_service(request: Request) -> RuntimeDiagnostics:
+    diagnostics = request.app.state.runtime_diagnostics
+    if not isinstance(diagnostics, RuntimeDiagnostics):
+        raise RuntimeError("Runtime diagnostics are not initialized")
+    return diagnostics
+
+
+@app.get("/ready")
+async def ready(
+    diagnostics: Annotated[RuntimeDiagnostics, Depends(runtime_diagnostics_service)],
+) -> JSONResponse:
+    readiness = await diagnostics.readiness()
+    return JSONResponse(
+        status_code=(
+            status.HTTP_200_OK
+            if readiness.is_ready
+            else status.HTTP_503_SERVICE_UNAVAILABLE
+        ),
+        content=readiness.as_payload(),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 def discovery_service(request: Request) -> DiscoveryService:

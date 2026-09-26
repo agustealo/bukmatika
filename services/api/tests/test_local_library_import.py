@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.acquisition.storage import LocalObjectStore
 from bukmatika.config import Settings
 from bukmatika.library.local_import import LocalImportError, LocalLibraryImportService
+from bukmatika.normalization import normalize_text
+from bukmatika.persistence.library import LibraryRepository, LibraryTargetNotFound
 from bukmatika.persistence.models import (
     Acquisition,
     Asset,
@@ -22,6 +24,7 @@ from bukmatika.persistence.models import (
     StoredObject,
     Work,
 )
+from bukmatika.persistence.search import CatalogSearchRepository
 
 
 def _scope(session: AsyncSession):  # type: ignore[no-untyped-def]
@@ -159,6 +162,52 @@ async def test_local_import_creates_private_canonical_asset_without_acquisition(
     assert event is not None
     assert event.context["idempotent"] is False
     assert event.context["format"] == "TXT"
+
+
+async def test_local_import_is_hidden_from_shared_catalog_and_cross_principal_save(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    owner_id = await _principal(session, "privacy-owner")
+    other_id = await _principal(session, "privacy-other")
+    private_title = f"Private Needle {uuid4().hex}"
+    metadata, payload = _envelope(
+        b"This private local import must never become shared catalog material.",
+        title=private_title,
+        author="Private Reader",
+    )
+
+    result = await _service(session, tmp_path).import_stream(
+        principal_id=owner_id,
+        stream=_stream(metadata, payload),
+    )
+
+    matches = await CatalogSearchRepository(session).search_works(
+        query=private_title,
+        normalized_query=normalize_text(private_title),
+        limit=20,
+    )
+    assert result.work_id not in {match.work_id for match in matches}
+
+    library = LibraryRepository(session)
+    owner_entry = await library.save_edition(owner_id, result.edition_id)
+    assert owner_entry.id == result.library_entry_id
+    assert await library.get_work(result.work_id) is None
+
+    with pytest.raises(LibraryTargetNotFound):
+        await library.save_work(other_id, result.work_id)
+    with pytest.raises(LibraryTargetNotFound):
+        await library.save_edition(other_id, result.edition_id)
+
+    other_entry_count = await session.scalar(
+        select(func.count())
+        .select_from(LibraryEntry)
+        .where(
+            LibraryEntry.principal_id == other_id,
+            LibraryEntry.work_id == result.work_id,
+        )
+    )
+    assert other_entry_count == 0
 
 
 async def test_local_import_is_idempotent_for_same_principal_and_content(

@@ -21,7 +21,7 @@ test("dossier keeps conflicting metadata claims inspectable without raw payload 
   await page.goto(`/dossier?work_id=${workId}`);
 
   await expect(
-    page.getByRole("heading", { name: "Browser Metadata Provenance Fixture" }),
+    page.getByRole("heading", { name: "Browser Metadata Provenance Fixture", level: 1 }),
   ).toBeVisible();
 
   const panel = page.getByRole("region", { name: "Metadata provenance" });

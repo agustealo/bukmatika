@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from bukmatika.library.citation_routes import router as citation_router
+from bukmatika.library.citations import CitationExportFormat, LibraryCitationExportService
 from bukmatika.library.cover_routes import router as cover_router
 from bukmatika.library.domain import (
     AssetStatusResponse,
@@ -62,9 +64,11 @@ router.include_router(status_router)
 router.include_router(portability_router)
 router.include_router(provenance_router)
 router.include_router(cover_router)
+router.include_router(citation_router)
 
 __all__ = [
     "AssetStatusResponse",
+    "CitationExportFormat",
     "CollectionCreate",
     "CollectionResponse",
     "CollectionSummaryResponse",
@@ -74,6 +78,7 @@ __all__ = [
     "LibraryAssetAggregateStatus",
     "LibraryAssetStage",
     "LibraryAssetStatusItem",
+    "LibraryCitationExportService",
     "LibraryItemResponse",
     "LibraryOrganizationConflict",
     "LibraryOrganizationNotFound",

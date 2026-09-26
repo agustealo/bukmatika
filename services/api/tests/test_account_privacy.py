@@ -22,7 +22,11 @@ from bukmatika.persistence.models import (
     StoredObject,
     Work,
 )
-from bukmatika.persistence.personalization_models import UserModel
+from bukmatika.persistence.personalization_models import (
+    PreferenceClaim,
+    PreferenceClaimEvidence,
+    UserModel,
+)
 from bukmatika.persistence.privacy_models import PrivacyErasureObject
 from bukmatika.privacy.service import AccountPrivacyService
 
@@ -261,6 +265,61 @@ async def test_account_delete_erases_private_local_import_events_and_bytes(
     )
     assert queued is not None
     assert queued.status == "deleted"
+
+
+@pytest.mark.asyncio
+async def test_account_delete_removes_preference_evidence_before_interaction_history(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    principal = await _principal(session)
+    user_model = UserModel(principal_id=principal.id)
+    session.add(user_model)
+    await session.flush()
+
+    interaction = InteractionEvent(
+        principal_id=principal.id,
+        event_type="research.search",
+        context={"query": "private inferred preference evidence"},
+    )
+    session.add(interaction)
+    await session.flush()
+
+    claim = PreferenceClaim(
+        user_model_id=user_model.id,
+        principal_id=principal.id,
+        key="research.topic",
+        value={"topic": "private"},
+        source="inferred",
+        confidence=0.8,
+        evidence_count=1,
+    )
+    session.add(claim)
+    await session.flush()
+    session.add(
+        PreferenceClaimEvidence(
+            preference_claim_id=claim.id,
+            interaction_event_id=interaction.id,
+        )
+    )
+    await session.flush()
+
+    service = AccountPrivacyService(
+        storage=LocalObjectStore(tmp_path),
+        session_scope_factory=_scope(session),
+    )
+    result = await service.delete_account(principal_id=principal.id)
+    await session.flush()
+
+    assert result.principal_deleted is True
+    assert result.interaction_events_deleted == 1
+    assert await session.get(Principal, principal.id) is None
+    assert await session.get(InteractionEvent, interaction.id) is None
+    assert await session.scalar(
+        select(PreferenceClaimEvidence.interaction_event_id).where(
+            PreferenceClaimEvidence.interaction_event_id == interaction.id
+        )
+    ) is None
 
 
 @pytest.mark.asyncio

@@ -13,12 +13,14 @@ details > summary:focus-visible {
   }
 
   .top-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     width: 100%;
-    justify-content: space-between;
-    gap: 2px;
+    gap: 4px;
   }
 
   .top-nav a {
+    min-width: 0;
     padding-inline: 5px;
     text-align: center;
   }

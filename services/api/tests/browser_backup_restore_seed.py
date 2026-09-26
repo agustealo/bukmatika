@@ -14,13 +14,7 @@ from bukmatika.persistence.library_organization_models import (
     LibrarySmartShelf,
     LibraryTag,
 )
-from bukmatika.persistence.models import (
-    Edition,
-    Identifier,
-    LibraryEntry,
-    Principal,
-    Work,
-)
+from bukmatika.persistence.models import Edition, Identifier, LibraryEntry, Principal, Work
 
 
 TITLE = "The Browser Backup Ledger"

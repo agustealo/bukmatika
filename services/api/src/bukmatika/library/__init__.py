@@ -35,6 +35,8 @@ from bukmatika.library.domain import (
     TagUpdate,
     WorkDossierResponse,
 )
+from bukmatika.library.opds import OPDS_MEDIA_TYPE, OpdsCatalogService
+from bukmatika.library.opds_routes import router as opds_router
 from bukmatika.library.portability import LibraryPortabilityService
 from bukmatika.library.portability_apply import (
     LibraryPortabilityImportApplier,
@@ -70,6 +72,7 @@ router.include_router(portability_router)
 router.include_router(provenance_router)
 router.include_router(cover_router)
 router.include_router(citation_router)
+router.include_router(opds_router)
 
 __all__ = [
     "AssetStatusResponse",
@@ -105,6 +108,8 @@ __all__ = [
     "LibraryStatusSummary",
     "MetadataAssertionResponse",
     "MetadataProvenanceService",
+    "OPDS_MEDIA_TYPE",
+    "OpdsCatalogService",
     "SmartShelfContentsResponse",
     "SmartShelfCreate",
     "SmartShelfResponse",

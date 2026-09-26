@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from io import BytesIO
@@ -44,7 +45,7 @@ class _FixtureDownloader:
         payload = self.payloads.get(url)
         if payload is None:
             raise RuntimeError(f"No fixture payload for {url}")
-        temp_path.write_bytes(payload)
+        await asyncio.to_thread(temp_path.write_bytes, payload)
 
 
 def _image_bytes(*, image_format: str = "JPEG", size: tuple[int, int] = (1200, 1800)) -> bytes:

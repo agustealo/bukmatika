@@ -41,18 +41,27 @@ test("personalized discovery explains deterministic fit without model authority"
     ),
   ).toBeVisible();
 
-  const best = surface.locator("article").filter({ hasText: "Browser Maritime Recommendation" });
+  const best = surface
+    .getByRole("heading", { name: "Browser Maritime Recommendation", exact: true })
+    .locator("..");
   await expect(best).toBeVisible();
   await expect(best.getByText("Preference fit 1.50", { exact: true })).toBeVisible();
-  await expect(best.getByText("Subject", { exact: true })).toBeVisible();
-  await expect(best.getByText("Maritime History", { exact: true })).toBeVisible();
-  await expect(best.getByText("Format", { exact: true })).toBeVisible();
-  await expect(best.getByText("EPUB", { exact: true })).toBeVisible();
-  await expect(best.getByText("explicit", { exact: true })).toHaveCount(2);
-  await expect(best.getByText("+1.00", { exact: true })).toBeVisible();
-  await expect(best.getByText("+0.50", { exact: true })).toBeVisible();
 
-  const formatOnly = surface.locator("article").filter({ hasText: "Browser Astronomy EPUB" });
+  const subjectReason = best.locator("li").filter({ hasText: "Subject" });
+  await expect(subjectReason.getByText("Subject", { exact: true })).toBeVisible();
+  await expect(subjectReason.getByText("Maritime History", { exact: true })).toBeVisible();
+  await expect(subjectReason.getByText("explicit", { exact: true })).toBeVisible();
+  await expect(subjectReason.getByText("+1.00", { exact: true })).toBeVisible();
+
+  const formatReason = best.locator("li").filter({ hasText: "Format" });
+  await expect(formatReason.getByText("Format", { exact: true })).toBeVisible();
+  await expect(formatReason.getByText("EPUB", { exact: true })).toBeVisible();
+  await expect(formatReason.getByText("explicit", { exact: true })).toBeVisible();
+  await expect(formatReason.getByText("+0.50", { exact: true })).toBeVisible();
+
+  const formatOnly = surface
+    .getByRole("heading", { name: "Browser Astronomy EPUB", exact: true })
+    .locator("..");
   await expect(formatOnly).toBeVisible();
   await expect(formatOnly.getByText("Preference fit 0.50", { exact: true })).toBeVisible();
   await expect(formatOnly.getByText("Astronomy", { exact: true })).toHaveCount(0);

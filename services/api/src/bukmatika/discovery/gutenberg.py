@@ -1,6 +1,6 @@
 import re
 import xml.etree.ElementTree as ET
-from typing import ClassVar
+from typing import ClassVar, Literal
 from urllib.parse import urlsplit
 
 import httpx
@@ -206,7 +206,11 @@ class ProjectGutenbergAdapter:
         covers: list[DiscoveredCover] = []
         links: list[dict[str, str]] = []
         seen: set[str] = set()
-        for rel_value, kind in ((cls._image_rel, "cover"), (cls._thumbnail_rel, "thumbnail")):
+        cover_relations: tuple[tuple[str, Literal["cover", "thumbnail"]], ...] = (
+            (cls._image_rel, "cover"),
+            (cls._thumbnail_rel, "thumbnail"),
+        )
+        for rel_value, kind in cover_relations:
             for link in entry.findall(f"{cls._atom}link"):
                 rel = (link.get("rel") or "").strip()
                 if rel != rel_value:

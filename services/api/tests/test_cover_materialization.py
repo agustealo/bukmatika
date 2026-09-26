@@ -131,7 +131,8 @@ async def test_cover_materialization_sanitizes_resizes_and_reuses_cache(
 
     assert first.path == second.path
     assert first.path.is_file()
-    assert first.path.parts[-5:-2] == ("covers", "objects", first.path.parts[-3])
+    relative_path = first.path.relative_to(tmp_path)
+    assert relative_path.parts[:2] == ("covers", "objects")
     assert downloader.calls == [source_url]
     with Image.open(first.path) as image:
         assert image.format == "PNG"

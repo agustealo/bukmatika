@@ -1,6 +1,7 @@
 import { DelegationResults } from "../../components/delegation-results";
 import { ResearchAIReadiness } from "../../components/research-ai-readiness";
 import { ResearchClient } from "../../components/research-client";
+import { ResearchReadinessGuide } from "../../components/research-readiness-guide";
 import styles from "./research.module.css";
 
 export default function ResearchPage() {
@@ -21,6 +22,7 @@ export default function ResearchPage() {
       </header>
 
       <ResearchAIReadiness />
+      <ResearchReadinessGuide />
       <ResearchClient />
       <DelegationResults hideWhenEmpty />
     </main>

@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Protocol, TypeVar
 
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, Field, JsonValue, model_validator
 
 
 class ModelTask(StrEnum):
@@ -42,6 +42,43 @@ class ModelRequest(BaseModel):
     data_classification: ModelDataClassification
     max_output_tokens: int = Field(ge=1, le=4_096)
     timeout_seconds: float = Field(gt=0, le=60)
+
+    @model_validator(mode="after")
+    def enforce_model_context_boundary(self) -> "ModelRequest":
+        if self.task is not ModelTask.RESEARCH_ANSWER:
+            return self
+        if self.data_classification is not ModelDataClassification.PRIVATE_USER_CONTEXT:
+            raise ValueError("research_answer requires private user context classification")
+
+        question = self.payload.get("question")
+        evidence = self.payload.get("evidence")
+        if not isinstance(question, str) or not question.strip():
+            raise ValueError("research_answer requires a non-empty question")
+        if not isinstance(evidence, list) or not evidence:
+            raise ValueError("research_answer requires canonical evidence")
+
+        minimized_evidence: list[JsonValue] = []
+        for item in evidence:
+            if not isinstance(item, dict):
+                raise ValueError("research_answer evidence items must be objects")
+            evidence_id = item.get("evidence_id")
+            text = item.get("text")
+            if not isinstance(evidence_id, str) or not evidence_id:
+                raise ValueError("research_answer evidence requires an evidence_id")
+            if not isinstance(text, str) or not text:
+                raise ValueError("research_answer evidence requires text")
+            minimized_evidence.append(
+                {
+                    "evidence_id": evidence_id,
+                    "text": text,
+                }
+            )
+
+        self.payload = {
+            "question": question,
+            "evidence": minimized_evidence,
+        }
+        return self
 
 
 class ModelProviderUnconfigured(RuntimeError):

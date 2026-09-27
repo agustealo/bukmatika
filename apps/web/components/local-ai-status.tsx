@@ -60,7 +60,9 @@ function presentation(status: AIStatus): StatusPresentation {
       return {
         title: "Ready",
         summary:
-          "The local runtime is reachable and this profile's selected model is installed. Grounded research can use local synthesis.",
+          status.routing === "local"
+            ? "The local runtime is reachable and this profile's selected model is installed. Grounded research can use local synthesis."
+            : "The selected AI provider is ready for this profile. Grounded research remains subject to Bukmatika's privacy and citation policies.",
         recovery: null,
         tone: "ready",
       };
@@ -70,44 +72,50 @@ function presentation(status: AIStatus): StatusPresentation {
         summary:
           "Model-backed features are off for this profile. Normal library, reader, and evidence features remain available.",
         recovery:
-          "Enable AI assistance in the control center above to inspect installed models. Bukmatika intentionally performs zero runtime probes while AI is disabled.",
+          "Enable AI assistance in the control center above to inspect configured model readiness. Bukmatika intentionally performs zero provider probes while AI is disabled.",
         tone: "quiet",
       };
     case "unconfigured":
       return {
         title: "No model selected",
         summary:
-          "This profile currently has no effective local model, so Bukmatika will stay evidence-only.",
+          "This profile currently has no effective model, so Bukmatika will stay evidence-only.",
         recovery:
-          "Choose an installed Ollama model below, or use the installation default if one is configured.",
+          "Choose a configured model, or use the installation default if one is available.",
         tone: "attention",
       };
     case "provider_unreachable":
       return {
         title: "Runtime offline",
         summary:
-          "Bukmatika cannot reach Ollama on the installation-controlled loopback endpoint.",
+          status.routing === "local"
+            ? "Bukmatika cannot reach the selected local model runtime."
+            : "Bukmatika cannot reach the selected AI provider.",
         recovery:
-          "Start or restart Ollama locally, then refresh. The consumer model picker cannot redirect private context to a remote endpoint.",
+          status.routing === "local"
+            ? "Start or restart the local runtime, then refresh. Bukmatika will not silently redirect private context to a cloud provider."
+            : "Check the configured provider connection and try again. Bukmatika will not silently fall back to another provider.",
         tone: "attention",
       };
     case "provider_invalid":
       return {
         title: "Runtime response invalid",
         summary:
-          "The configured loopback endpoint responded, but it did not satisfy the expected Ollama model-list contract.",
+          "The selected provider responded, but the response did not satisfy Bukmatika's expected runtime contract.",
         recovery:
-          "Check the installation-level Ollama endpoint and local runtime compatibility, then refresh.",
+          "Check provider compatibility and configuration, then refresh. Bukmatika will fail closed rather than reinterpret an invalid provider response.",
         tone: "attention",
       };
     case "model_missing":
       return {
         title: "Selected model missing",
         summary: status.model
-          ? `Ollama is reachable, but ${status.model} is not installed in that runtime.`
-          : "Ollama is reachable, but this profile's selected model is not installed.",
+          ? `${status.model} is not available from the selected provider.`
+          : "The selected provider is reachable, but this profile's model is unavailable.",
         recovery:
-          "Choose one of the installed models below, or install the intended model in Ollama and refresh.",
+          status.routing === "local"
+            ? "Choose one of the installed local models below, or install the intended model and refresh."
+            : "Choose another configured model for this provider or restore access to the selected model.",
         tone: "attention",
       };
   }
@@ -168,10 +176,10 @@ export function LocalAIStatus() {
         apiFetch("/v1/ai/configuration"),
       ]);
       if (!statusResponse.ok) {
-        throw await responseError(statusResponse, "Could not inspect local AI readiness");
+        throw await responseError(statusResponse, "Could not inspect AI readiness");
       }
       if (!configurationResponse.ok) {
-        throw await responseError(configurationResponse, "Could not load local AI configuration");
+        throw await responseError(configurationResponse, "Could not load AI configuration");
       }
 
       const nextStatus = (await statusResponse.json()) as AIStatus;
@@ -180,7 +188,7 @@ export function LocalAIStatus() {
       setConfiguration(nextConfiguration);
 
       let nextInventory: ModelInventory | null = null;
-      if (nextStatus.ai_enabled) {
+      if (nextStatus.ai_enabled && nextStatus.routing === "local") {
         const inventoryResponse = await apiFetch("/v1/ai/local/models");
         if (!inventoryResponse.ok) {
           throw await responseError(inventoryResponse, "Could not inspect installed local models");
@@ -198,7 +206,7 @@ export function LocalAIStatus() {
         setSelectedModel(preferred);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not inspect local AI readiness.");
+      setError(caught instanceof Error ? caught.message : "Could not inspect AI readiness.");
     } finally {
       setLoading(false);
     }
@@ -234,6 +242,7 @@ export function LocalAIStatus() {
   const state = status ? presentation(status) : null;
   const installedModels = inventory?.state === "ready" ? inventory.models : [];
   const controlsDisabled = loading || saving;
+  const localControlsAvailable = status?.routing === "local" || status?.routing == null;
 
   return (
     <section className={styles.surface} aria-labelledby="local-ai-heading">
@@ -241,13 +250,13 @@ export function LocalAIStatus() {
         <div>
           <span className={styles.index}>05</span>
           <div>
-            <span className="eyebrow">Local AI runtime</span>
+            <span className="eyebrow">AI runtime</span>
             <h2 id="local-ai-heading">Model setup & readiness</h2>
           </div>
         </div>
         <p>
-          Choose which installed local model this profile uses. Runtime discovery reads Ollama model
-          metadata only and never sends book text, research questions, annotations, or reading context.
+          Inspect the provider and model selected for this profile. Local model discovery never sends
+          book text, research questions, annotations, or reading context.
         </p>
       </div>
 
@@ -267,13 +276,13 @@ export function LocalAIStatus() {
               disabled={controlsDisabled}
               onClick={() => void refresh()}
             >
-              {loading ? "Checking" : "Refresh local models"}
+              {loading ? "Checking" : "Refresh model status"}
             </button>
           </div>
 
           {error ? (
             <div className={styles.error} role="alert">
-              <strong>Local AI setup needs attention</strong>
+              <strong>AI setup needs attention</strong>
               <p>{error}</p>
             </div>
           ) : null}
@@ -290,8 +299,8 @@ export function LocalAIStatus() {
                 <div className={styles.recovery} data-ready="true">
                   <span>Boundary</span>
                   <p>
-                    Local synthesis remains policy-gated and citation-validated. Model readiness does
-                    not authorize an action or widen the selected research corpus.
+                    Model use remains policy-gated and citation-validated. Readiness does not authorize
+                    an action, widen the selected research corpus, or approve cross-provider fallback.
                   </p>
                 </div>
               )}
@@ -319,96 +328,108 @@ export function LocalAIStatus() {
         </dl>
       </div>
 
-      <div className={styles.configurationPanel}>
-        <div className={styles.configurationCopy}>
-          <span className={styles.label}>Profile model selection</span>
-          <h3>Use an installed Ollama model without restarting Bukmatika.</h3>
-          <p>
-            Model choice belongs to this profile. The Ollama address, routing policy, and timeouts stay
-            installation-controlled and loopback-only.
-          </p>
-        </div>
-
-        <div className={styles.configurationControls}>
-          {status?.ai_enabled ? (
-            <>
-              {inventory?.state === "ready" && installedModels.length > 0 ? (
-                <div className={styles.modelPicker}>
-                  <label htmlFor="local-ai-model">Installed model</label>
-                  <div>
-                    <select
-                      id="local-ai-model"
-                      value={selectedModel}
-                      disabled={controlsDisabled}
-                      onChange={(event) => setSelectedModel(event.target.value)}
-                    >
-                      {installedModels.map((model) => (
-                        <option key={model} value={model}>
-                          {model}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      className={styles.primaryAction}
-                      type="button"
-                      disabled={controlsDisabled || !selectedModel}
-                      onClick={() => void saveConfiguration("ollama", selectedModel)}
-                    >
-                      {saving ? "Saving…" : "Use selected model"}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              {inventory?.state === "ready" && installedModels.length === 0 ? (
-                <p className={styles.inventoryNote}>
-                  Ollama is reachable, but it reports no installed models. Install a model in Ollama,
-                  then refresh this card.
-                </p>
-              ) : null}
-
-              {inventory && inventory.state !== "ready" ? (
-                <p className={styles.inventoryNote}>
-                  Installed models cannot be listed until the local Ollama runtime is reachable and
-                  returns valid metadata.
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <p className={styles.inventoryNote}>
-              AI is disabled for this profile, so Bukmatika does not probe the local runtime. Enable AI
-              above before scanning installed models.
+      {localControlsAvailable ? (
+        <div className={styles.configurationPanel}>
+          <div className={styles.configurationCopy}>
+            <span className={styles.label}>Local profile model selection</span>
+            <h3>Use an installed Ollama model without restarting Bukmatika.</h3>
+            <p>
+              This transitional local-provider control only manages Ollama. Provider-neutral cloud
+              connection management is handled by the upcoming provider settings surface.
             </p>
-          )}
-
-          <div className={styles.secondaryActions}>
-            <button
-              type="button"
-              disabled={controlsDisabled || configuration?.mode === "installation_default"}
-              onClick={() => void saveConfiguration("installation_default")}
-            >
-              Use installation default
-            </button>
-            <button
-              type="button"
-              disabled={controlsDisabled || configuration?.mode === "disabled"}
-              onClick={() => void saveConfiguration("disabled")}
-            >
-              Disable model for this profile
-            </button>
           </div>
 
-          <p className={styles.installationDefault}>
-            Installation default: {fact(configuration?.installation_provider ?? null)} ·{" "}
-            {fact(configuration?.installation_model ?? null)}
-          </p>
+          <div className={styles.configurationControls}>
+            {status?.ai_enabled ? (
+              <>
+                {inventory?.state === "ready" && installedModels.length > 0 ? (
+                  <div className={styles.modelPicker}>
+                    <label htmlFor="local-ai-model">Installed model</label>
+                    <div>
+                      <select
+                        id="local-ai-model"
+                        value={selectedModel}
+                        disabled={controlsDisabled}
+                        onChange={(event) => setSelectedModel(event.target.value)}
+                      >
+                        {installedModels.map((model) => (
+                          <option key={model} value={model}>
+                            {model}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className={styles.primaryAction}
+                        type="button"
+                        disabled={controlsDisabled || !selectedModel}
+                        onClick={() => void saveConfiguration("ollama", selectedModel)}
+                      >
+                        {saving ? "Saving…" : "Use selected model"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {inventory?.state === "ready" && installedModels.length === 0 ? (
+                  <p className={styles.inventoryNote}>
+                    Ollama is reachable, but it reports no installed models. Install a model in Ollama,
+                    then refresh this card.
+                  </p>
+                ) : null}
+
+                {inventory && inventory.state !== "ready" ? (
+                  <p className={styles.inventoryNote}>
+                    Installed models cannot be listed until the local Ollama runtime is reachable and
+                    returns valid metadata.
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p className={styles.inventoryNote}>
+                AI is disabled for this profile, so Bukmatika does not probe the local runtime. Enable
+                AI above before scanning installed models.
+              </p>
+            )}
+
+            <div className={styles.secondaryActions}>
+              <button
+                type="button"
+                disabled={controlsDisabled || configuration?.mode === "installation_default"}
+                onClick={() => void saveConfiguration("installation_default")}
+              >
+                Use installation default
+              </button>
+              <button
+                type="button"
+                disabled={controlsDisabled || configuration?.mode === "disabled"}
+                onClick={() => void saveConfiguration("disabled")}
+              >
+                Disable model for this profile
+              </button>
+            </div>
+
+            <p className={styles.installationDefault}>
+              Installation default: {fact(configuration?.installation_provider ?? null)} ·{" "}
+              {fact(configuration?.installation_model ?? null)}
+            </p>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className={styles.configurationPanel}>
+          <div className={styles.configurationCopy}>
+            <span className={styles.label}>Cloud provider selection</span>
+            <h3>This profile is routed through a cloud provider.</h3>
+            <p>
+              Bukmatika will not probe Ollama or silently replace this provider with a local model. Full
+              provider and role management will be surfaced through the provider-neutral settings flow.
+            </p>
+          </div>
+        </div>
+      )}
 
       <p className={styles.footnote}>
-        This surface can select only local Ollama models reported by the installation-controlled
-        loopback runtime. It cannot add remote providers, change the runtime URL, or transmit private
-        research context during model discovery.
+        Local model discovery is limited to the installation-controlled Ollama loopback runtime. Cloud
+        routing never causes a local inventory probe, and provider fallback is not automatic.
       </p>
     </section>
   );

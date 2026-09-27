@@ -103,6 +103,18 @@ Bukmatika's browser session is an HttpOnly cookie, so CORS alone is not the auth
 
 Any new browser-authenticated mutation must remain behind this global boundary. Do not add route-local exceptions or a second CSRF authority without a separately reviewed protocol requirement.
 
+The production Next.js surface also publishes a narrow response-hardening contract on every route:
+
+- `Content-Security-Policy` denies framing and object embedding and restricts base-URL mutation without constraining Next.js script/style execution;
+- `X-Frame-Options: DENY` preserves frame denial for older user agents in addition to CSP `frame-ancestors 'none'`;
+- `X-Content-Type-Options: nosniff` disables MIME sniffing;
+- `Referrer-Policy: no-referrer` keeps Bukmatika paths and local identifiers out of outbound referrer metadata;
+- `Permissions-Policy` disables camera, microphone, geolocation, payment, and USB capabilities that the product does not use;
+- Next.js framework disclosure through `X-Powered-By` is disabled;
+- HSTS is deliberately not emitted by the application because the canonical local development path is HTTP. HTTPS deployment/infrastructure remains responsible for transport enforcement.
+
+Keep this response policy intentionally narrow. Do not add script/style/source CSP directives without proving compatibility with the production Next.js build and every consumer route.
+
 ## Code organization
 
 - `apps/web`: consumer web application.

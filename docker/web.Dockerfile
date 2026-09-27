@@ -1,9 +1,9 @@
 FROM node:24-alpine AS build
 
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json ./
 COPY apps/web/package.json apps/web/package.json
-RUN npm ci --no-audit --no-fund
+RUN npm install --no-audit --no-fund
 
 COPY apps/web apps/web
 ARG NEXT_PUBLIC_API_BASE_URL=
@@ -18,7 +18,7 @@ WORKDIR /app
 RUN addgroup -g 10001 -S bukmatika \
     && adduser -u 10001 -S -G bukmatika bukmatika
 
-COPY --from=build --chown=bukmatika:bukmatika /app/package.json /app/package-lock.json ./
+COPY --from=build --chown=bukmatika:bukmatika /app/package.json ./
 COPY --from=build --chown=bukmatika:bukmatika /app/node_modules ./node_modules
 COPY --from=build --chown=bukmatika:bukmatika /app/apps/web ./apps/web
 

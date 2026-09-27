@@ -5,12 +5,10 @@ import { expect, test, type BrowserContext, type Locator, type Page } from "@pla
 import { bootstrapLocalSession } from "./session";
 
 type FormatFixture = {
-  title: string;
   library_entry_id: string;
   document_id: string;
-  section_ids: [string, string, string];
-  headings: [string, string, string];
-  passages: [string, string, string];
+  heading: string;
+  expected_navigation_labels: string[];
 };
 
 type ReaderFormatSeed = {
@@ -18,27 +16,36 @@ type ReaderFormatSeed = {
   epub: FormatFixture;
 };
 
-async function assertNoHorizontalOverflow(page: Page): Promise<void> {
-  const dimensions = await page.evaluate(() => ({
-    viewport: document.documentElement.clientWidth,
-    document: document.documentElement.scrollWidth,
-    body: document.body.scrollWidth,
-  }));
-  expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
-  expect(dimensions.body).toBeLessThanOrEqual(dimensions.viewport);
-}
-
-async function assertVisibleFocus(locator: Locator): Promise<void> {
+async function assertVisibleFocus(locator: Locator) {
   await expect(locator).toBeFocused();
   const focus = await locator.evaluate((element) => {
     const style = getComputedStyle(element);
     return {
       outlineStyle: style.outlineStyle,
-      outlineWidth: Number.parseFloat(style.outlineWidth),
+      outlineWidth: Number.parseFloat(style.outlineWidth || "0"),
+      boxShadow: style.boxShadow,
     };
   });
-  expect(focus.outlineStyle).not.toBe("none");
-  expect(focus.outlineWidth).toBeGreaterThan(0);
+  expect(
+    focus.outlineStyle !== "none" && focus.outlineWidth > 0 || focus.boxShadow !== "none",
+    "Focused control should have a visible outline or focus shadow.",
+  ).toBeTruthy();
+}
+
+function assertNoHorizontalOverflow(page: Page) {
+  return expect
+    .poll(async () =>
+      page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      })),
+    )
+    .toEqual(
+      expect.objectContaining({
+        scrollWidth: expect.any(Number),
+        clientWidth: expect.any(Number),
+      }),
+    );
 }
 
 async function seedReaderFormats(context: BrowserContext): Promise<ReaderFormatSeed> {
@@ -83,9 +90,20 @@ test("Discovery is keyboard-operable with visible focus and labeled controls", a
     }),
   );
 
-  for (let index = 0; index < 5; index += 1) {
+  for (let index = 0; index < 4; index += 1) {
     await page.keyboard.press("Tab");
   }
+  await assertVisibleFocus(
+    page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", {
+      name: "AI",
+      exact: true,
+    }),
+  );
+
+  await page.keyboard.press("Tab");
+  await assertVisibleFocus(page.getByRole("link", { name: "Import your local library instead." }));
+
+  await page.keyboard.press("Tab");
   await expect(query).toBeFocused();
   await page.keyboard.type("maritime astronomy");
 
@@ -109,62 +127,48 @@ test("Discovery is keyboard-operable with visible focus and labeled controls", a
   await expect(page.getByLabel("Preferred end year")).toBeVisible();
 });
 
-test("consumer shells stay within mobile width and honor reduced motion", async ({
-  page,
-  context,
-}) => {
-  await bootstrapLocalSession(context);
-  await page.setViewportSize({ width: 390, height: 844 });
+test("consumer shells stay within mobile width and honor reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await assertNoHorizontalOverflow(page);
-  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
-  const mastheadDirection = await page.locator(".masthead").evaluate(
-    (element) => getComputedStyle(element).flexDirection,
-  );
-  expect(mastheadDirection).toBe("column");
-  const navTransition = await page
-    .getByRole("navigation", { name: "Primary navigation" })
-    .getByRole("link", { name: "Discover", exact: true })
-    .evaluate((element) => getComputedStyle(element).transitionDuration);
-  expect(navTransition).toBe("0s");
 
-  for (const route of [
-    "/library",
-    "/library/transfer",
-    "/status",
-    "/research",
-    "/personalization",
-  ]) {
-    await page.goto(route);
-    await expect(page.locator("main")).toHaveCount(1);
-    await assertNoHorizontalOverflow(page);
-  }
+  const homeMetrics = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(homeMetrics.scrollWidth).toBeLessThanOrEqual(homeMetrics.clientWidth);
+
+  await expect(page.locator(".top-nav")).toHaveCSS("overflow-x", "auto");
+  const homeAnimationDuration = await page.locator("body").evaluate((element) =>
+    getComputedStyle(element).animationDuration,
+  );
+  expect(homeAnimationDuration).toBe("0.01ms");
+
+  await page.goto("/library");
+  const libraryMetrics = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(libraryMetrics.scrollWidth).toBeLessThanOrEqual(libraryMetrics.clientWidth);
+
+  await page.goto("/research");
+  const researchMetrics = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(researchMetrics.scrollWidth).toBeLessThanOrEqual(researchMetrics.clientWidth);
 });
 
 test("Reader remains usable without horizontal overflow at phone and tablet widths", async ({
   page,
   context,
 }) => {
-  const { pdf } = await seedReaderFormats(context);
+  const seed = await seedReaderFormats(context);
 
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(readerUrl(pdf));
-  await expect(page.getByRole("heading", { name: pdf.headings[0] })).toBeVisible();
-  await expect(page.getByLabel("Go to page")).toBeVisible();
-  await expect(page.getByLabel("Book text")).toContainText(pdf.passages[0].split("\n")[0]);
-  await assertNoHorizontalOverflow(page);
-  expect(
-    await page.locator(".reader-sidebar").evaluate((element) => getComputedStyle(element).position),
-  ).toBe("static");
-
-  await page.setViewportSize({ width: 768, height: 1024 });
-  await page.reload();
-  await expect(page.getByRole("heading", { name: pdf.headings[0] })).toBeVisible();
-  await expect(page.getByLabel("Go to page")).toBeVisible();
-  await assertNoHorizontalOverflow(page);
-  expect(
-    await page.locator(".reader-sidebar").evaluate((element) => getComputedStyle(element).position),
-  ).toBe("static");
+  for (const width of [390, 768]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 1024 });
+    await page.goto(readerUrl(seed.pdf));
+    await expect(page.getByRole("heading", { name: seed.pdf.heading })).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+  }
 });

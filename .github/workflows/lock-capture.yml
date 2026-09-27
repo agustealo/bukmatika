@@ -1,0 +1,44 @@
+name: Dependency Lock Capture
+
+on:
+  push:
+    branches: [security/deterministic-web-dependencies]
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Resolve workspace lock
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Report resolved direct versions
+        run: |
+          node - <<'NODE'
+          const lock = require('./package-lock.json');
+          for (const key of [
+            'node_modules/next',
+            'node_modules/react',
+            'node_modules/react-dom',
+            'node_modules/typescript',
+            'node_modules/@types/node',
+            'node_modules/@types/react',
+            'node_modules/@types/react-dom',
+            'node_modules/@playwright/test',
+          ]) console.log(`${key}=${lock.packages[key]?.version ?? 'missing'}`);
+          NODE
+      - name: Emit lock payload
+        run: |
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+          payload = base64.b64encode(Path('package-lock.json').read_bytes()).decode('ascii')
+          print('LOCK64_BEGIN')
+          print(payload)
+          print('LOCK64_END')
+          PY

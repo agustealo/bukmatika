@@ -161,6 +161,21 @@ class ProviderConnectionRepository:
             raise ProviderAssignmentNotFound("No enabled model assignment is available")
         return assignments[0]
 
+    async def disable_role_assignments(self, *, principal_id: UUID, role: str) -> None:
+        normalized_role = role.strip()
+        if not normalized_role:
+            raise ValueError("role must not be empty")
+        await self._session.execute(
+            update(AIModelAssignment)
+            .where(
+                AIModelAssignment.principal_id == principal_id,
+                AIModelAssignment.role == normalized_role,
+                AIModelAssignment.enabled.is_(True),
+            )
+            .values(enabled=False)
+        )
+        await self._session.flush()
+
     async def disable_connection(
         self,
         *,

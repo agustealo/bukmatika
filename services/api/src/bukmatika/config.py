@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     app_name: str = "Bukmatika API"
     environment: str = "development"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     database_url: str = "postgresql+psycopg://bukmatika:bukmatika@localhost:5432/bukmatika"
     http_timeout_seconds: float = Field(default=12.0, gt=0, le=60)
     source_concurrency: int = Field(default=4, ge=1, le=16)

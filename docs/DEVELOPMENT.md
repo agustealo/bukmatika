@@ -25,6 +25,23 @@ A feature is done when:
 - documentation reflects the shipped behavior;
 - no dead scaffold, sample provider, demo record, or duplicate authority remains.
 
+## Observability contract
+
+Bukmatika emits structured JSON logs to standard output. HTTP requests use one bounded correlation authority:
+
+- a valid incoming `X-Request-ID` may be retained when it is ASCII, at most 128 characters, and limited to the accepted identifier character set;
+- otherwise Bukmatika generates a new request ID and returns it in `X-Request-ID`;
+- the web origin may read the response header through the canonical CORS configuration;
+- request access events record the request ID, HTTP method, canonical route template, status code, duration, and safe code-frame locations for uncaught failures;
+- request access events never include raw query strings, concrete route parameter values, request or response bodies, cookies, authorization material, annotation/book text, or exception messages;
+- downstream structured logs may obtain the request ID from request-bound context rather than copying private payload data into log fields;
+- Uvicorn's duplicate raw-target access logger is disabled because raw targets may contain query parameters;
+- Uvicorn's generic ASGI exception record is stripped of the raw traceback/message after Bukmatika emits the correlated safe failure event;
+- HTTPX/HTTPCore transport logging is held at warning-or-higher because its INFO request line contains the complete outbound URL and may include user research terms;
+- `BUKMATIKA_LOG_LEVEL` controls the application log threshold and defaults to `INFO`.
+
+When adding diagnostic fields, prefer identifiers, bounded state names, counts, timings, error classes, and source-code frame locations without local values. Do not make private user content a logging shortcut.
+
 ## Code organization
 
 - `apps/web`: consumer web application.

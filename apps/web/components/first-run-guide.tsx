@@ -36,7 +36,7 @@ export function FirstRunGuide() {
   return (
     <section className="empty-surface" aria-labelledby="first-run-guide-title">
       <p className="eyebrow">First steps</p>
-      <strong id="first-run-guide-title">Build the first shelf from a question.</strong>
+      <h2 id="first-run-guide-title">Build the first shelf from a question.</h2>
       <p>
         Search for a topic, inspect the work and edition evidence, then save or acquire only the
         source you actually want. Once a readable document is ready, Bukmatika carries that same

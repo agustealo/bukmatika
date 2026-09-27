@@ -1,4 +1,5 @@
 import { DiscoveryClient } from "../components/discovery-client";
+import { FirstRunGuide } from "../components/first-run-guide";
 import { PersonalizedRecommendations } from "../components/personalized-recommendations";
 
 export default function Home() {
@@ -27,6 +28,7 @@ export default function Home() {
         </p>
       </section>
 
+      <FirstRunGuide />
       <DiscoveryClient />
       <PersonalizedRecommendations />
 

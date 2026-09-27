@@ -53,7 +53,6 @@ async def export_account_data(
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     service: Annotated[AccountPrivacyService, Depends(privacy_service)],
 ) -> AccountPrivacyExportResponse:
-    await service.cleanup_pending_storage()
     try:
         return await service.export(principal_id=identity.principal_id)
     except PrincipalNotFound as exc:

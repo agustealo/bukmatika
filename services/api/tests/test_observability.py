@@ -29,14 +29,28 @@ class RecordingLogger:
         return None
 
 
-def _test_app(logger: RecordingLogger) -> FastAPI:
+def _test_app(
+    logger: RecordingLogger,
+    *,
+    allowed_origin: str = "http://localhost:3000",
+) -> FastAPI:
     app = FastAPI(exception_handlers={Exception: correlated_internal_server_error})
-    app.add_middleware(RequestCorrelationMiddleware, logger=logger)
+    app.state.mutation_calls = 0
+    app.add_middleware(
+        RequestCorrelationMiddleware,
+        logger=logger,
+        allowed_origin=allowed_origin,
+    )
 
     @app.get("/items/{item_id}")
     async def item(item_id: str) -> dict[str, str | None]:
         await asyncio.sleep(0)
         return {"item_id": item_id, "request_id": current_request_id()}
+
+    @app.post("/mutate")
+    async def mutate() -> dict[str, bool]:
+        app.state.mutation_calls += 1
+        return {"mutated": True}
 
     @app.get("/provided-header")
     async def provided_header() -> Response:
@@ -110,6 +124,31 @@ async def test_request_correlation_replaces_invalid_caller_id() -> None:
     assert request_id != "unsafe request id with spaces"
     assert re.fullmatch(r"[0-9a-f]{32}", request_id)
     assert response.json()["request_id"] == request_id
+
+
+async def test_cross_origin_browser_write_is_rejected_before_route_execution() -> None:
+    logger = RecordingLogger()
+    app = _test_app(logger, allowed_origin="http://127.0.0.1:3000")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/mutate",
+            headers={
+                "Origin": "http://127.0.0.1:4000",
+                REQUEST_ID_HEADER: "csrf-rejected-request",
+            },
+        )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": {"code": "ORIGIN_NOT_ALLOWED"}}
+    assert response.headers[REQUEST_ID_HEADER] == "csrf-rejected-request"
+    assert app.state.mutation_calls == 0
+    level, values = _event(logger, "http.request.completed")
+    assert level == "info"
+    assert values["request_id"] == "csrf-rejected-request"
+    assert values["method"] == "POST"
+    assert values["status_code"] == 403
 
 
 async def test_request_correlation_overrides_downstream_request_id_header() -> None:

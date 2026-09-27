@@ -4,8 +4,9 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 
 ## Current engineering checkpoint - 2026-09-27
 
-- Current production base: `main@1c306bb38c08a3214ec703b97ee8518c838d19fc` after merged PR #172.
-- Post-merge Quality #744 is green on that exact production commit across API, Web, Browser, and Deployment quality.
+- Current production base: `main@2d38bf99cc754a8caac8543d94fc96fbcb6d83b2` after merged PR #173.
+- Post-merge Quality #746 is green on that exact production commit across API, Web, Browser, and Deployment quality.
+- **Consumer AI release is now additionally blocked by the provider-neutral runtime gate in `docs/PROVIDER_NEUTRAL_AI_RELEASE_GATE.md`, tracked by issue #174.** Passing Ollama-only runtime proofs is no longer sufficient. Bukmatika must prove provider-neutral configuration/runtime/UX, canonical credential and egress policy ownership, no silent local-to-cloud fallback, and real interchangeability across independently implemented providers before consumer AI readiness can be marked green.
 - Phase 0 foundation is implementation-complete: the canonical local bootstrap owns prerequisite validation, non-destructive environment setup, PostgreSQL 18 Compose lifecycle, dependency installation, database readiness, and migrations; structured request correlation provides canonical `X-Request-ID` propagation and privacy-bounded JSON access logging. PR #130 further fences structured logging to Bukmatika-owned/server logger families so raw HTTP client URLs cannot become a second telemetry authority.
 - Phase 1 listed discovery capabilities are implementation-complete: all four canonical source adapters remain independently degradable; provider health/rate-limit telemetry is bounded and privacy-safe; normalized results persist through the PostgreSQL catalog; and explicit language, format, era, rights-state, and source preferences can transparently nudge ranking by at most `0.05` without suppressing providers, rewriting rights evidence, or changing acquisition eligibility.
 - Phase 2 now has principal-owned acquisition intent and approval policy over the installation-wide exact-asset transfer authority. PR #133 added `always_ask` / `auto_eligible` policy, exact principal request/approve/cancel state, shared-transfer cancellation fencing, and a real Chromium lifecycle while preserving the `RightsEngine` as the final unattended-acquisition authority.
@@ -24,16 +25,16 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 - The real Chromium rail proves Discovery ranking/provenance/degradation, explainable personalized recommendation fit, dossier and exact edition handoff, aggregate status, Library organization, private local-book import and owner isolation, PDF/EPUB Reader behavior, Research-to-Reader source handoff, balanced comparison with no-match sources preserved, stale cross-tab bookmark/highlight mutation rejection, principal-owned acquisition request/approval/cancel continuity, metadata provenance and sanitized-cover rendering, backup download/dry-run/restore into a fresh principal, whole-account export/erasure with deterministic replacement-principal isolation, first-run/onboarding state transitions, keyboard traversal and visible focus, reduced-motion behavior, and phone/tablet responsive layout without horizontal shell overflow.
 - Grounded reader research is live behind the canonical `ModelGateway` with loopback-only Ollama, citation validation, policy-gated execution, AI activity evidence, runtime/model readiness gating, evidence-only fallback, consumer runtime/recovery status, a public real-model smoke command, and a rollback-only grounded-runtime proof command.
 - Consumer research includes selected-book lexical retrieval, grounded Q&A, balanced source/edition comparison, explicit-highlight grounding, deterministic timelines, deterministic people/place/concept mention extraction, measured retrieval evaluation over canonical evidence, ranked PostgreSQL fallback, and explicit request-local semantic retrieval behind the canonical embedding gateway.
-- Semantic retrieval implementation is shipped but remains unpromoted in ordinary consumer Research until the hardened semantic recall burn passes against a real configured local Ollama embedding model. The request-local semantic path creates no persistent vector authority.
+- Semantic retrieval implementation is shipped but remains unpromoted in ordinary consumer Research until the hardened semantic recall burn passes against a real configured embedding provider/model through the provider-neutral runtime gate. The request-local semantic path creates no persistent vector authority.
 - The bounded Level 2 Research workflow is continuous in the Research surface: selected books and a question can produce an exact proposal, the user can approve or reject it, explicitly start or stop it, follow durable live state, recover active controls after reload or scope changes, see the newest active proposal first, and inspect terminal outcomes from the same server-backed delegation/result authorities.
-- Research surfaces canonical local-AI readiness for AI-disabled, unconfigured, runtime-offline, invalid-runtime, and missing-model states without becoming a second settings authority. Evidence-only research remains available and setup routes back to the canonical AI control center.
+- Research surfaces canonical local-AI readiness for AI-disabled, unconfigured, runtime-offline, invalid-runtime, and missing-model states without becoming a second settings authority. Evidence-only research remains available and setup routes back to the canonical AI control center. This local/Ollama-shaped control surface is now explicitly transitional and must be replaced by the provider-neutral consumer runtime gate before AI release readiness.
 - Consumer library portability includes versioned manifests, deterministic dry-run/apply, rights-gated byte export/import, bounded `.bukmatika` transport, archive hardening, export omission transparency, a real Chromium backup/restore journey into a fresh principal, and private local-book import through the same canonical storage/processing/Reader authorities without widening shared catalog visibility.
 - Bounded Level 2 read-only delegation remains limited to explicitly selected `research.search` steps. It requires principal-owned consent, exact per-run approval, explicit start, immutable selection/budget fingerprints, finite runtime/retry/attempt ceilings, stop/revoke controls, current-state/policy/context revalidation, durable PostgreSQL dispatch, claim leases, restart recovery, and audit evidence.
 - The Level 2 lane is not standing permission. The model cannot approve, start, expand, reorder, rebudget, or silently replan delegated work.
 - Level 3, delegated writes, autonomous acquisition, consequential delegation, standing approvals, arbitrary tool/code/shell/SQL/filesystem access, and open-ended scheduler agents remain closed.
-- The grounded proof command existing is not proof that an installed model passed it. Phase 5 still carries a release-evidence gate until `bukmatika-grounded-ai-proof` is actually executed successfully against a real installed local model and recorded for the exact release candidate.
-- The semantic recall command existing is not real-model quality evidence. Consumer semantic promotion remains blocked until `bukmatika-semantic-recall-burn` is run against a real configured local embedding model and meets the acceptance gate tracked in issue #5.
-- Phase 7 repository security acceptance is recorded in `docs/SECURITY_REVIEW.md` for `main@1c306bb38c08a3214ec703b97ee8518c838d19fc`. The review found no unresolved P0/P1 defect across session/browser boundaries, SSRF-safe acquisition, hostile-file ingestion, storage confinement, portability archives, privacy/ownership, AI context minimization, bounded delegation, and canonical deployment. It explicitly does not close repository branch protection, real local-model proof, real embedding-quality proof, external TLS/HSTS operation, or third-party assurance.
+- The grounded proof command existing is not proof that a real provider passed it. Phase 5 still carries a release-evidence gate until `bukmatika-grounded-ai-proof` is generalized through the production provider registry and executed successfully against the required real providers for the exact release candidate.
+- The semantic recall command existing is not real-model quality evidence. Consumer semantic promotion remains blocked until `bukmatika-semantic-recall-burn` is provider-neutral and a real configured embedding provider/model meets the acceptance gate tracked in issue #5 and issue #174.
+- Phase 7 repository security acceptance is recorded in `docs/SECURITY_REVIEW.md`. The review found no unresolved P0/P1 defect across session/browser boundaries, SSRF-safe acquisition, hostile-file ingestion, storage confinement, portability archives, privacy/ownership, AI context minimization, bounded delegation, and canonical deployment. It explicitly does not close repository branch protection, provider-neutral AI runtime proof, real embedding-quality proof, external TLS/HSTS operation, or third-party assurance.
 - Repository governance remains an external settings gate: `main` is still unprotected, and issue #108 tracks requiring pull requests and the existing quality checks while blocking force pushes/deletion without pretending application code can substitute for branch protection. The 2026-09-26 no-op write/cleanup incident demonstrated this risk directly: GitHub accepted a direct contents write to `main` that a protected branch should have rejected.
 - Retrieval quality work remains independent of autonomy expansion. Improve measured lexical/semantic research quality only where evidence proves a gap; do not add infrastructure simply because the Level 2 control spine now exists.
 
@@ -132,7 +133,8 @@ Goal: introduce one bounded AI orchestration system that becomes more useful thr
 - [x] In-Research Level 2 lifecycle continuity through exact proposal review, approve/reject, explicit start/stop, durable live-state refresh, reload/scope recovery, newest-first active work, and terminal outcomes over the canonical delegation authority.
 - [x] Research-local read-only AI readiness guidance over the canonical `/v1/ai/status` contract, with evidence-only fallback and setup routing to the canonical AI control center.
 - [x] Shared capability argument/context contracts preflighted before approval and revalidated before permit/runtime execution.
-- [ ] Recorded successful real local-runtime grounded-answer release proof against an installed model.
+- [ ] Provider-neutral, user-controlled AI runtime gate in `docs/PROVIDER_NEUTRAL_AI_RELEASE_GATE.md` / issue #174.
+- [ ] Recorded successful provider-neutral grounded-answer release evidence on the exact release candidate.
 
 ### Learning
 
@@ -152,7 +154,7 @@ Goal: introduce one bounded AI orchestration system that becomes more useful thr
 - [x] Representative public-domain lexical/paraphrase recall baseline through the production parser, chunker, and PostgreSQL research path.
 - [x] PostgreSQL query-construction/ranked-fallback improvements measured against the representative baseline.
 - [x] Explicit request-local semantic retrieval behind one canonical embedding-provider interface, without a persistent vector database or second retrieval authority.
-- [ ] Record real local Ollama semantic-recall acceptance evidence before promoting semantic retrieval as a consumer quality improvement.
+- [ ] Record real provider-neutral semantic-recall acceptance evidence before promoting semantic retrieval as a consumer quality improvement.
 - [x] Grounded book Q&A with page/section citations.
 - [x] Compare sources/editions.
 - [x] Timeline/entity/concept views derived from canonical evidence.
@@ -170,6 +172,7 @@ Goal: introduce one bounded AI orchestration system that becomes more useful thr
 - [x] Activity ledger.
 - [x] Local provider/model readiness and recovery surface.
 - [x] Per-profile local model selection.
+- [ ] Provider-neutral multi-provider/model connection management, role assignment, fallback policy, and local/cloud data-class policy required by issue #174.
 - [x] Explicit Level 2 read-only consent plus approve/reject/start/stop controls.
 - [ ] Broader per-feature autonomy controls beyond the proven Level 2 research lane.
 - [x] Export/delete personalization data.
@@ -184,7 +187,8 @@ Acceptance:
 - AI-disabled mode leaves discovery, acquisition, cataloging, library, and reading functional;
 - no independent agent memory or provider SDK appears outside the canonical orchestration/model boundary;
 - a Level 2 delegation cannot widen its selected context, authority, capability set, or budgets after approval;
-- stop/revoke/AI-off and stale-worker fencing remain effective across restart and concurrency.
+- stop/revoke/AI-off and stale-worker fencing remain effective across restart and concurrency;
+- provider/model selection, cloud egress, fallback, credential ownership, usage evidence, and interchangeability satisfy the provider-neutral hard gate before consumer AI readiness is declared.
 
 ### Phase 5 exit gate before broader autonomy expansion
 
@@ -192,13 +196,15 @@ Broader autonomy remains closed until all applicable gates are proven for the pr
 
 For the remaining Phase 5 product/release work:
 
-1. the local provider reports actual runtime/model readiness rather than configuration presence;
-2. a consumer can understand, configure, and recover from unconfigured, runtime-offline, invalid-runtime, and missing-model states without gaining control over provider routing;
-3. the reader falls back to ordinary evidence retrieval if readiness changes between status inspection and execution;
-4. one real installed Ollama model completes the grounded-answer path against canonical persisted evidence, with the proof result recorded for the exact release candidate;
-5. one real configured local Ollama embedding model passes the hardened semantic recall acceptance gate before semantic retrieval is promoted in ordinary consumer Research;
-6. citation validation, AI-off behavior, ownership isolation, privacy minimization, activity-ledger projection, delegation fencing, rollback-clean proof data, and the no-mock browser journey remain green on the exact release candidate;
-7. no new agent, memory, graph, embedding, or orchestration subsystem is introduced unless a remaining product requirement proves it necessary.
+1. the provider-neutral AI runtime gate in `docs/PROVIDER_NEUTRAL_AI_RELEASE_GATE.md` and issue #174 is fully satisfied;
+2. provider readiness reports actual provider/model/credential state rather than configuration presence;
+3. a consumer can understand, configure, and recover from disabled, unconfigured, local-offline, invalid-credential, provider-unreachable, rate-limit/quota, missing/deprecated-model, and policy-denied states without editing deployment environment variables for ordinary use;
+4. the reader falls back to ordinary evidence retrieval if model readiness changes between status inspection and execution, without silently changing provider or crossing a new local/cloud trust boundary;
+5. the provider-neutral grounded-answer proof passes the exact production registry/runtime path against the required real provider implementations, with provider/model identity and egress policy evidence recorded for the exact release candidate;
+6. one real configured embedding provider/model passes the hardened semantic recall acceptance gate before semantic retrieval is promoted in ordinary consumer Research, and that evidence is model-specific;
+7. citation validation, AI-off behavior, ownership isolation, privacy minimization, credential redaction, activity-ledger projection, delegation fencing, rollback-clean proof data, and the no-mock browser journey remain green on the exact release candidate;
+8. unapproved local-to-cloud or cross-cloud fallback is proven impossible;
+9. no new agent, memory, graph, embedding, or orchestration subsystem is introduced unless a remaining product requirement proves it necessary.
 
 ## Phase 6 - Autonomy expansion, separately gated
 
@@ -246,5 +252,6 @@ Acceptance for any future expansion: the delegated capability can never expand i
 - [x] Grounding/citation validity tests.
 - [x] Unnecessary-model-call budget tests.
 - [x] AI privacy/context-leakage burn tests.
+- [ ] Provider-neutral AI consumer release gate (#174).
 
 AI remains an optional product layer. Core discovery, acquisition, cataloging, organization, and reading must remain functional without an AI provider.

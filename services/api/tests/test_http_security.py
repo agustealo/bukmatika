@@ -2,18 +2,25 @@ import httpx
 import pytest
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from bukmatika.http_security import BrowserOriginWriteMiddleware
+from bukmatika.http_security import BrowserOriginWriteMiddleware, PrivateResponseCacheMiddleware
 
 _ALLOWED_ORIGIN = "http://127.0.0.1:3000"
 
 
 class _RecordingApp:
-    def __init__(self) -> None:
+    def __init__(self, *, headers: list[tuple[bytes, bytes]] | None = None) -> None:
         self.calls = 0
+        self._headers = headers or []
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         self.calls += 1
-        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 204,
+                "headers": list(self._headers),
+            }
+        )
         await send({"type": "http.response.body", "body": b""})
 
 
@@ -96,3 +103,42 @@ async def test_safe_methods_are_not_origin_fenced(method: str) -> None:
 
     assert response.status_code == 204
     assert downstream.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cookie_bound_response_is_private_and_not_stored() -> None:
+    downstream = _RecordingApp(headers=[(b"cache-control", b"public, max-age=600")])
+    app = PrivateResponseCacheMiddleware(downstream)
+    async with _client(app) as client:
+        response = await client.get("/v1/private", headers={"Cookie": "bukmatika_session=secret"})
+
+    assert response.status_code == 204
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert downstream.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_session_bootstrap_response_that_sets_cookie_is_not_stored() -> None:
+    downstream = _RecordingApp(
+        headers=[(b"set-cookie", b"bukmatika_session=secret; HttpOnly; Path=/")]
+    )
+    app = PrivateResponseCacheMiddleware(downstream)
+    async with _client(app) as client:
+        response = await client.post("/v1/session/local")
+
+    assert response.status_code == 204
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["pragma"] == "no-cache"
+
+
+@pytest.mark.asyncio
+async def test_anonymous_response_keeps_endpoint_cache_policy() -> None:
+    downstream = _RecordingApp(headers=[(b"cache-control", b"public, max-age=600")])
+    app = PrivateResponseCacheMiddleware(downstream)
+    async with _client(app) as client:
+        response = await client.get("/v1/public")
+
+    assert response.status_code == 204
+    assert response.headers["cache-control"] == "public, max-age=600"
+    assert "pragma" not in response.headers

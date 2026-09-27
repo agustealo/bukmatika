@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { apiFetch } from "../lib/api";
+import { apiFetch, establishReplacementLocalSession } from "../lib/api";
 import styles from "../app/personalization/personalization-data-controls.module.css";
 
 async function responseError(response: Response, fallback: string): Promise<Error> {
@@ -128,6 +128,7 @@ export function PersonalizationDataControls() {
         throw await responseError(response, "Could not delete account data");
       }
       await response.json();
+      await establishReplacementLocalSession();
       window.location.assign("/");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not delete account data.");

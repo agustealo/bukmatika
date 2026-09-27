@@ -26,6 +26,11 @@ export async function ensureLocalSession(): Promise<void> {
   await sessionPromise;
 }
 
+export async function establishReplacementLocalSession(): Promise<void> {
+  sessionPromise = null;
+  await ensureLocalSession();
+}
+
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   await ensureLocalSession();
   const response = await fetch(`${API_BASE}${path}`, {

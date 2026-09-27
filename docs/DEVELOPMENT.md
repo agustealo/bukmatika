@@ -101,7 +101,14 @@ Bukmatika's browser session is an HttpOnly cookie, so CORS alone is not the auth
 - rejected browser writes still pass through request correlation, so the response and bounded access event retain the canonical `X-Request-ID`;
 - this origin fence supplements `SameSite=Lax`, HttpOnly cookies, and CORS. Do not remove it on the assumption that CORS prevents a malicious browser from sending a request.
 
-Any new browser-authenticated mutation must remain behind this global boundary. Do not add route-local exceptions or a second CSRF authority without a separately reviewed protocol requirement.
+Any new browser-authenticated mutation must remain behind this global boundary. Do not add route-local exceptions or a second CSRF authority without a separately reviewed protocol requirement. `GET`, `HEAD`, and `OPTIONS` must remain free of durable product mutations because the global origin fence deliberately treats them as safe methods. Background cleanup/retry work belongs to its worker or an explicit mutation path, not a read endpoint.
+
+Cookie-bound API responses also have a global cache boundary:
+
+- any response to a request carrying cookies is forced to `Cache-Control: private, no-store` and `Pragma: no-cache`;
+- any response that sets a cookie receives the same policy, including the first local-session bootstrap response;
+- an anonymous response without request or response cookies keeps its endpoint-owned cache policy;
+- this prevents account exports, personalization state, session metadata, and other principal-bound API responses from being stored under default browser or intermediary cache behavior without disabling caching for anonymous/public API responses.
 
 The production Next.js surface also publishes a narrow response-hardening contract on every route:
 

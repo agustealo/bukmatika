@@ -13,7 +13,7 @@ from structlog.contextvars import bound_contextvars, get_contextvars, merge_cont
 from structlog.typing import Processor
 
 from bukmatika.config import get_settings
-from bukmatika.http_security import BrowserOriginWriteMiddleware
+from bukmatika.http_security import BrowserOriginWriteMiddleware, PrivateResponseCacheMiddleware
 
 REQUEST_ID_HEADER = "X-Request-ID"
 _REQUEST_ID_HEADER_BYTES = REQUEST_ID_HEADER.lower().encode("ascii")
@@ -89,7 +89,7 @@ def configure_logging(*, level: str) -> None:
 
 
 class RequestCorrelationMiddleware:
-    """Own Bukmatika's outer HTTP boundary: write-origin fencing plus request correlation."""
+    """Own Bukmatika's outer HTTP boundary: browser security plus request correlation."""
 
     def __init__(
         self,
@@ -99,7 +99,8 @@ class RequestCorrelationMiddleware:
         allowed_origin: str | None = None,
     ) -> None:
         origin = allowed_origin if allowed_origin is not None else get_settings().web_origin
-        self._app = BrowserOriginWriteMiddleware(app, allowed_origin=origin)
+        browser_write_fence = BrowserOriginWriteMiddleware(app, allowed_origin=origin)
+        self._app = PrivateResponseCacheMiddleware(browser_write_fence)
         self._logger = logger or cast(
             StructuredEventLogger,
             structlog.get_logger("bukmatika.http"),

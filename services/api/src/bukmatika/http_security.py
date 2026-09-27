@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -15,11 +17,8 @@ class BrowserOriginWriteMiddleware:
     """
 
     def __init__(self, app: ASGIApp, *, allowed_origin: str) -> None:
-        normalized = allowed_origin.rstrip("/")
-        if not normalized or "://" not in normalized:
-            raise ValueError("Browser write origin must be an absolute origin")
         self._app = app
-        self._allowed_origin = normalized
+        self._allowed_origin = _normalize_origin(allowed_origin)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or _method(scope) in _SAFE_METHODS:
@@ -54,10 +53,29 @@ def _origin_headers(scope: Scope) -> list[str]:
         if name.lower() != _ORIGIN_HEADER:
             continue
         try:
-            origins.append(value.decode("ascii").rstrip("/"))
-        except UnicodeDecodeError:
+            origins.append(_normalize_origin(value.decode("ascii")))
+        except (UnicodeDecodeError, ValueError):
             origins.append("<invalid>")
     return origins
+
+
+def _normalize_origin(value: str) -> str:
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("Browser write origin must be an HTTP(S) origin")
+    try:
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("Browser write origin has an invalid port") from exc
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
 
 
 __all__ = ["BrowserOriginWriteMiddleware"]

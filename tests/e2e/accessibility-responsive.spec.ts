@@ -83,9 +83,20 @@ test("Discovery is keyboard-operable with visible focus and labeled controls", a
     }),
   );
 
-  for (let index = 0; index < 5; index += 1) {
+  for (let index = 0; index < 4; index += 1) {
     await page.keyboard.press("Tab");
   }
+  await assertVisibleFocus(
+    page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", {
+      name: "AI",
+      exact: true,
+    }),
+  );
+
+  await page.keyboard.press("Tab");
+  await assertVisibleFocus(page.getByRole("link", { name: "Import your local library instead." }));
+
+  await page.keyboard.press("Tab");
   await expect(query).toBeFocused();
   await page.keyboard.type("maritime astronomy");
 

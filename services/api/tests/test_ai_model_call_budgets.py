@@ -3,10 +3,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_ai_planning import RecordingGateway as PlanningGateway
 from test_ai_planning import _research_plan_payload
+from test_grounded_synthesis import _principal, _request, _scope, _seed_book
 from test_grounded_synthesis import (
     _RecordingGateway as GroundedGateway,
 )
-from test_grounded_synthesis import _principal, _request, _scope, _seed_book
 
 from bukmatika.ai.gateway import ModelProviderNotReady, ModelReadinessState
 from bukmatika.ai.research_domain import GroundedResearchSelectionRequest

@@ -12,6 +12,9 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from structlog.contextvars import bound_contextvars, get_contextvars, merge_contextvars
 from structlog.typing import Processor
 
+from bukmatika.config import get_settings
+from bukmatika.http_security import BrowserOriginWriteMiddleware
+
 REQUEST_ID_HEADER = "X-Request-ID"
 _REQUEST_ID_HEADER_BYTES = REQUEST_ID_HEADER.lower().encode("ascii")
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -86,10 +89,17 @@ def configure_logging(*, level: str) -> None:
 
 
 class RequestCorrelationMiddleware:
-    """Bind a safe request ID and emit one privacy-bounded structured access event."""
+    """Own Bukmatika's outer HTTP boundary: write-origin fencing plus request correlation."""
 
-    def __init__(self, app: ASGIApp, *, logger: StructuredEventLogger | None = None) -> None:
-        self._app = app
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        logger: StructuredEventLogger | None = None,
+        allowed_origin: str | None = None,
+    ) -> None:
+        origin = allowed_origin if allowed_origin is not None else get_settings().web_origin
+        self._app = BrowserOriginWriteMiddleware(app, allowed_origin=origin)
         self._logger = logger or cast(
             StructuredEventLogger,
             structlog.get_logger("bukmatika.http"),

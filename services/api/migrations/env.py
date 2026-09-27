@@ -15,6 +15,7 @@ from bukmatika.persistence import (
     library_organization_models,
     personalization_models,
     privacy_models,
+    provider_models,
     reader_models,
 )
 
@@ -35,6 +36,7 @@ _registered_models = (
     library_organization_models.LibraryCollection,
     personalization_models.UserModel,
     privacy_models.PrivacyErasureObject,
+    provider_models.AIProviderConnection,
     reader_models.ReadingState,
 )
 target_metadata = _registered_models[0].metadata

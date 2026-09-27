@@ -79,17 +79,24 @@ def _render_environment(template: str, password: str) -> str:
 
 
 def _ensure_env_file() -> bool:
-    if ENV_FILE.exists():
-        return False
     if not ENV_TEMPLATE.is_file():
         raise DeploymentError(f"Missing production environment template: {ENV_TEMPLATE}")
     password = secrets.token_urlsafe(32)
     if PASSWORD_PATTERN.fullmatch(password) is None:
         raise DeploymentError("Generated database password did not satisfy the deployment contract")
     rendered = _render_environment(ENV_TEMPLATE.read_text(encoding="utf-8"), password)
-    ENV_FILE.write_text(rendered, encoding="utf-8")
-    if os.name != "nt":
-        ENV_FILE.chmod(0o600)
+
+    try:
+        descriptor = os.open(ENV_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return False
+
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(rendered)
+    except Exception:
+        ENV_FILE.unlink(missing_ok=True)
+        raise
     return True
 
 
@@ -106,13 +113,22 @@ def _is_loopback_host(hostname: str | None) -> bool:
 
 
 def _validate_public_origin(value: str) -> str:
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+    except ValueError as exc:
+        raise DeploymentError("BUKMATIKA_PUBLIC_ORIGIN is not a valid URL origin") from exc
     if parsed.scheme not in {"http", "https"}:
         raise DeploymentError("BUKMATIKA_PUBLIC_ORIGIN must use http or https")
     if parsed.username is not None or parsed.password is not None:
         raise DeploymentError("BUKMATIKA_PUBLIC_ORIGIN cannot contain credentials")
     if not parsed.hostname:
         raise DeploymentError("BUKMATIKA_PUBLIC_ORIGIN must include a hostname")
+    try:
+        origin_port = parsed.port
+    except ValueError as exc:
+        raise DeploymentError("BUKMATIKA_PUBLIC_ORIGIN must contain a valid TCP port") from exc
+    if origin_port is not None and not 1 <= origin_port <= 65535:
+        raise DeploymentError("BUKMATIKA_PUBLIC_ORIGIN port must be between 1 and 65535")
     if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
         raise DeploymentError("BUKMATIKA_PUBLIC_ORIGIN must be an origin without path/query/fragment")
     if parsed.scheme == "http" and not _is_loopback_host(parsed.hostname):

@@ -96,8 +96,9 @@ class ProviderRegistration:
     descriptor: ProviderDescriptor
     describe_model: Callable[[str], ModelDescriptor]
     model_gateway_factory: Callable[[Settings, httpx.AsyncClient, str], ModelGateway] | None = None
-    embedding_gateway_factory: Callable[[Settings, httpx.AsyncClient, str], EmbeddingGateway]
-    | None = None
+    embedding_gateway_factory: (
+        Callable[[Settings, httpx.AsyncClient, str], EmbeddingGateway] | None
+    ) = None
 
 
 class ProviderRegistry:

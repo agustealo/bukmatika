@@ -4,8 +4,8 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 
 ## Current engineering checkpoint - 2026-09-27
 
-- Current production base: `main@e76bf5d7215cdde527d6ac3c320d11d4d786e787` after merged PR #168.
-- Post-merge Quality #731 is green on that exact production commit across API, Web, Browser, and Deployment quality.
+- Current production base: `main@1c306bb38c08a3214ec703b97ee8518c838d19fc` after merged PR #172.
+- Post-merge Quality #744 is green on that exact production commit across API, Web, Browser, and Deployment quality.
 - Phase 0 foundation is implementation-complete: the canonical local bootstrap owns prerequisite validation, non-destructive environment setup, PostgreSQL 18 Compose lifecycle, dependency installation, database readiness, and migrations; structured request correlation provides canonical `X-Request-ID` propagation and privacy-bounded JSON access logging. PR #130 further fences structured logging to Bukmatika-owned/server logger families so raw HTTP client URLs cannot become a second telemetry authority.
 - Phase 1 listed discovery capabilities are implementation-complete: all four canonical source adapters remain independently degradable; provider health/rate-limit telemetry is bounded and privacy-safe; normalized results persist through the PostgreSQL catalog; and explicit language, format, era, rights-state, and source preferences can transparently nudge ranking by at most `0.05` without suppressing providers, rewriting rights evidence, or changing acquisition eligibility.
 - Phase 2 now has principal-owned acquisition intent and approval policy over the installation-wide exact-asset transfer authority. PR #133 added `always_ask` / `auto_eligible` policy, exact principal request/approve/cancel state, shared-transfer cancellation fencing, and a real Chromium lifecycle while preserving the `RightsEngine` as the final unattended-acquisition authority.
@@ -18,6 +18,7 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 - Whole-account privacy is now a separate proven authority from personalization-only reset/export. PR #162 composes canonical library/personalization serializers into a versioned account export, adds explicit `DELETE`-confirmed principal erasure, durable retryable byte cleanup, cross-principal dedupe preservation, secret omission, and a Chromium replacement-principal isolation journey.
 - The browser/session security boundary has been materially hardened without changing product authority. PR #163 fences cookie-authenticated browser writes to the exact configured web origin, PR #164 adds production Next.js response hardening, and PR #166 keeps safe GETs mutation-free, forces cookie-bound API responses to `private, no-store`, and makes post-erasure replacement-session creation deterministic. The first #166 Chromium run caught the anonymous bootstrap race; the corrected exact head and post-merge production rail both passed.
 - PR #165 closes consumer onboarding/empty-state polish with state-derived first-run guidance and a lightweight principal-scoped library-readiness projection. It deliberately creates no tutorial persistence or second onboarding state authority.
+- PR #170 closes the AI privacy/context-leakage burn by proving the canonical model boundary minimizes grounded-answer context before provider execution. PR #171 locks deterministic model-call budgets and proves AI-disabled/evidence-only paths do not make unnecessary model requests. PR #172 locks personalization calibration thresholds, confidence bounds, feedback floors/ceilings, decay behavior, recommendation weighting, and explicit-over-inferred authority into release evidence.
 - Runtime diagnostics separate cheap process liveness from operational readiness: `/health` remains dependency-free, while `/ready` verifies PostgreSQL plus enabled in-process acquisition/delegation workers and returns only stable component state/error codes. Unexpected worker exits, cancellation, and crashes are bounded structured events; database outage/recovery is transition-logged without exposing connection strings, SQL, exception messages, job payloads, book identifiers, or private context.
 - The API gate covers development Compose validation, Ruff, strict MyPy, the current migration chain, and the complete PostgreSQL/API test suite. The Web gate covers TypeScript typecheck and production build. The Browser gate builds the production web app, starts the real API against PostgreSQL, installs Chromium, and runs the no-mock consumer journeys through the production surfaces. The Deployment gate generates a fresh production environment, validates the exact production Compose graph, builds the application images, runs migrations, boots PostgreSQL/API/OCR/Web behind the same-origin loopback ingress, verifies API readiness and the web root through that ingress, inspects service state, and tears the stack down without deleting durable volumes.
 - The real Chromium rail proves Discovery ranking/provenance/degradation, explainable personalized recommendation fit, dossier and exact edition handoff, aggregate status, Library organization, private local-book import and owner isolation, PDF/EPUB Reader behavior, Research-to-Reader source handoff, balanced comparison with no-match sources preserved, stale cross-tab bookmark/highlight mutation rejection, principal-owned acquisition request/approval/cancel continuity, metadata provenance and sanitized-cover rendering, backup download/dry-run/restore into a fresh principal, whole-account export/erasure with deterministic replacement-principal isolation, first-run/onboarding state transitions, keyboard traversal and visible focus, reduced-motion behavior, and phone/tablet responsive layout without horizontal shell overflow.
@@ -32,7 +33,7 @@ The roadmap is organized by vertical slices. A slice is complete only when the r
 - Level 3, delegated writes, autonomous acquisition, consequential delegation, standing approvals, arbitrary tool/code/shell/SQL/filesystem access, and open-ended scheduler agents remain closed.
 - The grounded proof command existing is not proof that an installed model passed it. Phase 5 still carries a release-evidence gate until `bukmatika-grounded-ai-proof` is actually executed successfully against a real installed local model and recorded for the exact release candidate.
 - The semantic recall command existing is not real-model quality evidence. Consumer semantic promotion remains blocked until `bukmatika-semantic-recall-burn` is run against a real configured local embedding model and meets the acceptance gate tracked in issue #5.
-- The broader Phase 7 security-review gate remains open. Browser origin fencing, web response hardening, private-response cache fencing, safe-method purity, hostile-file burns, privacy erasure, owner-isolation proofs, and production deployment packaging are shipped, but broader security acceptance plus AI privacy/grounding/model-budget release evaluations still require explicit acceptance rather than being implied by these slices.
+- Phase 7 repository security acceptance is recorded in `docs/SECURITY_REVIEW.md` for `main@1c306bb38c08a3214ec703b97ee8518c838d19fc`. The review found no unresolved P0/P1 defect across session/browser boundaries, SSRF-safe acquisition, hostile-file ingestion, storage confinement, portability archives, privacy/ownership, AI context minimization, bounded delegation, and canonical deployment. It explicitly does not close repository branch protection, real local-model proof, real embedding-quality proof, external TLS/HSTS operation, or third-party assurance.
 - Repository governance remains an external settings gate: `main` is still unprotected, and issue #108 tracks requiring pull requests and the existing quality checks while blocking force pushes/deletion without pretending application code can substitute for branch protection. The 2026-09-26 no-op write/cleanup incident demonstrated this risk directly: GitHub accepted a direct contents write to `main` that a protected branch should have rejected.
 - Retrieval quality work remains independent of autonomy expansion. Improve measured lexical/semantic research quality only where evidence proves a gap; do not add infrastructure simply because the Level 2 control spine now exists.
 
@@ -237,13 +238,13 @@ Acceptance for any future expansion: the delegated capability can never expand i
 - [x] Privacy/export/delete controls.
 - [x] Installer/deployment path.
 - [x] Observability and crash diagnostics.
-- [ ] Security review.
+- [x] Security review.
 - [x] Hostile-file burn tests.
 - [x] Source adapter contract tests.
 - [x] Consumer onboarding and empty-state polish.
-- [ ] Personalization calibration/evaluation suite.
-- [ ] Grounding/citation validity tests.
-- [ ] Unnecessary-model-call budget tests.
-- [ ] AI privacy/context-leakage burn tests.
+- [x] Personalization calibration/evaluation suite.
+- [x] Grounding/citation validity tests.
+- [x] Unnecessary-model-call budget tests.
+- [x] AI privacy/context-leakage burn tests.
 
 AI remains an optional product layer. Core discovery, acquisition, cataloging, organization, and reading must remain functional without an AI provider.

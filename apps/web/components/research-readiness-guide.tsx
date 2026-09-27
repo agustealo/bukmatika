@@ -4,30 +4,23 @@ import { useEffect, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 
-type LibraryItem = {
-  library_entry_id: string;
-  readable_document_id: string | null;
-};
-
-type LibraryResponse = {
-  items: LibraryItem[];
+type LibraryReadiness = {
+  entry_count: number;
+  readable_entry_count: number;
 };
 
 export function ResearchReadinessGuide() {
-  const [hasOwnedBooks, setHasOwnedBooks] = useState(false);
-  const [hasReadableBooks, setHasReadableBooks] = useState(false);
+  const [readiness, setReadiness] = useState<LibraryReadiness | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function inspectLibrary() {
       try {
-        const response = await apiFetch("/v1/library", { cache: "no-store" });
+        const response = await apiFetch("/v1/library/readiness", { cache: "no-store" });
         if (!response.ok) return;
-        const body = (await response.json()) as LibraryResponse;
-        if (cancelled) return;
-        setHasOwnedBooks(body.items.length > 0);
-        setHasReadableBooks(body.items.some((item) => item.readable_document_id !== null));
+        const body = (await response.json()) as LibraryReadiness;
+        if (!cancelled) setReadiness(body);
       } catch {
         // The canonical Research surface still owns request/error handling.
       }
@@ -39,7 +32,9 @@ export function ResearchReadinessGuide() {
     };
   }, []);
 
-  if (!hasOwnedBooks || hasReadableBooks) return null;
+  if (readiness === null || readiness.entry_count === 0 || readiness.readable_entry_count > 0) {
+    return null;
+  }
 
   return (
     <section className="empty-surface" aria-labelledby="research-readiness-title">

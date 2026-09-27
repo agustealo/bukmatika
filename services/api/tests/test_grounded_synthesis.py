@@ -31,7 +31,10 @@ from bukmatika.persistence.models import (
 )
 from bukmatika.persistence.personalization import PersonalizationRepository
 from bukmatika.persistence.personalization_models import Plan, UserModel
+from bukmatika.persistence.reader_models import Highlight, ReadingState
 from bukmatika.personalization.control import PersonalizationControlService
+from bukmatika.personalization.domain import ExplicitPreferenceRequest, PreferenceKey
+from bukmatika.personalization.service import PersonalizationService
 from bukmatika.research import (
     ReaderResearchContextRequest,
     ResearchEvidenceBundleRequest,
@@ -242,11 +245,9 @@ async def test_grounded_synthesis_uses_only_canonical_bundle_and_is_auditable(
     assert len(model_evidence) == 1
     item = model_evidence[0]
     assert isinstance(item, dict)
+    assert set(item) == {"evidence_id", "text"}
     assert item["evidence_id"] == "E1"
     assert item["text"] == text
-    assert "library_entry_id" not in item
-    assert "chunk_id" not in item
-    assert "principal_id" not in item
 
     plan = await session.get(Plan, result.plan_id)
     assert plan is not None
@@ -280,6 +281,115 @@ async def test_grounded_synthesis_uses_only_canonical_bundle_and_is_auditable(
     activity = next(item for item in ledger.items if item.decision_id == result.action_decision_id)
     assert activity.model_provider == "ollama"
     assert activity.model_name == "qwen3:8b"
+
+
+async def test_grounded_synthesis_model_boundary_excludes_unneeded_private_context(
+    session: AsyncSession,
+) -> None:
+    principal = await _principal(session, "privacy-burn")
+    selected_text = (
+        "The selected source records Atlantic navigation by observation and repeated bearings."
+    )
+    entry, document, section = await _seed_book(
+        session,
+        principal=principal,
+        suffix="privacy-selected",
+        text=selected_text,
+    )
+    unselected_text = "UNSELECTED-BOOK-PRIVATE-CONTEXT-MUST-NOT-CROSS-MODEL-BOUNDARY"
+    await _seed_book(
+        session,
+        principal=principal,
+        suffix="privacy-unselected",
+        text=unselected_text,
+    )
+
+    private_preference = "PRIVATE-PREFERENCE-MUST-STAY-IN-CONTEXT-MANIFEST"
+    scope = _scope(session)
+    await PersonalizationService(session_scope_factory=scope).set_explicit_preference(
+        principal_id=principal.id,
+        request=ExplicitPreferenceRequest(
+            key=PreferenceKey.SUBJECT_INTERESTS,
+            value={"subjects": [private_preference]},
+        ),
+    )
+
+    reading_state = ReadingState(
+        library_entry_id=entry.id,
+        document_id=document.id,
+        status="reading",
+        progress_fraction=0.25,
+        section_id=section.id,
+        section_ordinal=section.ordinal,
+        char_offset=0,
+        locator=section.locator,
+    )
+    session.add(reading_state)
+    await session.flush()
+
+    highlight_note = "PRIVATE-HIGHLIGHT-NOTE-MUST-NOT-CROSS-MODEL-BOUNDARY"
+    highlight_start = selected_text.index("Atlantic")
+    highlight_end = selected_text.index("bearings") + len("bearings")
+    highlight = Highlight(
+        reading_state_id=reading_state.id,
+        section_id=section.id,
+        char_start=highlight_start,
+        char_end=highlight_end,
+        locator=section.locator,
+        note=highlight_note,
+    )
+    session.add(highlight)
+    await session.flush()
+
+    gateway = _RecordingGateway()
+    service = GroundedResearchSynthesisService(
+        gateway=gateway,
+        session_scope_factory=scope,
+        research_service=ResearchService(session_scope_factory=scope),
+    )
+    request = _request(entry, document, section).model_copy(
+        update={"selected_highlight_ids": [highlight.id]}
+    )
+    result = await service.answer(principal_id=principal.id, request=request)
+
+    assert len(gateway.calls) == 1
+    model_request = gateway.calls[0]
+    assert model_request.data_classification is ModelDataClassification.PRIVATE_USER_CONTEXT
+    assert set(model_request.payload) == {"question", "evidence"}
+    evidence = model_request.payload["evidence"]
+    assert isinstance(evidence, list)
+    assert evidence
+    assert all(isinstance(item, dict) for item in evidence)
+    assert all(set(item) == {"evidence_id", "text"} for item in evidence if isinstance(item, dict))
+
+    serialized_payload = str(model_request.payload)
+    assert private_preference not in serialized_payload
+    assert highlight_note not in serialized_payload
+    assert unselected_text not in serialized_payload
+    assert str(principal.id) not in serialized_payload
+    assert str(entry.id) not in serialized_payload
+    assert str(document.id) not in serialized_payload
+    assert str(section.id) not in serialized_payload
+    assert str(highlight.id) not in serialized_payload
+    assert "Synthesis Work privacy-selected" not in serialized_payload
+    assert "Synthesis Edition privacy-selected" not in serialized_payload
+    assert "privacy-selected" not in serialized_payload
+    assert "char_start" not in serialized_payload
+    assert "char_end" not in serialized_payload
+    assert "locator" not in serialized_payload
+
+    plan = await session.get(Plan, result.plan_id)
+    assert plan is not None
+    assert private_preference in str(plan.context_manifest)
+    assert highlight_note not in str(plan.context_manifest)
+    assert unselected_text not in str(plan.context_manifest)
+
+    selected_highlight_text = selected_text[highlight_start:highlight_end]
+    assert selected_highlight_text in serialized_payload
+    assert any(
+        item.source_highlight_id == highlight.id and item.text in selected_highlight_text
+        for item in result.evidence.evidence
+    )
 
 
 async def test_ai_off_rejects_before_readiness_or_model_call_but_evidence_still_works(

@@ -25,7 +25,15 @@ class _StructuredProbe(BaseModel):
 def _request(timeout_seconds: float = 30) -> ModelRequest:
     return ModelRequest(
         task=ModelTask.RESEARCH_ANSWER,
-        payload={"question": "What does the source establish?", "evidence": []},
+        payload={
+            "question": "What does the source establish?",
+            "evidence": [
+                {
+                    "evidence_id": "E1",
+                    "text": "Canonical source evidence for the gateway transport probe.",
+                }
+            ],
+        },
         data_classification=ModelDataClassification.PRIVATE_USER_CONTEXT,
         max_output_tokens=128,
         timeout_seconds=timeout_seconds,

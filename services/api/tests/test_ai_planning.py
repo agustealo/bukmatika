@@ -72,7 +72,10 @@ async def test_unconfigured_gateway_fails_closed_without_fake_output() -> None:
         await gateway.generate_structured(
             ModelRequest(
                 task=ModelTask.PLAN,
-                payload={"user_request": "Find relevant books"},
+                payload={
+                    "user_request": "Find relevant books",
+                    "context": _minimal_plan_context_payload(),
+                },
                 data_classification=ModelDataClassification.PRIVATE_USER_CONTEXT,
                 max_output_tokens=512,
                 timeout_seconds=10,
@@ -80,6 +83,156 @@ async def test_unconfigured_gateway_fails_closed_without_fake_output() -> None:
             PlanProposal,
         )
     assert error.value.code == "MODEL_PROVIDER_UNCONFIGURED"
+
+
+def test_plan_model_request_minimizes_policy_and_persistence_context() -> None:
+    request = ModelRequest(
+        task=ModelTask.PLAN,
+        payload={
+            "user_request": "Search my selected book for navigation evidence.",
+            "context": {
+                "task": "research",
+                "ai_enabled": True,
+                "learning_enabled": True,
+                "autonomy_level": 1,
+                "model_context_ready": True,
+                "preferences": [
+                    {
+                        "claim_id": "PRIVATE-CLAIM-ID",
+                        "key": "subject.interests",
+                        "value": {"subjects": ["Atlantic navigation"]},
+                        "source": "explicit",
+                        "confidence": 1.0,
+                        "scope_type": "global",
+                        "scope_value": "",
+                        "influence": {
+                            "ranking": True,
+                            "presentation": True,
+                            "automation": False,
+                        },
+                        "inclusion_reason": "PRIVATE-PREFERENCE-PROVENANCE",
+                    }
+                ],
+                "goal": {
+                    "goal_id": "PRIVATE-GOAL-ID",
+                    "title": "Trace navigation evidence",
+                    "kind": "research",
+                    "scope": {"subject": "navigation"},
+                    "constraints": {"owned_only": True},
+                    "inclusion_reason": "PRIVATE-GOAL-PROVENANCE",
+                },
+                "library_entries": [
+                    {
+                        "library_entry_id": "entry-1",
+                        "work_id": "PRIVATE-WORK-ID",
+                        "edition_id": "PRIVATE-EDITION-ID",
+                        "title": "Selected Book",
+                        "document_ids": ["document-1"],
+                        "inclusion_reason": "PRIVATE-LIBRARY-PROVENANCE",
+                    }
+                ],
+                "available_capabilities": ["research.search", "reader.open"],
+                "exclusion_reasons": ["PRIVATE-POLICY-DIAGNOSTIC"],
+            },
+        },
+        data_classification=ModelDataClassification.PRIVATE_USER_CONTEXT,
+        max_output_tokens=512,
+        timeout_seconds=10,
+    )
+
+    assert set(request.payload) == {"user_request", "context"}
+    context = request.payload["context"]
+    assert isinstance(context, dict)
+    assert set(context) == {
+        "task",
+        "preferences",
+        "goal",
+        "library_entries",
+        "available_capabilities",
+    }
+    assert context["task"] == "research"
+    assert context["available_capabilities"] == ["research.search", "reader.open"]
+
+    preferences = context["preferences"]
+    assert isinstance(preferences, list)
+    assert preferences == [
+        {
+            "key": "subject.interests",
+            "value": {"subjects": ["Atlantic navigation"]},
+            "scope_type": "global",
+            "scope_value": "",
+        }
+    ]
+    goal = context["goal"]
+    assert goal == {
+        "title": "Trace navigation evidence",
+        "kind": "research",
+        "scope": {"subject": "navigation"},
+        "constraints": {"owned_only": True},
+    }
+    library_entries = context["library_entries"]
+    assert library_entries == [
+        {
+            "library_entry_id": "entry-1",
+            "title": "Selected Book",
+            "document_ids": ["document-1"],
+        }
+    ]
+
+    serialized = str(request.payload)
+    for private_value in (
+        "PRIVATE-CLAIM-ID",
+        "PRIVATE-PREFERENCE-PROVENANCE",
+        "PRIVATE-GOAL-ID",
+        "PRIVATE-GOAL-PROVENANCE",
+        "PRIVATE-WORK-ID",
+        "PRIVATE-EDITION-ID",
+        "PRIVATE-LIBRARY-PROVENANCE",
+        "PRIVATE-POLICY-DIAGNOSTIC",
+    ):
+        assert private_value not in serialized
+    for private_key in (
+        "ai_enabled",
+        "learning_enabled",
+        "autonomy_level",
+        "model_context_ready",
+        "claim_id",
+        "source",
+        "confidence",
+        "influence",
+        "inclusion_reason",
+        "goal_id",
+        "work_id",
+        "edition_id",
+        "exclusion_reasons",
+    ):
+        assert private_key not in serialized
+
+
+def test_private_model_tasks_reject_public_classification() -> None:
+    with pytest.raises(ValidationError):
+        ModelRequest(
+            task=ModelTask.PLAN,
+            payload={
+                "user_request": "Find relevant books",
+                "context": _minimal_plan_context_payload(),
+            },
+            data_classification=ModelDataClassification.PUBLIC,
+            max_output_tokens=512,
+            timeout_seconds=10,
+        )
+
+    with pytest.raises(ValidationError):
+        ModelRequest(
+            task=ModelTask.RESEARCH_ANSWER,
+            payload={
+                "question": "What does the evidence show?",
+                "evidence": [{"evidence_id": "E1", "text": "Canonical evidence."}],
+            },
+            data_classification=ModelDataClassification.PUBLIC,
+            max_output_tokens=512,
+            timeout_seconds=10,
+        )
 
 
 async def test_default_planning_service_leaves_no_plan_when_provider_unconfigured(
@@ -227,12 +380,31 @@ async def test_valid_plan_gets_one_deterministic_decision_per_step(
 
     _assert_valid_result(result)
     assert len(gateway.calls) == 1
-    assert gateway.calls[0].data_classification is ModelDataClassification.PRIVATE_USER_CONTEXT
+    call = gateway.calls[0]
+    assert call.data_classification is ModelDataClassification.PRIVATE_USER_CONTEXT
+    assert set(call.payload) == {"user_request", "context"}
+    model_context = call.payload["context"]
+    assert isinstance(model_context, dict)
+    assert set(model_context) == {
+        "task",
+        "preferences",
+        "goal",
+        "library_entries",
+        "available_capabilities",
+    }
+    assert model_context["task"] == ContextTask.RESEARCH.value
+    assert "research.search" in model_context["available_capabilities"]
+    assert result.context.ai_enabled is True
+    assert result.context.model_context_ready is True
+    assert result.context.exclusion_reasons == []
+
     stored_plan = await session.get(Plan, result.plan_id)
     assert stored_plan is not None
     assert stored_plan.principal_id == principal.id
     assert stored_plan.planner_version == "structured-planner-v1"
     assert len(stored_plan.steps) == 2
+    assert stored_plan.context_manifest["ai_enabled"] is True
+    assert stored_plan.context_manifest["model_context_ready"] is True
 
     decisions = list(
         (
@@ -269,6 +441,16 @@ def test_consequential_acquisition_can_never_be_model_authorized() -> None:
     )
     assert decision.decision is ActionDecisionValue.REQUIRE_APPROVAL
     assert "domain policy" in decision.reason
+
+
+def _minimal_plan_context_payload() -> dict[str, Any]:
+    return {
+        "task": ContextTask.RESEARCH.value,
+        "preferences": [],
+        "goal": None,
+        "library_entries": [],
+        "available_capabilities": [CapabilityName.RESEARCH_SEARCH.value],
+    }
 
 
 def _research_plan_payload() -> dict[str, Any]:

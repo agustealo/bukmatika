@@ -249,7 +249,7 @@ async def test_calibrated_inference_flows_into_recommendation_and_explicit_autho
         await _reader_open_event(
             session,
             principal=principal,
-            suffix=f"calibration-recommendation-epub-{index}",
+            suffix=f"calibration-recommendation-ep-{index}",
             format_name="EPUB",
         )
     claim_id = await learning.refresh_format_preference(principal_id=principal.id)

@@ -89,6 +89,20 @@ Discovery provider telemetry follows the same privacy boundary. Each attempted p
 
 When adding diagnostic fields, prefer identifiers, bounded state names, counts, timings, and error classes. Do not make private user content a logging shortcut.
 
+## Browser request security
+
+Bukmatika's browser session is an HttpOnly cookie, so CORS alone is not the authorization boundary for state-changing requests. Browser writes are therefore fenced independently at the outer HTTP boundary:
+
+- browser requests using methods other than `GET`, `HEAD`, or `OPTIONS` must carry exactly one valid `Origin` header matching `BUKMATIKA_WEB_ORIGIN`;
+- another port on `localhost` or `127.0.0.1` is a different origin and cannot perform cookie-authenticated writes even though it may be same-site for cookie policy purposes;
+- `Origin: null`, malformed origins, duplicate Origin headers, and remote origins fail closed with HTTP `403` and stable code `ORIGIN_NOT_ALLOWED`;
+- non-browser local clients may omit `Origin` so CLI, health automation, and server-to-server tooling remain usable without browser-specific headers;
+- safe methods and CORS preflight remain outside the write fence; CORS continues to control which browser origin may read API responses;
+- rejected browser writes still pass through request correlation, so the response and bounded access event retain the canonical `X-Request-ID`;
+- this origin fence supplements `SameSite=Lax`, HttpOnly cookies, and CORS. Do not remove it on the assumption that CORS prevents a malicious browser from sending a request.
+
+Any new browser-authenticated mutation must remain behind this global boundary. Do not add route-local exceptions or a second CSRF authority without a separately reviewed protocol requirement.
+
 ## Code organization
 
 - `apps/web`: consumer web application.

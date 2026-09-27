@@ -11,7 +11,6 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
-    func,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,8 +21,14 @@ from bukmatika.persistence.models import Base, TimestampMixin
 class AIProviderConnection(Base, TimestampMixin):
     __tablename__ = "ai_provider_connections"
     __table_args__ = (
-        CheckConstraint("routing_type IN ('local','cloud')", name="ck_ai_provider_connection_routing"),
-        CheckConstraint("status IN ('enabled','disabled')", name="ck_ai_provider_connection_status"),
+        CheckConstraint(
+            "routing_type IN ('local','cloud')",
+            name="ck_ai_provider_connection_routing",
+        ),
+        CheckConstraint(
+            "status IN ('enabled','disabled')",
+            name="ck_ai_provider_connection_status",
+        ),
         UniqueConstraint("id", "principal_id", name="uq_ai_provider_connection_id_principal"),
         Index(
             "ix_ai_provider_connections_principal_provider",
@@ -81,17 +86,3 @@ class AIModelAssignment(Base, TimestampMixin):
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-class AIModelSelectionMode(Base):
-    """Reserved namespace marker for migration documentation only.
-
-    Selection mode remains temporarily represented by the legacy UserModel columns during the
-    additive migration step. Runtime ownership moves in the next commit after backfill verification.
-    """
-
-    __abstract__ = True
-
-    installation_default = "installation_default"
-    disabled = "disabled"
-    profile = "profile"

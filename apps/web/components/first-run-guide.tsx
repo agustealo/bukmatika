@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 
-type LibraryResponse = {
-  items: Array<{ library_entry_id: string }>;
+type LibraryReadiness = {
+  entry_count: number;
+  readable_entry_count: number;
 };
 
 export function FirstRunGuide() {
@@ -16,10 +17,10 @@ export function FirstRunGuide() {
 
     async function inspectLibrary() {
       try {
-        const response = await apiFetch("/v1/library", { cache: "no-store" });
+        const response = await apiFetch("/v1/library/readiness", { cache: "no-store" });
         if (!response.ok) return;
-        const body = (await response.json()) as LibraryResponse;
-        if (!cancelled) setShowGuide(body.items.length === 0);
+        const body = (await response.json()) as LibraryReadiness;
+        if (!cancelled) setShowGuide(body.entry_count === 0);
       } catch {
         // Discovery remains the primary surface if onboarding state cannot be loaded.
       }

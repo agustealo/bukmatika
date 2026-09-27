@@ -1,0 +1,13 @@
+:8080 {
+    @api path /v1/* /health /ready
+
+    handle @api {
+        reverse_proxy api:8000
+    }
+
+    handle {
+        reverse_proxy web:3000
+    }
+
+    header -Server
+}

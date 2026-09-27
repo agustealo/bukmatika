@@ -62,6 +62,8 @@ from bukmatika.library.provenance_domain import (
     WorkMetadataProvenanceResponse,
 )
 from bukmatika.library.provenance_routes import router as provenance_router
+from bukmatika.library.readiness import LibraryReadinessResponse, LibraryReadinessService
+from bukmatika.library.readiness_routes import router as readiness_router
 from bukmatika.library.routes import router as library_router
 from bukmatika.library.service import (
     LibraryOrganizationConflict,
@@ -73,6 +75,7 @@ from bukmatika.library.status_routes import router as status_router
 
 router = APIRouter()
 router.include_router(library_router)
+router.include_router(readiness_router)
 router.include_router(status_router)
 router.include_router(portability_router)
 router.include_router(local_import_router)
@@ -109,6 +112,8 @@ __all__ = [
     "LibraryPortabilityImportPlanResponse",
     "LibraryPortabilityImportPlanner",
     "LibraryPortabilityService",
+    "LibraryReadinessResponse",
+    "LibraryReadinessService",
     "LibraryReadingStatus",
     "LibraryResponse",
     "LibraryService",

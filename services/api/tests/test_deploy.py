@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import stat
 from pathlib import Path
 from types import ModuleType
 
@@ -56,6 +58,22 @@ def test_remote_http_origin_is_rejected() -> None:
     values = _valid_environment()
     values["BUKMATIKA_PUBLIC_ORIGIN"] = "http://books.example.com"
     with pytest.raises(deploy.DeploymentError, match="must use https"):
+        deploy._validate_environment(values)
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://books.example.com:abc",
+        "https://books.example.com:99999",
+        "https://books.example.com:0",
+    ],
+)
+def test_invalid_public_origin_port_is_rejected(origin: str) -> None:
+    values = _valid_environment()
+    values["BUKMATIKA_PUBLIC_ORIGIN"] = origin
+    values["BUKMATIKA_LOCAL_SESSION_SECURE_COOKIE"] = "true"
+    with pytest.raises(deploy.DeploymentError, match="port"):
         deploy._validate_environment(values)
 
 
@@ -127,3 +145,5 @@ def test_ensure_env_file_generates_secret_when_missing(
     assert deploy._ensure_env_file() is True
     values = deploy._parse_env(target.read_text(encoding="utf-8"))
     assert deploy.PASSWORD_PATTERN.fullmatch(values["BUKMATIKA_POSTGRES_PASSWORD"])
+    if os.name != "nt":
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600

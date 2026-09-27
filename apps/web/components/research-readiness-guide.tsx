@@ -43,7 +43,7 @@ export function ResearchReadinessGuide() {
 
   return (
     <section className="empty-surface" aria-labelledby="research-readiness-title">
-      <strong id="research-readiness-title">Your books are not research-ready yet.</strong>
+      <h2 id="research-readiness-title">Your books are not research-ready yet.</h2>
       <p>
         Bukmatika can ground Research only in processed canonical text. Your library already has
         saved books, but none currently exposes a readable document. Check acquisition and

@@ -1,0 +1,130 @@
+name: bukmatika-prod
+
+x-api-image: &api-image
+  image: bukmatika-api:${BUKMATIKA_IMAGE_TAG:-local}
+  build:
+    context: .
+    dockerfile: docker/api.Dockerfile
+
+x-api-environment: &api-environment
+  BUKMATIKA_ENVIRONMENT: production
+  BUKMATIKA_DATABASE_URL: postgresql+psycopg://bukmatika:${BUKMATIKA_POSTGRES_PASSWORD:?Set BUKMATIKA_POSTGRES_PASSWORD in .env.production}@postgres:5432/bukmatika
+  BUKMATIKA_WEB_ORIGIN: ${BUKMATIKA_PUBLIC_ORIGIN:-http://127.0.0.1:8080}
+  BUKMATIKA_LOCAL_SESSION_SECURE_COOKIE: ${BUKMATIKA_LOCAL_SESSION_SECURE_COOKIE:-false}
+  BUKMATIKA_LOG_LEVEL: ${BUKMATIKA_LOG_LEVEL:-INFO}
+  BUKMATIKA_CONTACT_EMAIL: ${BUKMATIKA_CONTACT_EMAIL:-}
+  BUKMATIKA_STORAGE_ROOT: /var/lib/bukmatika/storage
+  BUKMATIKA_MODEL_PROVIDER: none
+  BUKMATIKA_EMBEDDING_PROVIDER: none
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: bukmatika
+      POSTGRES_PASSWORD: ${BUKMATIKA_POSTGRES_PASSWORD:?Set BUKMATIKA_POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: bukmatika
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bukmatika -d bukmatika"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    volumes:
+      - bukmatika-postgres-data:/var/lib/postgresql
+    restart: unless-stopped
+
+  migrate:
+    <<: *api-image
+    command:
+      - python
+      - -m
+      - alembic
+      - -c
+      - /app/services/api/alembic.ini
+      - upgrade
+      - head
+    environment: *api-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *api-image
+    environment: *api-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - bukmatika-storage:/var/lib/bukmatika/storage
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3).read()
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  ocr-worker:
+    <<: *api-image
+    command: ["bukmatika-ocr-worker"]
+    environment: *api-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - bukmatika-storage:/var/lib/bukmatika/storage
+    restart: unless-stopped
+
+  web:
+    image: bukmatika-web:${BUKMATIKA_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ""
+    environment:
+      NODE_ENV: production
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/').then((response) => {
+            if (!response.ok) process.exit(1);
+          }).catch(() => process.exit(1));
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  ingress:
+    image: caddy:2-alpine
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    ports:
+      - "${BUKMATIKA_BIND_ADDRESS:-127.0.0.1}:${BUKMATIKA_HTTP_PORT:-8080}:8080"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+    restart: unless-stopped
+
+volumes:
+  bukmatika-postgres-data:
+  bukmatika-storage:

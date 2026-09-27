@@ -63,7 +63,7 @@ def _normalize_origin(value: str) -> str:
     parsed = urlsplit(value)
     if (
         parsed.scheme not in {"http", "https"}
-        or not parsed.netloc
+        or parsed.hostname is None
         or parsed.username is not None
         or parsed.password is not None
         or parsed.path not in {"", "/"}
@@ -72,10 +72,17 @@ def _normalize_origin(value: str) -> str:
     ):
         raise ValueError("Browser write origin must be an HTTP(S) origin")
     try:
-        _ = parsed.port
+        port = parsed.port
     except ValueError as exc:
         raise ValueError("Browser write origin has an invalid port") from exc
-    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+    scheme = parsed.scheme.lower()
+    hostname = parsed.hostname.lower()
+    rendered_host = f"[{hostname}]" if ":" in hostname else hostname
+    default_port = 80 if scheme == "http" else 443
+    if port is not None and port != default_port:
+        rendered_host = f"{rendered_host}:{port}"
+    return f"{scheme}://{rendered_host}"
 
 
 __all__ = ["BrowserOriginWriteMiddleware"]

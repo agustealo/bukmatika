@@ -1,8 +1,10 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TypeVar
 
 import httpx
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.ai.configuration import PrincipalModelRuntimeResolver
 from bukmatika.ai.gateway import (
@@ -23,7 +25,8 @@ from bukmatika.config import Settings
 from bukmatika.persistence.models import Principal
 from bukmatika.persistence.personalization import PersonalizationRepository
 from bukmatika.persistence.providers import ProviderConnectionRepository
-from sqlalchemy.ext.asyncio import AsyncSession
+
+StructuredResponseT = TypeVar("StructuredResponseT", bound=BaseModel)
 
 
 def _scope(session: AsyncSession):  # type: ignore[no-untyped-def]
@@ -49,10 +52,17 @@ class _SyntheticCloudGateway:
     async def readiness(self) -> ModelProviderReadiness:
         return ModelProviderReadiness(
             state=ModelReadinessState.READY,
-            provider=self._identity,
+            configured=True,
+            ready=True,
+            identity=self._identity,
         )
 
-    async def generate_structured(self, request: ModelRequest, response_type: type[Any]) -> Any:
+    async def generate_structured(
+        self,
+        request: ModelRequest,
+        response_type: type[StructuredResponseT],
+    ) -> StructuredResponseT:
+        del request, response_type
         raise AssertionError("resolution proof must not send model content")
 
 

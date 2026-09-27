@@ -62,7 +62,7 @@ def test_remote_http_origin_is_rejected() -> None:
 def test_https_requires_secure_session_cookie() -> None:
     values = _valid_environment()
     values["BUKMATIKA_PUBLIC_ORIGIN"] = "https://books.example.com"
-    with pytest.raises(deploy.DeploymentError, match="require.*SECURE_COOKIE=true"):
+    with pytest.raises(deploy.DeploymentError, match=r"require.*SECURE_COOKIE=true"):
         deploy._validate_environment(values)
 
     values["BUKMATIKA_LOCAL_SESSION_SECURE_COOKIE"] = "true"
@@ -72,7 +72,7 @@ def test_https_requires_secure_session_cookie() -> None:
 def test_production_ingress_cannot_bind_publicly() -> None:
     values = _valid_environment()
     values["BUKMATIKA_BIND_ADDRESS"] = "0.0.0.0"
-    with pytest.raises(deploy.DeploymentError, match="must bind to 127.0.0.1"):
+    with pytest.raises(deploy.DeploymentError, match=r"must bind to 127\.0\.0\.1"):
         deploy._validate_environment(values)
 
 

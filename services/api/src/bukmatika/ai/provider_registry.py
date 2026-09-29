@@ -108,7 +108,10 @@ class ProviderRegistration:
     ) = None
 
     def __post_init__(self) -> None:
-        if self.model_gateway_factory is not None and self.credential_model_gateway_factory is not None:
+        if (
+            self.model_gateway_factory is not None
+            and self.credential_model_gateway_factory is not None
+        ):
             raise ValueError("A provider must have only one generation gateway factory")
 
 

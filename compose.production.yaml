@@ -94,7 +94,7 @@ services:
     image: bukmatika-web:${BUKMATIKA_IMAGE_TAG:-local}
     build:
       context: .
-    dockerfile: docker/web.Dockerfile
+      dockerfile: docker/web.Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: ""
     environment:

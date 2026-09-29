@@ -87,6 +87,10 @@ class ProviderCapabilityUnavailable(RuntimeError):
     pass
 
 
+class ProviderCredentialRequired(RuntimeError):
+    pass
+
+
 class DuplicateProviderRegistration(ValueError):
     pass
 
@@ -96,9 +100,16 @@ class ProviderRegistration:
     descriptor: ProviderDescriptor
     describe_model: Callable[[str], ModelDescriptor]
     model_gateway_factory: Callable[[Settings, httpx.AsyncClient, str], ModelGateway] | None = None
+    credential_model_gateway_factory: (
+        Callable[[Settings, httpx.AsyncClient, str, str], ModelGateway] | None
+    ) = None
     embedding_gateway_factory: (
         Callable[[Settings, httpx.AsyncClient, str], EmbeddingGateway] | None
     ) = None
+
+    def __post_init__(self) -> None:
+        if self.model_gateway_factory is not None and self.credential_model_gateway_factory is not None:
+            raise ValueError("A provider must have only one generation gateway factory")
 
 
 class ProviderRegistry:
@@ -155,6 +166,7 @@ class ProviderRegistry:
         model_id: str,
         settings: Settings,
         client: httpx.AsyncClient,
+        credential: str | None = None,
     ) -> ModelGateway:
         self.require_capability(
             provider_id=provider_id,
@@ -162,6 +174,20 @@ class ProviderRegistry:
             capability=ModelCapability.STRUCTURED_GENERATION,
         )
         registration = self._registration(provider_id)
+        if registration.credential_model_gateway_factory is not None:
+            normalized_credential = (credential or "").strip()
+            if not normalized_credential:
+                raise ProviderCredentialRequired(
+                    f"Provider {provider_id} requires a configured credential"
+                )
+            return registration.credential_model_gateway_factory(
+                settings,
+                client,
+                model_id,
+                normalized_credential,
+            )
+        if credential is not None:
+            raise ValueError(f"Provider {provider_id} does not accept a generation credential")
         if registration.model_gateway_factory is None:
             raise ProviderCapabilityUnavailable(
                 f"Provider {provider_id} has no generation gateway"

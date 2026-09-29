@@ -61,6 +61,10 @@ class ModelAssignmentResponse(BaseModel):
     capabilities: list[ModelCapability]
 
 
+class ModelAssignmentListResponse(BaseModel):
+    assignments: list[ModelAssignmentResponse]
+
+
 class ProviderConnectionResponse(BaseModel):
     connection_id: UUID
     provider_id: str

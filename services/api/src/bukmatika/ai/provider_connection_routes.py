@@ -23,7 +23,7 @@ from bukmatika.ai.provider_connections import (
 )
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 
-router = APIRouter(prefix="/v1/ai", tags=["ai-provider-connections"])
+router = APIRouter(tags=["ai-provider-connections"])
 _service = ProviderConnectionService()
 
 

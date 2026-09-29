@@ -1,9 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 import styles from "./local-ai-status.module.css";
+
+type RoutingType = "local" | "cloud";
+type ConnectionStatus = "enabled" | "disabled";
+type ModelRole = "primary" | "research" | "fast" | "reasoning" | "embeddings" | "fallback";
+type ModelSelectionMode = "installation_default" | "profile";
+type CloudEgressPolicy = "local_only" | "public_only" | "private_context";
 
 type AIAvailabilityState =
   | "ai_disabled"
@@ -23,17 +29,37 @@ type AIStatus = {
   routing: string | null;
 };
 
-type ModelConfigurationMode = "installation_default" | "disabled" | "ollama";
+type RoutingPolicy = {
+  ai_enabled: boolean;
+  model_selection_mode: ModelSelectionMode;
+  cloud_egress_policy: CloudEgressPolicy;
+};
 
-type ModelConfiguration = {
-  mode: ModelConfigurationMode;
-  source: "installation" | "profile";
-  selected_model: string | null;
-  effective_provider: string | null;
-  effective_model: string | null;
-  installation_provider: string | null;
-  installation_model: string | null;
-  routing: "local";
+type ProviderDescriptor = {
+  provider_id: string;
+  display_name: string;
+  routing_type: RoutingType;
+};
+
+type ProviderConnection = {
+  connection_id: string;
+  provider_id: string;
+  display_name: string | null;
+  routing_type: RoutingType;
+  status: ConnectionStatus;
+  credential_configured: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type ModelAssignment = {
+  assignment_id: string;
+  connection_id: string;
+  role: ModelRole;
+  model_id: string;
+  priority: number;
+  enabled: boolean;
+  capabilities: string[];
 };
 
 type ModelInventory = {
@@ -54,68 +80,61 @@ type StatusPresentation = {
   tone: "ready" | "attention" | "quiet";
 };
 
+const ROLES: ModelRole[] = [
+  "primary",
+  "research",
+  "fast",
+  "reasoning",
+  "embeddings",
+  "fallback",
+];
+
 function presentation(status: AIStatus): StatusPresentation {
   switch (status.state) {
     case "ready":
       return {
         title: "Ready",
-        summary:
-          status.routing === "local"
-            ? "The local runtime is reachable and this profile's selected model is installed. Grounded research can use local synthesis."
-            : "The selected AI provider is ready for this profile. Grounded research remains subject to Bukmatika's privacy and citation policies.",
+        summary: `Bukmatika is ready to use ${status.provider ?? "the selected provider"}${
+          status.model ? ` · ${status.model}` : ""
+        } for the active profile route.`,
         recovery: null,
         tone: "ready",
       };
     case "ai_disabled":
       return {
         title: "AI disabled",
-        summary:
-          "Model-backed features are off for this profile. Normal library, reader, and evidence features remain available.",
-        recovery:
-          "Enable AI assistance in the control center above to inspect configured model readiness. Bukmatika intentionally performs zero provider probes while AI is disabled.",
+        summary: "Model-backed features are off. Library, reader, search, notes, and evidence remain available.",
+        recovery: "Enable AI below when you want Bukmatika to inspect provider readiness again.",
         tone: "quiet",
       };
     case "unconfigured":
       return {
-        title: "No model selected",
-        summary:
-          "This profile currently has no effective model, so Bukmatika will stay evidence-only.",
-        recovery:
-          "Choose a configured model, or use the installation default if one is available.",
+        title: "No usable route",
+        summary: "No provider/model route is currently usable under this profile and its privacy policy.",
+        recovery: "Choose an installation default or assign a model to a profile role below.",
         tone: "attention",
       };
     case "provider_unreachable":
       return {
-        title: "Runtime offline",
-        summary:
-          status.routing === "local"
-            ? "Bukmatika cannot reach the selected local model runtime."
-            : "Bukmatika cannot reach the selected AI provider.",
-        recovery:
-          status.routing === "local"
-            ? "Start or restart the local runtime, then refresh. Bukmatika will not silently redirect private context to a cloud provider."
-            : "Check the configured provider connection and try again. Bukmatika will not silently fall back to another provider.",
+        title: "Provider unreachable",
+        summary: "Bukmatika cannot reach the selected provider.",
+        recovery: "Check that provider connection. Bukmatika will not silently fall back to another provider.",
         tone: "attention",
       };
     case "provider_invalid":
       return {
-        title: "Runtime response invalid",
-        summary:
-          "The selected provider responded, but the response did not satisfy Bukmatika's expected runtime contract.",
-        recovery:
-          "Check provider compatibility and configuration, then refresh. Bukmatika will fail closed rather than reinterpret an invalid provider response.",
+        title: "Provider response invalid",
+        summary: "The provider answered, but its response did not satisfy Bukmatika's runtime contract.",
+        recovery: "Review the connection and model. Invalid responses fail closed.",
         tone: "attention",
       };
     case "model_missing":
       return {
-        title: "Selected model missing",
+        title: "Model unavailable",
         summary: status.model
-          ? `${status.model} is not available from the selected provider.`
-          : "The selected provider is reachable, but this profile's model is unavailable.",
-        recovery:
-          status.routing === "local"
-            ? "Choose one of the installed local models below, or install the intended model and refresh."
-            : "Choose another configured model for this provider or restore access to the selected model.",
+          ? `${status.model} is unavailable from the selected provider.`
+          : "The selected provider is reachable, but its assigned model is unavailable.",
+        recovery: "Assign an available model without changing another provider connection.",
         tone: "attention",
       };
   }
@@ -136,77 +155,107 @@ async function responseError(response: Response, fallback: string): Promise<Erro
       return new Error(payload.detail.code.replaceAll("_", " ").toLowerCase());
     }
   } catch {
-    // Use the status fallback below for non-JSON responses.
+    // Preserve the status fallback for non-JSON responses.
   }
   return new Error(`${fallback} (HTTP ${response.status}).`);
 }
 
-function fact(value: string | null): string {
-  return value?.trim() || "Not configured";
+function providerLabel(provider: ProviderDescriptor | undefined, fallback: string): string {
+  return provider?.display_name ?? fallback;
 }
 
-function sourceLabel(configuration: ModelConfiguration | null): string {
-  if (!configuration) {
-    return "Unknown";
+function roleLabel(role: ModelRole): string {
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function egressCopy(policy: CloudEgressPolicy): string {
+  if (policy === "local_only") {
+    return "Local only. Cloud providers cannot receive model requests or private context.";
   }
-  if (configuration.mode === "installation_default") {
-    return "Installation default";
+  if (policy === "public_only") {
+    return "Cloud providers may receive public/evidence-only requests. Private user context remains local.";
   }
-  if (configuration.mode === "disabled") {
-    return "Disabled for this profile";
-  }
-  return "Profile selection";
+  return "Cloud providers may receive private library or research context when the selected route requires it.";
 }
 
 export function LocalAIStatus() {
   const [status, setStatus] = useState<AIStatus | null>(null);
-  const [configuration, setConfiguration] = useState<ModelConfiguration | null>(null);
+  const [policy, setPolicy] = useState<RoutingPolicy | null>(null);
+  const [providers, setProviders] = useState<ProviderDescriptor[]>([]);
+  const [connections, setConnections] = useState<ProviderConnection[]>([]);
+  const [assignments, setAssignments] = useState<ModelAssignment[]>([]);
   const [inventory, setInventory] = useState<ModelInventory | null>(null);
-  const [selectedModel, setSelectedModel] = useState("");
+  const [newProviderId, setNewProviderId] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [assignmentRole, setAssignmentRole] = useState<ModelRole>("primary");
+  const [assignmentConnectionId, setAssignmentConnectionId] = useState("");
+  const [assignmentModel, setAssignmentModel] = useState("");
+  const [credentialDrafts, setCredentialDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const providerById = useMemo(
+    () => new Map(providers.map((provider) => [provider.provider_id, provider])),
+    [providers],
+  );
+  const connectionById = useMemo(
+    () => new Map(connections.map((connection) => [connection.connection_id, connection])),
+    [connections],
+  );
+  const enabledConnections = connections.filter((connection) => connection.status === "enabled");
+  const assignmentConnection = connectionById.get(assignmentConnectionId);
+  const state = status ? presentation(status) : null;
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [statusResponse, configurationResponse] = await Promise.all([
-        apiFetch("/v1/ai/status"),
-        apiFetch("/v1/ai/configuration"),
-      ]);
-      if (!statusResponse.ok) {
-        throw await responseError(statusResponse, "Could not inspect AI readiness");
-      }
-      if (!configurationResponse.ok) {
-        throw await responseError(configurationResponse, "Could not load AI configuration");
+      const [statusResponse, policyResponse, providersResponse, connectionsResponse, assignmentsResponse] =
+        await Promise.all([
+          apiFetch("/v1/ai/status"),
+          apiFetch("/v1/ai/routing-policy"),
+          apiFetch("/v1/ai/providers"),
+          apiFetch("/v1/ai/provider-connections"),
+          apiFetch("/v1/ai/model-assignments"),
+        ]);
+      const responses = [
+        [statusResponse, "Could not inspect AI readiness"],
+        [policyResponse, "Could not load AI routing policy"],
+        [providersResponse, "Could not load provider catalog"],
+        [connectionsResponse, "Could not load provider connections"],
+        [assignmentsResponse, "Could not load model assignments"],
+      ] as const;
+      for (const [response, fallback] of responses) {
+        if (!response.ok) {
+          throw await responseError(response, fallback);
+        }
       }
 
       const nextStatus = (await statusResponse.json()) as AIStatus;
-      const nextConfiguration = (await configurationResponse.json()) as ModelConfiguration;
+      const nextPolicy = (await policyResponse.json()) as RoutingPolicy;
+      const nextProviders = (await providersResponse.json()) as { providers: ProviderDescriptor[] };
+      const nextConnections = (await connectionsResponse.json()) as { connections: ProviderConnection[] };
+      const nextAssignments = (await assignmentsResponse.json()) as { assignments: ModelAssignment[] };
       setStatus(nextStatus);
-      setConfiguration(nextConfiguration);
-
-      let nextInventory: ModelInventory | null = null;
-      if (nextStatus.ai_enabled && nextStatus.routing === "local") {
-        const inventoryResponse = await apiFetch("/v1/ai/local/models");
-        if (!inventoryResponse.ok) {
-          throw await responseError(inventoryResponse, "Could not inspect installed local models");
+      setPolicy(nextPolicy);
+      setProviders(nextProviders.providers);
+      setConnections(nextConnections.connections);
+      setAssignments(nextAssignments.assignments);
+      setNewProviderId((current) => current || nextProviders.providers[0]?.provider_id || "");
+      setAssignmentConnectionId((current) => {
+        if (
+          current &&
+          nextConnections.connections.some(
+            (item) => item.connection_id === current && item.status === "enabled",
+          )
+        ) {
+          return current;
         }
-        nextInventory = (await inventoryResponse.json()) as ModelInventory;
-      }
-      setInventory(nextInventory);
-
-      const preferred = nextConfiguration.selected_model ?? nextConfiguration.effective_model ?? "";
-      if (nextInventory?.models.length) {
-        setSelectedModel(
-          nextInventory.models.includes(preferred) ? preferred : nextInventory.models[0] ?? "",
-        );
-      } else {
-        setSelectedModel(preferred);
-      }
+        return nextConnections.connections.find((item) => item.status === "enabled")?.connection_id ?? "";
+      });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not inspect AI readiness.");
+      setError(caught instanceof Error ? caught.message : "Could not load AI provider settings.");
     } finally {
       setLoading(false);
     }
@@ -216,22 +265,18 @@ export function LocalAIStatus() {
     void refresh();
   }, [refresh]);
 
-  const saveConfiguration = useCallback(
-    async (mode: ModelConfigurationMode, model: string | null = null) => {
+  const mutate = useCallback(
+    async (operation: () => Promise<Response>, fallback: string) => {
       setSaving(true);
       setError(null);
       try {
-        const response = await apiFetch("/v1/ai/configuration", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode, model }),
-        });
+        const response = await operation();
         if (!response.ok) {
-          throw await responseError(response, "Could not save local AI configuration");
+          throw await responseError(response, fallback);
         }
         await refresh();
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "Could not save local AI configuration.");
+        setError(caught instanceof Error ? caught.message : fallback);
       } finally {
         setSaving(false);
       }
@@ -239,35 +284,165 @@ export function LocalAIStatus() {
     [refresh],
   );
 
-  const state = status ? presentation(status) : null;
-  const installedModels = inventory?.state === "ready" ? inventory.models : [];
+  const updatePolicy = useCallback(
+    async (next: Partial<RoutingPolicy>) => {
+      if (!policy) return;
+      await mutate(
+        () =>
+          apiFetch("/v1/ai/routing-policy", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...policy, ...next }),
+          }),
+        "Could not update AI routing policy",
+      );
+    },
+    [mutate, policy],
+  );
+
+  const createConnection = useCallback(async () => {
+    if (!newProviderId) return;
+    await mutate(
+      () =>
+        apiFetch("/v1/ai/provider-connections", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider_id: newProviderId,
+            display_name: newDisplayName.trim() || null,
+          }),
+        }),
+      "Could not create provider connection",
+    );
+    setNewDisplayName("");
+  }, [mutate, newDisplayName, newProviderId]);
+
+  const setConnectionEnabled = useCallback(
+    async (connection: ProviderConnection, enabled: boolean) => {
+      await mutate(
+        () =>
+          apiFetch(`/v1/ai/provider-connections/${connection.connection_id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ display_name: connection.display_name, enabled }),
+          }),
+        "Could not update provider connection",
+      );
+    },
+    [mutate],
+  );
+
+  const disconnect = useCallback(
+    async (connectionId: string) => {
+      await mutate(
+        () => apiFetch(`/v1/ai/provider-connections/${connectionId}`, { method: "DELETE" }),
+        "Could not disconnect provider",
+      );
+    },
+    [mutate],
+  );
+
+  const saveCredential = useCallback(
+    async (connectionId: string) => {
+      const secret = credentialDrafts[connectionId]?.trim();
+      if (!secret) return;
+      await mutate(
+        () =>
+          apiFetch(`/v1/ai/provider-connections/${connectionId}/credential`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ secret }),
+          }),
+        "Could not save provider credential",
+      );
+      setCredentialDrafts((current) => ({ ...current, [connectionId]: "" }));
+    },
+    [credentialDrafts, mutate],
+  );
+
+  const deleteCredential = useCallback(
+    async (connectionId: string) => {
+      await mutate(
+        () =>
+          apiFetch(`/v1/ai/provider-connections/${connectionId}/credential`, {
+            method: "DELETE",
+          }),
+        "Could not remove provider credential",
+      );
+    },
+    [mutate],
+  );
+
+  const assignModel = useCallback(async () => {
+    if (!assignmentConnectionId || !assignmentModel.trim()) return;
+    await mutate(
+      () =>
+        apiFetch(`/v1/ai/model-assignments/${assignmentRole}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            connection_id: assignmentConnectionId,
+            model_id: assignmentModel.trim(),
+            priority: 0,
+          }),
+        }),
+      "Could not assign model role",
+    );
+  }, [assignmentConnectionId, assignmentModel, assignmentRole, mutate]);
+
+  const clearModelRole = useCallback(
+    async (role: ModelRole) => {
+      await mutate(
+        () => apiFetch(`/v1/ai/model-assignments/${role}`, { method: "DELETE" }),
+        "Could not clear model role",
+      );
+    },
+    [mutate],
+  );
+
+  const loadOllamaModels = useCallback(async () => {
+    if (!policy?.ai_enabled) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await apiFetch("/v1/ai/local/models");
+      if (!response.ok) {
+        throw await responseError(response, "Could not inspect installed Ollama models");
+      }
+      const nextInventory = (await response.json()) as ModelInventory;
+      setInventory(nextInventory);
+      if (!assignmentModel && nextInventory.models.length > 0) {
+        setAssignmentModel(nextInventory.models[0] ?? "");
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not inspect installed Ollama models.");
+    } finally {
+      setSaving(false);
+    }
+  }, [assignmentModel, policy?.ai_enabled]);
+
   const controlsDisabled = loading || saving;
-  const localControlsAvailable = status?.routing === "local" || status?.routing == null;
 
   return (
-    <section className={styles.surface} aria-labelledby="local-ai-heading">
+    <section className={styles.surface} aria-labelledby="ai-control-heading">
       <div className={styles.heading}>
         <div>
           <span className={styles.index}>05</span>
           <div>
-            <span className="eyebrow">AI runtime</span>
-            <h2 id="local-ai-heading">Model setup & readiness</h2>
+            <span className="eyebrow">AI control center</span>
+            <h2 id="ai-control-heading">Providers, models & privacy</h2>
           </div>
         </div>
         <p>
-          Inspect the provider and model selected for this profile. Local model discovery never sends
-          book text, research questions, annotations, or reading context.
+          Choose which providers Bukmatika may use, which model owns each role, and what data may leave
+          your device. Provider fallback is never automatic.
         </p>
       </div>
 
       <div className={styles.panel}>
         <div className={styles.statusBlock}>
           <div className={styles.statusTopline}>
-            <span
-              className={styles.badge}
-              data-tone={state?.tone ?? "quiet"}
-              aria-live="polite"
-            >
+            <span className={styles.badge} data-tone={state?.tone ?? "quiet"} aria-live="polite">
               {loading ? "Checking…" : state?.title ?? "Unavailable"}
             </span>
             <button
@@ -276,34 +451,25 @@ export function LocalAIStatus() {
               disabled={controlsDisabled}
               onClick={() => void refresh()}
             >
-              {loading ? "Checking" : "Refresh model status"}
+              {loading ? "Checking" : "Refresh status"}
             </button>
           </div>
-
           {error ? (
             <div className={styles.error} role="alert">
               <strong>AI setup needs attention</strong>
               <p>{error}</p>
             </div>
           ) : null}
-
           {state ? (
             <div className={styles.message}>
               <p>{state.summary}</p>
-              {state.recovery ? (
-                <div className={styles.recovery}>
-                  <span>Next step</span>
-                  <p>{state.recovery}</p>
-                </div>
-              ) : (
-                <div className={styles.recovery} data-ready="true">
-                  <span>Boundary</span>
-                  <p>
-                    Model use remains policy-gated and citation-validated. Readiness does not authorize
-                    an action, widen the selected research corpus, or approve cross-provider fallback.
-                  </p>
-                </div>
-              )}
+              <div className={styles.recovery} data-ready={state.recovery ? undefined : "true"}>
+                <span>{state.recovery ? "Next step" : "Boundary"}</span>
+                <p>
+                  {state.recovery ??
+                    "Readiness does not widen research evidence, authorize an action, or permit an unapproved provider fallback."}
+                </p>
+              </div>
             </div>
           ) : null}
         </div>
@@ -311,125 +477,331 @@ export function LocalAIStatus() {
         <dl className={styles.facts}>
           <div>
             <dt>Provider</dt>
-            <dd>{fact(status?.provider ?? configuration?.effective_provider ?? null)}</dd>
+            <dd>{status?.provider ?? "Not configured"}</dd>
           </div>
           <div>
             <dt>Model</dt>
-            <dd>{fact(status?.model ?? configuration?.effective_model ?? null)}</dd>
+            <dd>{status?.model ?? "Not configured"}</dd>
           </div>
           <div>
             <dt>Routing</dt>
-            <dd>{fact(status?.routing ?? configuration?.routing ?? null)}</dd>
+            <dd>{status?.routing ?? "Not configured"}</dd>
           </div>
           <div>
-            <dt>Configuration</dt>
-            <dd>{sourceLabel(configuration)}</dd>
+            <dt>Selection</dt>
+            <dd>{policy?.model_selection_mode === "profile" ? "Profile roles" : "Installation default"}</dd>
           </div>
         </dl>
       </div>
 
-      {localControlsAvailable ? (
-        <div className={styles.configurationPanel}>
-          <div className={styles.configurationCopy}>
-            <span className={styles.label}>Local profile model selection</span>
-            <h3>Use an installed Ollama model without restarting Bukmatika.</h3>
-            <p>
-              This transitional local-provider control only manages Ollama. Provider-neutral cloud
-              connection management is handled by the upcoming provider settings surface.
+      <div className={styles.configurationPanel}>
+        <div className={styles.configurationCopy}>
+          <span className={styles.label}>Routing & privacy</span>
+          <h3>Make external AI use an explicit choice.</h3>
+          <p>{policy ? egressCopy(policy.cloud_egress_policy) : "Loading routing policy…"}</p>
+        </div>
+        <div className={styles.configurationControls}>
+          <label className={styles.controlLabel} htmlFor="ai-enabled">
+            AI assistance
+          </label>
+          <select
+            id="ai-enabled"
+            value={policy?.ai_enabled ? "enabled" : "disabled"}
+            disabled={controlsDisabled || !policy}
+            onChange={(event) => void updatePolicy({ ai_enabled: event.target.value === "enabled" })}
+          >
+            <option value="enabled">Enabled</option>
+            <option value="disabled">Disabled, zero provider probes</option>
+          </select>
+
+          <label className={styles.controlLabel} htmlFor="model-selection-mode">
+            Model selection
+          </label>
+          <select
+            id="model-selection-mode"
+            value={policy?.model_selection_mode ?? "installation_default"}
+            disabled={controlsDisabled || !policy}
+            onChange={(event) =>
+              void updatePolicy({ model_selection_mode: event.target.value as ModelSelectionMode })
+            }
+          >
+            <option value="installation_default">Use installation default</option>
+            <option value="profile">Use profile role assignments</option>
+          </select>
+
+          <label className={styles.controlLabel} htmlFor="cloud-egress-policy">
+            Cloud data access
+          </label>
+          <select
+            id="cloud-egress-policy"
+            value={policy?.cloud_egress_policy ?? "local_only"}
+            disabled={controlsDisabled || !policy}
+            onChange={(event) =>
+              void updatePolicy({ cloud_egress_policy: event.target.value as CloudEgressPolicy })
+            }
+          >
+            <option value="local_only">Local only</option>
+            <option value="public_only">Cloud: public/evidence-only data</option>
+            <option value="private_context">Cloud: allow selected private context</option>
+          </select>
+          {policy?.cloud_egress_policy === "private_context" ? (
+            <p className={styles.warning}>
+              Cloud providers are external services. Selected private library or research context may be
+              sent to the active cloud provider under this policy.
             </p>
-          </div>
+          ) : null}
+        </div>
+      </div>
 
-          <div className={styles.configurationControls}>
-            {status?.ai_enabled ? (
-              <>
-                {inventory?.state === "ready" && installedModels.length > 0 ? (
-                  <div className={styles.modelPicker}>
-                    <label htmlFor="local-ai-model">Installed model</label>
-                    <div>
-                      <select
-                        id="local-ai-model"
-                        value={selectedModel}
-                        disabled={controlsDisabled}
-                        onChange={(event) => setSelectedModel(event.target.value)}
-                      >
-                        {installedModels.map((model) => (
-                          <option key={model} value={model}>
-                            {model}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        className={styles.primaryAction}
-                        type="button"
-                        disabled={controlsDisabled || !selectedModel}
-                        onClick={() => void saveConfiguration("ollama", selectedModel)}
-                      >
-                        {saving ? "Saving…" : "Use selected model"}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
+      <div className={styles.sectionHeader}>
+        <div>
+          <span className={styles.label}>Provider connections</span>
+          <h3>Configured runtimes</h3>
+        </div>
+        <p>Credentials are write-only. Bukmatika reports only whether a credential is configured.</p>
+      </div>
 
-                {inventory?.state === "ready" && installedModels.length === 0 ? (
-                  <p className={styles.inventoryNote}>
-                    Ollama is reachable, but it reports no installed models. Install a model in Ollama,
-                    then refresh this card.
+      <div className={styles.addConnection}>
+        <select
+          value={newProviderId}
+          disabled={controlsDisabled || providers.length === 0}
+          onChange={(event) => setNewProviderId(event.target.value)}
+          aria-label="Provider"
+        >
+          {providers.map((provider) => (
+            <option key={provider.provider_id} value={provider.provider_id}>
+              {provider.display_name} · {provider.routing_type}
+            </option>
+          ))}
+        </select>
+        <input
+          value={newDisplayName}
+          disabled={controlsDisabled}
+          onChange={(event) => setNewDisplayName(event.target.value)}
+          placeholder="Optional connection name"
+          aria-label="Connection name"
+        />
+        <button
+          className={styles.primaryAction}
+          type="button"
+          disabled={controlsDisabled || !newProviderId}
+          onClick={() => void createConnection()}
+        >
+          Add connection
+        </button>
+      </div>
+
+      <div className={styles.connectionGrid}>
+        {connections.length === 0 ? (
+          <p className={styles.emptyState}>No provider connections configured yet.</p>
+        ) : null}
+        {connections.map((connection) => {
+          const descriptor = providerById.get(connection.provider_id);
+          return (
+            <article className={styles.connectionCard} key={connection.connection_id}>
+              <div className={styles.connectionTopline}>
+                <div>
+                  <span className={styles.routePill}>{connection.routing_type}</span>
+                  <h4>{connection.display_name ?? providerLabel(descriptor, connection.provider_id)}</h4>
+                  <p>
+                    {providerLabel(descriptor, connection.provider_id)} · {connection.status}
                   </p>
-                ) : null}
+                </div>
+                <span className={styles.credentialState}>
+                  {connection.routing_type === "local"
+                    ? "No credential required"
+                    : connection.credential_configured
+                      ? "Credential configured"
+                      : "Credential missing"}
+                </span>
+              </div>
 
-                {inventory && inventory.state !== "ready" ? (
-                  <p className={styles.inventoryNote}>
-                    Installed models cannot be listed until the local Ollama runtime is reachable and
-                    returns valid metadata.
-                  </p>
-                ) : null}
-              </>
-            ) : (
-              <p className={styles.inventoryNote}>
-                AI is disabled for this profile, so Bukmatika does not probe the local runtime. Enable
-                AI above before scanning installed models.
+              {connection.routing_type === "cloud" ? (
+                <div className={styles.credentialControls}>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={credentialDrafts[connection.connection_id] ?? ""}
+                    disabled={controlsDisabled}
+                    onChange={(event) =>
+                      setCredentialDrafts((current) => ({
+                        ...current,
+                        [connection.connection_id]: event.target.value,
+                      }))
+                    }
+                    placeholder="Paste provider API key"
+                    aria-label={`Credential for ${providerLabel(descriptor, connection.provider_id)}`}
+                  />
+                  <button
+                    type="button"
+                    disabled={controlsDisabled || !credentialDrafts[connection.connection_id]?.trim()}
+                    onClick={() => void saveCredential(connection.connection_id)}
+                  >
+                    Replace credential
+                  </button>
+                  {connection.credential_configured ? (
+                    <button
+                      type="button"
+                      disabled={controlsDisabled}
+                      onClick={() => void deleteCredential(connection.connection_id)}
+                    >
+                      Remove credential
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className={styles.secondaryActions}>
+                <button
+                  type="button"
+                  disabled={controlsDisabled}
+                  onClick={() =>
+                    void setConnectionEnabled(connection, connection.status !== "enabled")
+                  }
+                >
+                  {connection.status === "enabled" ? "Disable" : "Enable"}
+                </button>
+                <button
+                  type="button"
+                  disabled={controlsDisabled}
+                  onClick={() => void disconnect(connection.connection_id)}
+                >
+                  Disconnect
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className={styles.configurationPanel}>
+        <div className={styles.configurationCopy}>
+          <span className={styles.label}>Model roles</span>
+          <h3>Assign jobs, not vendors.</h3>
+          <p>
+            Primary, research, reasoning, fast, embeddings, and fallback roles point to explicit provider
+            connections. No role silently changes provider on failure.
+          </p>
+        </div>
+        <div className={styles.configurationControls}>
+          <label className={styles.controlLabel} htmlFor="assignment-role">
+            Role
+          </label>
+          <select
+            id="assignment-role"
+            value={assignmentRole}
+            disabled={controlsDisabled}
+            onChange={(event) => setAssignmentRole(event.target.value as ModelRole)}
+          >
+            {ROLES.map((role) => (
+              <option key={role} value={role}>
+                {roleLabel(role)}
+              </option>
+            ))}
+          </select>
+
+          <label className={styles.controlLabel} htmlFor="assignment-connection">
+            Provider connection
+          </label>
+          <select
+            id="assignment-connection"
+            value={assignmentConnectionId}
+            disabled={controlsDisabled || enabledConnections.length === 0}
+            onChange={(event) => {
+              setAssignmentConnectionId(event.target.value);
+              setAssignmentModel("");
+              setInventory(null);
+            }}
+          >
+            <option value="">Choose connection</option>
+            {enabledConnections.map((connection) => (
+              <option key={connection.connection_id} value={connection.connection_id}>
+                {connection.display_name ??
+                  providerLabel(providerById.get(connection.provider_id), connection.provider_id)} ·{" "}
+                {connection.routing_type}
+              </option>
+            ))}
+          </select>
+
+          {assignmentConnection?.provider_id === "ollama" ? (
+            <button
+              className={styles.refresh}
+              type="button"
+              disabled={controlsDisabled || !policy?.ai_enabled}
+              onClick={() => void loadOllamaModels()}
+            >
+              Load installed Ollama models
+            </button>
+          ) : null}
+
+          <label className={styles.controlLabel} htmlFor="assignment-model">
+            Model
+          </label>
+          <input
+            id="assignment-model"
+            list={assignmentConnection?.provider_id === "ollama" ? "ollama-models" : undefined}
+            value={assignmentModel}
+            disabled={controlsDisabled || !assignmentConnectionId}
+            onChange={(event) => setAssignmentModel(event.target.value)}
+            placeholder="Provider model ID"
+          />
+          <datalist id="ollama-models">
+            {inventory?.models.map((model) => <option key={model} value={model} />)}
+          </datalist>
+          {inventory ? (
+            <p className={styles.inventoryNote}>
+              Ollama inventory: {inventory.state} · {inventory.models.length} model(s)
+            </p>
+          ) : null}
+          <button
+            className={styles.primaryAction}
+            type="button"
+            disabled={controlsDisabled || !assignmentConnectionId || !assignmentModel.trim()}
+            onClick={() => void assignModel()}
+          >
+            Assign role
+          </button>
+        </div>
+      </div>
+
+      <div className={styles.assignmentGrid}>
+        {assignments.length === 0 ? (
+          <p className={styles.emptyState}>No active profile role assignments.</p>
+        ) : null}
+        {assignments.map((assignment) => {
+          const connection = connectionById.get(assignment.connection_id);
+          return (
+            <article className={styles.assignmentCard} key={assignment.assignment_id}>
+              <span className={styles.label}>{roleLabel(assignment.role)}</span>
+              <strong>{assignment.model_id}</strong>
+              <p>
+                {connection
+                  ? `${connection.display_name ??
+                      providerLabel(
+                        providerById.get(connection.provider_id),
+                        connection.provider_id,
+                      )} · ${connection.routing_type}`
+                  : "Connection unavailable"}
               </p>
-            )}
-
-            <div className={styles.secondaryActions}>
-              <button
-                type="button"
-                disabled={controlsDisabled || configuration?.mode === "installation_default"}
-                onClick={() => void saveConfiguration("installation_default")}
-              >
-                Use installation default
-              </button>
-              <button
-                type="button"
-                disabled={controlsDisabled || configuration?.mode === "disabled"}
-                onClick={() => void saveConfiguration("disabled")}
-              >
-                Disable model for this profile
-              </button>
-            </div>
-
-            <p className={styles.installationDefault}>
-              Installation default: {fact(configuration?.installation_provider ?? null)} ·{" "}
-              {fact(configuration?.installation_model ?? null)}
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className={styles.configurationPanel}>
-          <div className={styles.configurationCopy}>
-            <span className={styles.label}>Cloud provider selection</span>
-            <h3>This profile is routed through a cloud provider.</h3>
-            <p>
-              Bukmatika will not probe Ollama or silently replace this provider with a local model. Full
-              provider and role management will be surfaced through the provider-neutral settings flow.
-            </p>
-          </div>
-        </div>
-      )}
+              <small>{assignment.capabilities.join(" · ")}</small>
+              <div className={styles.secondaryActions}>
+                <button
+                  type="button"
+                  disabled={controlsDisabled}
+                  onClick={() => void clearModelRole(assignment.role)}
+                >
+                  Clear {roleLabel(assignment.role)} role
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
 
       <p className={styles.footnote}>
-        Local model discovery is limited to the installation-controlled Ollama loopback runtime. Cloud
-        routing never causes a local inventory probe, and provider fallback is not automatic.
+        Local inventory is queried only when you explicitly request Ollama models. Refreshing this control
+        center never probes Ollama on behalf of a cloud-selected route. Credentials are never returned to
+        this page.
       </p>
     </section>
   );

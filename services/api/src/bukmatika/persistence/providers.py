@@ -153,6 +153,28 @@ class ProviderConnectionRepository:
         await self._session.flush()
         return assignment
 
+    async def list_assignments(self, *, principal_id: UUID) -> list[AIModelAssignment]:
+        rows = await self._session.scalars(
+            select(AIModelAssignment)
+            .join(
+                AIProviderConnection,
+                (AIProviderConnection.id == AIModelAssignment.connection_id)
+                & (AIProviderConnection.principal_id == AIModelAssignment.principal_id),
+            )
+            .where(
+                AIModelAssignment.principal_id == principal_id,
+                AIModelAssignment.enabled.is_(True),
+                AIProviderConnection.status == "enabled",
+            )
+            .order_by(
+                AIModelAssignment.role,
+                AIModelAssignment.priority,
+                AIModelAssignment.created_at,
+                AIModelAssignment.id,
+            )
+        )
+        return list(rows)
+
     async def assignments_for_role(
         self,
         *,

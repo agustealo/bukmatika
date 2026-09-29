@@ -188,7 +188,9 @@ class OpenAICloudGateway(ModelGateway):
                 if content.type == "output_text" and content.text is not None:
                     output_text.append(content.text)
         if not output_text:
-            raise ModelProviderResponseInvalid("OpenAI response contained no structured text output")
+            raise ModelProviderResponseInvalid(
+                "OpenAI response contained no structured text output"
+            )
 
         try:
             return response_type.model_validate_json("".join(output_text))

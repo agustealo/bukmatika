@@ -9,6 +9,13 @@ import httpx
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.ai.credentials import (
+    CredentialIntegrityError,
+    CredentialReference,
+    CredentialUnavailable,
+    DatabaseCredentialStore,
+    InstallationCredentialKey,
+)
 from bukmatika.ai.factory import (
     build_model_gateway,
     build_provider_registry,
@@ -24,7 +31,7 @@ from bukmatika.ai.gateway import (
     UnconfiguredModelGateway,
 )
 from bukmatika.ai.ollama import inspect_ollama_models
-from bukmatika.ai.provider_registry import ProviderRegistry
+from bukmatika.ai.provider_registry import ProviderRegistry, RoutingType
 from bukmatika.ai.routing_policy import (
     CloudEgressPolicy,
     ModelSelectionMode,
@@ -110,11 +117,13 @@ class _EphemeralSelectedGateway:
         settings: Settings,
         provider: str,
         model: str | None,
+        credential: str | None,
         registry: ProviderRegistry,
     ) -> None:
         self._settings = settings
         self._provider = provider
         self._model = model
+        self._credential = credential
         self._registry = registry
         normalized_model = (model or "").strip()
         if provider == "none" or not normalized_model:
@@ -138,6 +147,7 @@ class _EphemeralSelectedGateway:
                 client=client,
                 provider=self._provider,
                 model=self._model,
+                credential=self._credential,
                 registry=self._registry,
             )
             return await gateway.readiness()
@@ -153,6 +163,7 @@ class _EphemeralSelectedGateway:
                 client=client,
                 provider=self._provider,
                 model=self._model,
+                credential=self._credential,
                 registry=self._registry,
             )
             return await gateway.generate_structured(request, response_type)
@@ -177,6 +188,7 @@ class PrincipalModelRuntimeResolver:
         self._provider_registry = provider_registry or build_provider_registry()
 
     async def resolve(self, *, principal_id: UUID) -> PrincipalModelRuntime:
+        selected_credential: str | None = None
         async with self._session_scope() as database_session:
             user_model = await PersonalizationRepository(database_session).get_or_create_user_model(
                 principal_id
@@ -211,6 +223,14 @@ class PrincipalModelRuntimeResolver:
                     )
                     selected_provider = connection.provider_id
                     selected_model = assignment.model_id
+                    descriptor = self._provider_registry.descriptor(connection.provider_id)
+                    if descriptor.routing_type is RoutingType.CLOUD:
+                        selected_credential = await self._reveal_connection_credential(
+                            database_session=database_session,
+                            principal_id=principal_id,
+                            connection_id=connection.id,
+                            reference=connection.credential_reference,
+                        )
             elif not disabled:
                 selected_provider = self._settings.model_provider
                 selected_model = (
@@ -232,6 +252,13 @@ class PrincipalModelRuntimeResolver:
 
         provider = selected_provider or "none"
         model = selected_model
+        descriptor = self._provider_registry.descriptor(provider) if provider != "none" else None
+        if descriptor is not None and descriptor.routing_type is RoutingType.CLOUD and not selected_credential:
+            return PrincipalModelRuntime(
+                gateway=UnconfiguredModelGateway(),
+                configuration=configuration,
+            )
+
         if selection_mode is ModelSelectionMode.INSTALLATION_DEFAULT:
             if self._installation_gateway is not None:
                 gateway = self._installation_gateway
@@ -242,6 +269,7 @@ class PrincipalModelRuntimeResolver:
                     settings=self._settings,
                     provider=provider,
                     model=model,
+                    credential=None,
                     registry=self._provider_registry,
                 )
         elif self._client is not None:
@@ -250,6 +278,7 @@ class PrincipalModelRuntimeResolver:
                 client=self._client,
                 provider=provider,
                 model=model,
+                credential=selected_credential,
                 registry=self._provider_registry,
             )
         else:
@@ -257,17 +286,40 @@ class PrincipalModelRuntimeResolver:
                 settings=self._settings,
                 provider=provider,
                 model=model,
+                credential=selected_credential,
                 registry=self._provider_registry,
             )
 
         if gateway.identity is not None:
-            descriptor = self._provider_registry.descriptor(gateway.identity.provider)
+            gateway_descriptor = self._provider_registry.descriptor(gateway.identity.provider)
             gateway = PolicyEnforcedModelGateway(
                 gateway=gateway,
-                routing_type=descriptor.routing_type,
+                routing_type=gateway_descriptor.routing_type,
                 cloud_egress_policy=cloud_egress_policy,
             )
         return PrincipalModelRuntime(gateway=gateway, configuration=configuration)
+
+    async def _reveal_connection_credential(
+        self,
+        *,
+        database_session: AsyncSession,
+        principal_id: UUID,
+        connection_id: UUID,
+        reference: str | None,
+    ) -> str | None:
+        if not reference:
+            return None
+        try:
+            return await DatabaseCredentialStore(
+                database_session,
+                installation_key=InstallationCredentialKey(self._settings.credential_key_path),
+            ).reveal(
+                principal_id=principal_id,
+                connection_id=connection_id,
+                reference=CredentialReference(reference),
+            )
+        except (CredentialUnavailable, CredentialIntegrityError, ValueError):
+            return None
 
     async def configuration(self, *, principal_id: UUID) -> LocalModelConfigurationResponse:
         return (await self.resolve(principal_id=principal_id)).configuration

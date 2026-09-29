@@ -137,8 +137,9 @@ class InstallationCredentialKey:
 class DatabaseCredentialStore:
     """Canonical encrypted provider-secret owner.
 
-    PostgreSQL stores authenticated ciphertext and principal/connection ownership. The installation
-    key remains outside the database. Raw secrets are returned only from the internal `reveal` method.
+    PostgreSQL stores authenticated ciphertext and principal/connection ownership.
+    The installation key remains outside the database. Raw secrets are returned only
+    from the internal `reveal` method.
     """
 
     def __init__(

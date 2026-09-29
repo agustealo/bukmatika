@@ -6,6 +6,7 @@ Revises: 0023_provider_credentials
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 revision = "0024_provider_routing_policy"
 down_revision = "0023_provider_credentials"
@@ -14,58 +15,89 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "user_models",
+    op.create_table(
+        "ai_routing_policies",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column(
+            "principal_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("principals.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "user_model_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("user_models.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column(
             "model_selection_mode",
             sa.String(length=32),
             nullable=False,
             server_default="installation_default",
         ),
-    )
-    op.add_column(
-        "user_models",
         sa.Column(
             "cloud_egress_policy",
             sa.String(length=32),
             nullable=False,
             server_default="local_only",
         ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.UniqueConstraint("principal_id", name="uq_ai_routing_policy_principal"),
+        sa.UniqueConstraint("user_model_id", name="uq_ai_routing_policy_user_model"),
+        sa.CheckConstraint(
+            "model_selection_mode IN ('installation_default','profile')",
+            name="ck_ai_routing_policy_selection",
+        ),
+        sa.CheckConstraint(
+            "cloud_egress_policy IN ('local_only','public_only','private_context')",
+            name="ck_ai_routing_policy_egress",
+        ),
     )
-    op.create_check_constraint(
-        "ck_user_model_model_selection_mode",
-        "user_models",
-        "model_selection_mode IN ('installation_default','profile')",
+    op.create_index(
+        "ix_ai_routing_policies_principal",
+        "ai_routing_policies",
+        ["principal_id"],
     )
-    op.create_check_constraint(
-        "ck_user_model_cloud_egress_policy",
-        "user_models",
-        "cloud_egress_policy IN ('local_only','public_only','private_context')",
-    )
-
     op.execute(
         """
-        UPDATE user_models
-        SET model_selection_mode = CASE
-            WHEN model_provider_override IS NULL OR model_provider_override = 'none'
-                THEN 'installation_default'
-            ELSE 'profile'
-        END,
-        cloud_egress_policy = 'local_only'
+        INSERT INTO ai_routing_policies (
+            id,
+            principal_id,
+            user_model_id,
+            model_selection_mode,
+            cloud_egress_policy,
+            created_at,
+            updated_at
+        )
+        SELECT
+            gen_random_uuid(),
+            principal_id,
+            id,
+            CASE
+                WHEN model_provider_override IS NULL OR model_provider_override = 'none'
+                    THEN 'installation_default'
+                ELSE 'profile'
+            END,
+            'local_only',
+            now(),
+            now()
+        FROM user_models
         """
     )
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "ck_user_model_cloud_egress_policy",
-        "user_models",
-        type_="check",
-    )
-    op.drop_constraint(
-        "ck_user_model_model_selection_mode",
-        "user_models",
-        type_="check",
-    )
-    op.drop_column("user_models", "cloud_egress_policy")
-    op.drop_column("user_models", "model_selection_mode")
+    op.drop_index("ix_ai_routing_policies_principal", table_name="ai_routing_policies")
+    op.drop_table("ai_routing_policies")

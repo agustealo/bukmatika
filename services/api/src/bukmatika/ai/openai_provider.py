@@ -26,8 +26,9 @@ def _describe_model(model_id: str) -> ModelDescriptor:
     normalized = model_id.strip()
     limits = _SUPPORTED_MODELS.get(normalized)
     if limits is None:
+        model_label = normalized or "<blank>"
         raise ProviderCapabilityUnavailable(
-            f"OpenAI model is not approved for Bukmatika structured generation: {normalized or '<blank>'}"
+            f"OpenAI model is not approved for Bukmatika structured generation: {model_label}"
         )
     context_window, max_output_tokens = limits
     return ModelDescriptor(

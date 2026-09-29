@@ -89,6 +89,7 @@ class ProviderConnectionService:
                 routing_type=descriptor.routing_type.value,
                 display_name=request.display_name,
             )
+            await database_session.refresh(connection)
             return _connection_response(connection)
 
     async def update_connection(
@@ -105,6 +106,7 @@ class ProviderConnectionService:
                 display_name=request.display_name,
                 enabled=request.enabled,
             )
+            await database_session.refresh(connection)
             return _connection_response(connection)
 
     async def disconnect(self, *, principal_id: UUID, connection_id: UUID) -> None:
@@ -146,6 +148,7 @@ class ProviderConnectionService:
                 connection_id=connection_id,
                 secret=request.secret,
             )
+            await database_session.refresh(connection)
             return _connection_response(connection)
 
     async def delete_credential(
@@ -164,6 +167,7 @@ class ProviderConnectionService:
                 principal_id=principal_id,
                 connection_id=connection_id,
             )
+            await database_session.refresh(connection)
             return _connection_response(connection)
 
     async def assign_model(

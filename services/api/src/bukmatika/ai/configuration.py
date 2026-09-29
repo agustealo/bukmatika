@@ -25,13 +25,18 @@ from bukmatika.ai.gateway import (
     ModelGateway,
     ModelProviderIdentity,
     ModelProviderReadiness,
+    ModelProviderUnconfigured,
     ModelReadinessState,
     ModelRequest,
     StructuredResponseT,
     UnconfiguredModelGateway,
 )
 from bukmatika.ai.ollama import inspect_ollama_models
-from bukmatika.ai.provider_registry import ProviderRegistry, RoutingType
+from bukmatika.ai.provider_registry import (
+    ProviderCredentialRequired,
+    ProviderRegistry,
+    RoutingType,
+)
 from bukmatika.ai.routing_policy import (
     CloudEgressPolicy,
     ModelSelectionMode,
@@ -142,14 +147,22 @@ class _EphemeralSelectedGateway:
 
     async def readiness(self) -> ModelProviderReadiness:
         async with httpx.AsyncClient(follow_redirects=False, trust_env=False) as client:
-            gateway = build_selected_model_gateway(
-                settings=self._settings,
-                client=client,
-                provider=self._provider,
-                model=self._model,
-                credential=self._credential,
-                registry=self._registry,
-            )
+            try:
+                gateway = build_selected_model_gateway(
+                    settings=self._settings,
+                    client=client,
+                    provider=self._provider,
+                    model=self._model,
+                    credential=self._credential,
+                    registry=self._registry,
+                )
+            except ProviderCredentialRequired:
+                return ModelProviderReadiness(
+                    state=ModelReadinessState.UNCONFIGURED,
+                    configured=False,
+                    ready=False,
+                    identity=self._identity,
+                )
             return await gateway.readiness()
 
     async def generate_structured(
@@ -158,14 +171,19 @@ class _EphemeralSelectedGateway:
         response_type: type[StructuredResponseT],
     ) -> StructuredResponseT:
         async with httpx.AsyncClient(follow_redirects=False, trust_env=False) as client:
-            gateway = build_selected_model_gateway(
-                settings=self._settings,
-                client=client,
-                provider=self._provider,
-                model=self._model,
-                credential=self._credential,
-                registry=self._registry,
-            )
+            try:
+                gateway = build_selected_model_gateway(
+                    settings=self._settings,
+                    client=client,
+                    provider=self._provider,
+                    model=self._model,
+                    credential=self._credential,
+                    registry=self._registry,
+                )
+            except ProviderCredentialRequired as exc:
+                raise ModelProviderUnconfigured(
+                    "Selected provider credential is not configured"
+                ) from exc
             return await gateway.generate_structured(request, response_type)
 
 
@@ -223,8 +241,7 @@ class PrincipalModelRuntimeResolver:
                     )
                     selected_provider = connection.provider_id
                     selected_model = assignment.model_id
-                    descriptor = self._provider_registry.descriptor(connection.provider_id)
-                    if descriptor.routing_type is RoutingType.CLOUD:
+                    if self._provider_registry.generation_credential_required(connection.provider_id):
                         selected_credential = await self._reveal_connection_credential(
                             database_session=database_session,
                             principal_id=principal_id,
@@ -252,13 +269,11 @@ class PrincipalModelRuntimeResolver:
 
         provider = selected_provider or "none"
         model = selected_model
-        descriptor = self._provider_registry.descriptor(provider) if provider != "none" else None
-        if descriptor is not None and descriptor.routing_type is RoutingType.CLOUD and not selected_credential:
-            return PrincipalModelRuntime(
-                gateway=UnconfiguredModelGateway(),
-                configuration=configuration,
-            )
-
+        credential_missing = (
+            provider != "none"
+            and self._provider_registry.generation_credential_required(provider)
+            and not selected_credential
+        )
         if selection_mode is ModelSelectionMode.INSTALLATION_DEFAULT:
             if self._installation_gateway is not None:
                 gateway = self._installation_gateway
@@ -272,7 +287,7 @@ class PrincipalModelRuntimeResolver:
                     credential=None,
                     registry=self._provider_registry,
                 )
-        elif self._client is not None:
+        elif self._client is not None and not credential_missing:
             gateway = build_selected_model_gateway(
                 settings=self._settings,
                 client=self._client,

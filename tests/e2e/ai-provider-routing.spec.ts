@@ -2,10 +2,22 @@ import { expect, test } from "@playwright/test";
 
 import { bootstrapLocalSession } from "./session";
 
-test("cloud-selected AI route renders without probing local Ollama inventory", async ({ page, context }) => {
+test("cloud-selected AI route renders and clears roles without probing local Ollama inventory", async ({ page, context }) => {
   await bootstrapLocalSession(context);
 
   let localInventoryRequests = 0;
+  let roleClearRequests = 0;
+  let assignments = [
+    {
+      assignment_id: "22222222-2222-2222-2222-222222222222",
+      connection_id: "11111111-1111-1111-1111-111111111111",
+      role: "research",
+      model_id: "reasoner-v1",
+      priority: 0,
+      enabled: true,
+      capabilities: ["structured_generation", "text_generation"],
+    },
+  ];
 
   await page.route("**/v1/ai/status", async (route) => {
     await route.fulfill({
@@ -72,23 +84,21 @@ test("cloud-selected AI route renders without probing local Ollama inventory", a
     });
   });
 
+  await page.route("**/v1/ai/model-assignments/research", async (route) => {
+    if (route.request().method() === "DELETE") {
+      roleClearRequests += 1;
+      assignments = [];
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    await route.fallback();
+  });
+
   await page.route("**/v1/ai/model-assignments", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        assignments: [
-          {
-            assignment_id: "22222222-2222-2222-2222-222222222222",
-            connection_id: "11111111-1111-1111-1111-111111111111",
-            role: "research",
-            model_id: "reasoner-v1",
-            priority: 0,
-            enabled: true,
-            capabilities: ["structured_generation", "text_generation"],
-          },
-        ],
-      }),
+      body: JSON.stringify({ assignments }),
     });
   });
 
@@ -107,5 +117,9 @@ test("cloud-selected AI route renders without probing local Ollama inventory", a
   await expect(page.getByText("Cloud: public/evidence-only data", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Load installed Ollama models" })).toHaveCount(0);
 
+  await page.getByRole("button", { name: "Clear Research role" }).click();
+  await expect(page.getByText("No active profile role assignments.", { exact: true })).toBeVisible();
+
+  expect(roleClearRequests).toBe(1);
   expect(localInventoryRequests).toBe(0);
 });

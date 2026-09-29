@@ -228,6 +228,13 @@ class ProviderConnectionService:
             )
             return _assignment_response(assignment, capabilities=model.capabilities)
 
+    async def clear_model_role(self, *, principal_id: UUID, role: ModelRole) -> None:
+        async with self._session_scope() as database_session:
+            await ProviderConnectionRepository(database_session).disable_role_assignments(
+                principal_id=principal_id,
+                role=role.value,
+            )
+
     def _credential_store(self, database_session: AsyncSession) -> DatabaseCredentialStore:
         return DatabaseCredentialStore(
             database_session,

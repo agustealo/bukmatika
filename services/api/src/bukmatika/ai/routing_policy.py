@@ -1,5 +1,4 @@
 from enum import StrEnum
-from typing import TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -15,7 +14,10 @@ from bukmatika.ai.gateway import (
 )
 from bukmatika.ai.provider_registry import RoutingType
 from bukmatika.persistence import session_scope
-from bukmatika.persistence.personalization import PersonalizationRepository
+from bukmatika.persistence.personalization import (
+    PersonalizationRepository,
+    lock_personalization_state,
+)
 from bukmatika.persistence.routing_policy import AIRoutingPolicyRepository
 
 
@@ -65,9 +67,12 @@ class PolicyEnforcedModelGateway:
         return self._gateway.identity
 
     async def readiness(self) -> ModelProviderReadiness:
-        if self._routing_type is RoutingType.CLOUD and self._cloud_egress_policy is CloudEgressPolicy.LOCAL_ONLY:
+        if (
+            self._routing_type is RoutingType.CLOUD
+            and self._cloud_egress_policy is CloudEgressPolicy.LOCAL_ONLY
+        ):
             return ModelProviderReadiness(
-                state=ModelReadinessState.POLICY_DENIED,
+                state=ModelReadinessState.UNCONFIGURED,
                 configured=True,
                 ready=False,
                 identity=self.identity,
@@ -118,15 +123,15 @@ class AIRoutingPolicyService:
         request: AIRoutingPolicyUpdate,
     ) -> AIRoutingPolicyResponse:
         async with session_scope() as database_session:
+            await lock_personalization_state(database_session, principal_id)
             personalization = PersonalizationRepository(database_session)
             user_model = await personalization.get_or_create_user_model(principal_id)
             user_model.ai_enabled = request.ai_enabled
+            policy_repository = AIRoutingPolicyRepository(database_session)
+            policy = await policy_repository.get_or_create(principal_id=principal_id)
+            policy.model_selection_mode = request.model_selection_mode.value
+            policy.cloud_egress_policy = request.cloud_egress_policy.value
             await database_session.flush()
-            policy = await AIRoutingPolicyRepository(database_session).update(
-                principal_id=principal_id,
-                model_selection_mode=request.model_selection_mode.value,
-                cloud_egress_policy=request.cloud_egress_policy.value,
-            )
             return AIRoutingPolicyResponse(
                 ai_enabled=user_model.ai_enabled,
                 model_selection_mode=ModelSelectionMode(policy.model_selection_mode),

@@ -24,6 +24,7 @@ from bukmatika.ai.research_service import (
     ResearchSelectionEvidenceUnavailable,
 )
 from bukmatika.ai.routes import model_gateway
+from bukmatika.ai.routing_policy_routes import router as routing_policy_router
 from bukmatika.ai.service import AIDisabled
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence.personalization import ContextSelectionDenied
@@ -32,6 +33,7 @@ from bukmatika.research import ResearchEvidenceReferenceInvalid
 
 router = APIRouter(prefix="/v1/ai", tags=["ai"])
 router.include_router(provider_connection_router)
+router.include_router(routing_policy_router)
 
 
 def grounded_research_selection_service(

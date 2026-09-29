@@ -90,7 +90,7 @@ async def test_catalog_and_create_reject_unregistered_provider(session: AsyncSes
     service = ProviderConnectionService(session_scope_factory=_session_scope(session))
 
     catalog = service.catalog()
-    assert [provider.provider_id for provider in catalog.providers] == ["ollama"]
+    assert [provider.provider_id for provider in catalog.providers] == ["ollama", "openai"]
 
     with pytest.raises(ProviderNotRegistered):
         await service.create_connection(

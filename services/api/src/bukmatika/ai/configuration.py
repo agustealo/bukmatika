@@ -25,6 +25,11 @@ from bukmatika.ai.gateway import (
 )
 from bukmatika.ai.ollama import inspect_ollama_models
 from bukmatika.ai.provider_registry import ProviderRegistry
+from bukmatika.ai.routing_policy import (
+    CloudEgressPolicy,
+    ModelSelectionMode,
+    PolicyEnforcedModelGateway,
+)
 from bukmatika.config import Settings
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
@@ -33,6 +38,7 @@ from bukmatika.persistence.providers import (
     ProviderAssignmentNotFound,
     ProviderConnectionRepository,
 )
+from bukmatika.persistence.routing_policy import AIRoutingPolicyRepository
 
 SessionScopeFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 PRIMARY_GENERATION_ROLE = "primary"
@@ -175,12 +181,18 @@ class PrincipalModelRuntimeResolver:
             user_model = await PersonalizationRepository(database_session).get_or_create_user_model(
                 principal_id
             )
+            routing_policy = await AIRoutingPolicyRepository(database_session).get_or_create(
+                principal_id=principal_id
+            )
             provider_override = user_model.model_provider_override
             model_override = user_model.model_name_override
-            selected_provider = provider_override
-            selected_model = model_override
+            disabled = not user_model.ai_enabled or provider_override == "none"
+            selection_mode = ModelSelectionMode(routing_policy.model_selection_mode)
+            cloud_egress_policy = CloudEgressPolicy(routing_policy.cloud_egress_policy)
 
-            if provider_override not in (None, "none"):
+            selected_provider: str | None = None
+            selected_model: str | None = None
+            if not disabled and selection_mode is ModelSelectionMode.PROFILE:
                 provider_repository = ProviderConnectionRepository(database_session)
                 try:
                     assignment = await provider_repository.primary_assignment(
@@ -188,9 +200,9 @@ class PrincipalModelRuntimeResolver:
                         role=PRIMARY_GENERATION_ROLE,
                     )
                 except ProviderAssignmentNotFound:
-                    # Compatibility bridge for a pre-backfill profile. New writes always create
-                    # provider-neutral assignment state before returning to the caller.
-                    pass
+                    # Compatibility bridge for a pre-backfill profile.
+                    selected_provider = provider_override
+                    selected_model = model_override
                 else:
                     connection = await provider_repository.get_connection(
                         principal_id=principal_id,
@@ -199,13 +211,28 @@ class PrincipalModelRuntimeResolver:
                     )
                     selected_provider = connection.provider_id
                     selected_model = assignment.model_id
+            elif not disabled:
+                selected_provider = self._settings.model_provider
+                selected_model = (
+                    self._settings.ollama_model
+                    if self._settings.model_provider == "ollama"
+                    else None
+                )
 
         configuration = self._configuration_response(
             provider_override=provider_override,
             selected_provider=selected_provider,
             selected_model=selected_model,
         )
-        if provider_override is None:
+        if disabled:
+            return PrincipalModelRuntime(
+                gateway=UnconfiguredModelGateway(),
+                configuration=configuration,
+            )
+
+        provider = selected_provider or "none"
+        model = selected_model
+        if selection_mode is ModelSelectionMode.INSTALLATION_DEFAULT:
             if self._installation_gateway is not None:
                 gateway = self._installation_gateway
             elif self._client is not None:
@@ -213,26 +240,32 @@ class PrincipalModelRuntimeResolver:
             else:
                 gateway = _EphemeralSelectedGateway(
                     settings=self._settings,
-                    provider=self._settings.model_provider,
-                    model=self._settings.ollama_model,
+                    provider=provider,
+                    model=model,
                     registry=self._provider_registry,
                 )
-        elif provider_override == "none":
-            gateway = UnconfiguredModelGateway()
         elif self._client is not None:
             gateway = build_selected_model_gateway(
                 settings=self._settings,
                 client=self._client,
-                provider=selected_provider or "none",
-                model=selected_model,
+                provider=provider,
+                model=model,
                 registry=self._provider_registry,
             )
         else:
             gateway = _EphemeralSelectedGateway(
                 settings=self._settings,
-                provider=selected_provider or "none",
-                model=selected_model,
+                provider=provider,
+                model=model,
                 registry=self._provider_registry,
+            )
+
+        if gateway.identity is not None:
+            descriptor = self._provider_registry.descriptor(gateway.identity.provider)
+            gateway = PolicyEnforcedModelGateway(
+                gateway=gateway,
+                routing_type=descriptor.routing_type,
+                cloud_egress_policy=cloud_egress_policy,
             )
         return PrincipalModelRuntime(gateway=gateway, configuration=configuration)
 
@@ -265,6 +298,15 @@ class PrincipalModelRuntimeResolver:
                 model_name_override=model_override,
             )
             provider_repository = ProviderConnectionRepository(database_session)
+            routing_policy_repository = AIRoutingPolicyRepository(database_session)
+            routing_policy = await routing_policy_repository.get_or_create(
+                principal_id=principal_id
+            )
+            routing_policy.model_selection_mode = (
+                ModelSelectionMode.PROFILE.value
+                if provider_override == "ollama"
+                else ModelSelectionMode.INSTALLATION_DEFAULT.value
+            )
             if provider_override == "ollama" and model_override is not None:
                 connections = await provider_repository.list_connections(principal_id=principal_id)
                 connection = next(

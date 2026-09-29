@@ -191,6 +191,19 @@ async def assign_model_role(
         ) from exc
 
 
+@router.delete(
+    "/model-assignments/{role}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def clear_model_role(
+    role: ModelRole,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[ProviderConnectionService, Depends(provider_connection_service)],
+) -> Response:
+    await service.clear_model_role(principal_id=identity.principal_id, role=role)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 def _not_found() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,

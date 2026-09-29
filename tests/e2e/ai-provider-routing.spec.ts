@@ -116,7 +116,7 @@ test("cloud-selected AI route renders and clears roles without probing local Oll
     page.getByRole("paragraph").filter({ hasText: /^Research cloud · cloud$/ }),
   ).toBeVisible();
   await expect(page.getByText("Credential configured", { exact: true })).toBeVisible();
-  await expect(page.getByText("Cloud: public/evidence-only data", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Cloud data access")).toHaveValue("public_only");
   await expect(page.getByRole("button", { name: "Load installed Ollama models" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Clear Research role" }).click();

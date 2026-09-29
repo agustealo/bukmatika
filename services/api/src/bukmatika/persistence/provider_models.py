@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     String,
     UniqueConstraint,
 )
@@ -47,6 +48,33 @@ class AIProviderConnection(Base, TimestampMixin):
     display_name: Mapped[str | None] = mapped_column(String(128))
     credential_reference: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="enabled")
+
+
+class AIProviderCredential(Base, TimestampMixin):
+    __tablename__ = "ai_provider_credentials"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["connection_id", "principal_id"],
+            ["ai_provider_connections.id", "ai_provider_connections.principal_id"],
+            ondelete="CASCADE",
+            name="fk_ai_provider_credential_connection_owner",
+        ),
+        UniqueConstraint("connection_id", name="uq_ai_provider_credential_connection"),
+        Index(
+            "ix_ai_provider_credentials_principal_connection",
+            "principal_id",
+            "connection_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    principal_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("principals.id", ondelete="CASCADE"), nullable=False
+    )
+    connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    key_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class AIModelAssignment(Base, TimestampMixin):

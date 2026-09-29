@@ -14,6 +14,7 @@ x-api-environment: &api-environment
   BUKMATIKA_LOG_LEVEL: ${BUKMATIKA_LOG_LEVEL:-INFO}
   BUKMATIKA_CONTACT_EMAIL: ${BUKMATIKA_CONTACT_EMAIL:-}
   BUKMATIKA_STORAGE_ROOT: /var/lib/bukmatika/storage
+  BUKMATIKA_CREDENTIAL_KEY_PATH: /var/lib/bukmatika/secrets/provider-credentials.key
   BUKMATIKA_MODEL_PROVIDER: none
   BUKMATIKA_EMBEDDING_PROVIDER: none
 
@@ -61,6 +62,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - bukmatika-storage:/var/lib/bukmatika/storage
+      - bukmatika-secrets:/var/lib/bukmatika/secrets
     healthcheck:
       test:
         - CMD
@@ -128,3 +130,4 @@ services:
 volumes:
   bukmatika-postgres-data:
   bukmatika-storage:
+  bukmatika-secrets:

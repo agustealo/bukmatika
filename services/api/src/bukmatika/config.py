@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     local_session_ttl_days: int = Field(default=30, ge=1, le=365)
     local_session_secure_cookie: bool = False
     storage_root: Path = Path(".bukmatika/storage")
+    credential_key_path: Path = Path(".bukmatika/secrets/provider-credentials.key")
     user_agent: str = "Bukmatika/0.1 (+https://github.com/agustealo/bukmatika)"
     contact_email: str | None = None
     web_origin: str = "http://localhost:3000"

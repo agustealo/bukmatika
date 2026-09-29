@@ -244,7 +244,12 @@ export function LocalAIStatus() {
       setAssignments(nextAssignments.assignments);
       setNewProviderId((current) => current || nextProviders.providers[0]?.provider_id || "");
       setAssignmentConnectionId((current) => {
-        if (current && nextConnections.connections.some((item) => item.connection_id === current && item.status === "enabled")) {
+        if (
+          current &&
+          nextConnections.connections.some(
+            (item) => item.connection_id === current && item.status === "enabled",
+          )
+        ) {
           return current;
         }
         return nextConnections.connections.find((item) => item.status === "enabled")?.connection_id ?? "";
@@ -385,6 +390,16 @@ export function LocalAIStatus() {
     );
   }, [assignmentConnectionId, assignmentModel, assignmentRole, mutate]);
 
+  const clearModelRole = useCallback(
+    async (role: ModelRole) => {
+      await mutate(
+        () => apiFetch(`/v1/ai/model-assignments/${role}`, { method: "DELETE" }),
+        "Could not clear model role",
+      );
+    },
+    [mutate],
+  );
+
   const loadOllamaModels = useCallback(async () => {
     if (!policy?.ai_enabled) return;
     setSaving(true);
@@ -430,7 +445,12 @@ export function LocalAIStatus() {
             <span className={styles.badge} data-tone={state?.tone ?? "quiet"} aria-live="polite">
               {loading ? "Checking…" : state?.title ?? "Unavailable"}
             </span>
-            <button className={styles.refresh} type="button" disabled={controlsDisabled} onClick={() => void refresh()}>
+            <button
+              className={styles.refresh}
+              type="button"
+              disabled={controlsDisabled}
+              onClick={() => void refresh()}
+            >
               {loading ? "Checking" : "Refresh status"}
             </button>
           </div>
@@ -455,10 +475,22 @@ export function LocalAIStatus() {
         </div>
 
         <dl className={styles.facts}>
-          <div><dt>Provider</dt><dd>{status?.provider ?? "Not configured"}</dd></div>
-          <div><dt>Model</dt><dd>{status?.model ?? "Not configured"}</dd></div>
-          <div><dt>Routing</dt><dd>{status?.routing ?? "Not configured"}</dd></div>
-          <div><dt>Selection</dt><dd>{policy?.model_selection_mode === "profile" ? "Profile roles" : "Installation default"}</dd></div>
+          <div>
+            <dt>Provider</dt>
+            <dd>{status?.provider ?? "Not configured"}</dd>
+          </div>
+          <div>
+            <dt>Model</dt>
+            <dd>{status?.model ?? "Not configured"}</dd>
+          </div>
+          <div>
+            <dt>Routing</dt>
+            <dd>{status?.routing ?? "Not configured"}</dd>
+          </div>
+          <div>
+            <dt>Selection</dt>
+            <dd>{policy?.model_selection_mode === "profile" ? "Profile roles" : "Installation default"}</dd>
+          </div>
         </dl>
       </div>
 
@@ -469,7 +501,9 @@ export function LocalAIStatus() {
           <p>{policy ? egressCopy(policy.cloud_egress_policy) : "Loading routing policy…"}</p>
         </div>
         <div className={styles.configurationControls}>
-          <label className={styles.controlLabel} htmlFor="ai-enabled">AI assistance</label>
+          <label className={styles.controlLabel} htmlFor="ai-enabled">
+            AI assistance
+          </label>
           <select
             id="ai-enabled"
             value={policy?.ai_enabled ? "enabled" : "disabled"}
@@ -480,23 +514,31 @@ export function LocalAIStatus() {
             <option value="disabled">Disabled, zero provider probes</option>
           </select>
 
-          <label className={styles.controlLabel} htmlFor="model-selection-mode">Model selection</label>
+          <label className={styles.controlLabel} htmlFor="model-selection-mode">
+            Model selection
+          </label>
           <select
             id="model-selection-mode"
             value={policy?.model_selection_mode ?? "installation_default"}
             disabled={controlsDisabled || !policy}
-            onChange={(event) => void updatePolicy({ model_selection_mode: event.target.value as ModelSelectionMode })}
+            onChange={(event) =>
+              void updatePolicy({ model_selection_mode: event.target.value as ModelSelectionMode })
+            }
           >
             <option value="installation_default">Use installation default</option>
             <option value="profile">Use profile role assignments</option>
           </select>
 
-          <label className={styles.controlLabel} htmlFor="cloud-egress-policy">Cloud data access</label>
+          <label className={styles.controlLabel} htmlFor="cloud-egress-policy">
+            Cloud data access
+          </label>
           <select
             id="cloud-egress-policy"
             value={policy?.cloud_egress_policy ?? "local_only"}
             disabled={controlsDisabled || !policy}
-            onChange={(event) => void updatePolicy({ cloud_egress_policy: event.target.value as CloudEgressPolicy })}
+            onChange={(event) =>
+              void updatePolicy({ cloud_egress_policy: event.target.value as CloudEgressPolicy })
+            }
           >
             <option value="local_only">Local only</option>
             <option value="public_only">Cloud: public/evidence-only data</option>
@@ -504,7 +546,8 @@ export function LocalAIStatus() {
           </select>
           {policy?.cloud_egress_policy === "private_context" ? (
             <p className={styles.warning}>
-              Cloud providers are external services. Selected private library or research context may be sent to the active cloud provider under this policy.
+              Cloud providers are external services. Selected private library or research context may be
+              sent to the active cloud provider under this policy.
             </p>
           ) : null}
         </div>
@@ -519,17 +562,39 @@ export function LocalAIStatus() {
       </div>
 
       <div className={styles.addConnection}>
-        <select value={newProviderId} disabled={controlsDisabled || providers.length === 0} onChange={(event) => setNewProviderId(event.target.value)} aria-label="Provider">
-          {providers.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.display_name} · {provider.routing_type}</option>)}
+        <select
+          value={newProviderId}
+          disabled={controlsDisabled || providers.length === 0}
+          onChange={(event) => setNewProviderId(event.target.value)}
+          aria-label="Provider"
+        >
+          {providers.map((provider) => (
+            <option key={provider.provider_id} value={provider.provider_id}>
+              {provider.display_name} · {provider.routing_type}
+            </option>
+          ))}
         </select>
-        <input value={newDisplayName} disabled={controlsDisabled} onChange={(event) => setNewDisplayName(event.target.value)} placeholder="Optional connection name" aria-label="Connection name" />
-        <button className={styles.primaryAction} type="button" disabled={controlsDisabled || !newProviderId} onClick={() => void createConnection()}>
+        <input
+          value={newDisplayName}
+          disabled={controlsDisabled}
+          onChange={(event) => setNewDisplayName(event.target.value)}
+          placeholder="Optional connection name"
+          aria-label="Connection name"
+        />
+        <button
+          className={styles.primaryAction}
+          type="button"
+          disabled={controlsDisabled || !newProviderId}
+          onClick={() => void createConnection()}
+        >
           Add connection
         </button>
       </div>
 
       <div className={styles.connectionGrid}>
-        {connections.length === 0 ? <p className={styles.emptyState}>No provider connections configured yet.</p> : null}
+        {connections.length === 0 ? (
+          <p className={styles.emptyState}>No provider connections configured yet.</p>
+        ) : null}
         {connections.map((connection) => {
           const descriptor = providerById.get(connection.provider_id);
           return (
@@ -538,7 +603,9 @@ export function LocalAIStatus() {
                 <div>
                   <span className={styles.routePill}>{connection.routing_type}</span>
                   <h4>{connection.display_name ?? providerLabel(descriptor, connection.provider_id)}</h4>
-                  <p>{providerLabel(descriptor, connection.provider_id)} · {connection.status}</p>
+                  <p>
+                    {providerLabel(descriptor, connection.provider_id)} · {connection.status}
+                  </p>
                 </div>
                 <span className={styles.credentialState}>
                   {connection.routing_type === "local"
@@ -556,24 +623,51 @@ export function LocalAIStatus() {
                     autoComplete="off"
                     value={credentialDrafts[connection.connection_id] ?? ""}
                     disabled={controlsDisabled}
-                    onChange={(event) => setCredentialDrafts((current) => ({ ...current, [connection.connection_id]: event.target.value }))}
+                    onChange={(event) =>
+                      setCredentialDrafts((current) => ({
+                        ...current,
+                        [connection.connection_id]: event.target.value,
+                      }))
+                    }
                     placeholder="Paste provider API key"
                     aria-label={`Credential for ${providerLabel(descriptor, connection.provider_id)}`}
                   />
-                  <button type="button" disabled={controlsDisabled || !(credentialDrafts[connection.connection_id]?.trim())} onClick={() => void saveCredential(connection.connection_id)}>
+                  <button
+                    type="button"
+                    disabled={controlsDisabled || !credentialDrafts[connection.connection_id]?.trim()}
+                    onClick={() => void saveCredential(connection.connection_id)}
+                  >
                     Replace credential
                   </button>
                   {connection.credential_configured ? (
-                    <button type="button" disabled={controlsDisabled} onClick={() => void deleteCredential(connection.connection_id)}>Remove credential</button>
+                    <button
+                      type="button"
+                      disabled={controlsDisabled}
+                      onClick={() => void deleteCredential(connection.connection_id)}
+                    >
+                      Remove credential
+                    </button>
                   ) : null}
                 </div>
               ) : null}
 
               <div className={styles.secondaryActions}>
-                <button type="button" disabled={controlsDisabled} onClick={() => void setConnectionEnabled(connection, connection.status !== "enabled")}>
+                <button
+                  type="button"
+                  disabled={controlsDisabled}
+                  onClick={() =>
+                    void setConnectionEnabled(connection, connection.status !== "enabled")
+                  }
+                >
                   {connection.status === "enabled" ? "Disable" : "Enable"}
                 </button>
-                <button type="button" disabled={controlsDisabled} onClick={() => void disconnect(connection.connection_id)}>Disconnect</button>
+                <button
+                  type="button"
+                  disabled={controlsDisabled}
+                  onClick={() => void disconnect(connection.connection_id)}
+                >
+                  Disconnect
+                </button>
               </div>
             </article>
           );
@@ -584,27 +678,65 @@ export function LocalAIStatus() {
         <div className={styles.configurationCopy}>
           <span className={styles.label}>Model roles</span>
           <h3>Assign jobs, not vendors.</h3>
-          <p>Primary, research, reasoning, fast, embeddings, and fallback roles point to explicit provider connections. No role silently changes provider on failure.</p>
+          <p>
+            Primary, research, reasoning, fast, embeddings, and fallback roles point to explicit provider
+            connections. No role silently changes provider on failure.
+          </p>
         </div>
         <div className={styles.configurationControls}>
-          <label className={styles.controlLabel} htmlFor="assignment-role">Role</label>
-          <select id="assignment-role" value={assignmentRole} disabled={controlsDisabled} onChange={(event) => setAssignmentRole(event.target.value as ModelRole)}>
-            {ROLES.map((role) => <option key={role} value={role}>{roleLabel(role)}</option>)}
+          <label className={styles.controlLabel} htmlFor="assignment-role">
+            Role
+          </label>
+          <select
+            id="assignment-role"
+            value={assignmentRole}
+            disabled={controlsDisabled}
+            onChange={(event) => setAssignmentRole(event.target.value as ModelRole)}
+          >
+            {ROLES.map((role) => (
+              <option key={role} value={role}>
+                {roleLabel(role)}
+              </option>
+            ))}
           </select>
 
-          <label className={styles.controlLabel} htmlFor="assignment-connection">Provider connection</label>
-          <select id="assignment-connection" value={assignmentConnectionId} disabled={controlsDisabled || enabledConnections.length === 0} onChange={(event) => { setAssignmentConnectionId(event.target.value); setAssignmentModel(""); setInventory(null); }}>
+          <label className={styles.controlLabel} htmlFor="assignment-connection">
+            Provider connection
+          </label>
+          <select
+            id="assignment-connection"
+            value={assignmentConnectionId}
+            disabled={controlsDisabled || enabledConnections.length === 0}
+            onChange={(event) => {
+              setAssignmentConnectionId(event.target.value);
+              setAssignmentModel("");
+              setInventory(null);
+            }}
+          >
             <option value="">Choose connection</option>
-            {enabledConnections.map((connection) => <option key={connection.connection_id} value={connection.connection_id}>{connection.display_name ?? providerLabel(providerById.get(connection.provider_id), connection.provider_id)} · {connection.routing_type}</option>)}
+            {enabledConnections.map((connection) => (
+              <option key={connection.connection_id} value={connection.connection_id}>
+                {connection.display_name ??
+                  providerLabel(providerById.get(connection.provider_id), connection.provider_id)} ·{" "}
+                {connection.routing_type}
+              </option>
+            ))}
           </select>
 
           {assignmentConnection?.provider_id === "ollama" ? (
-            <button className={styles.refresh} type="button" disabled={controlsDisabled || !policy?.ai_enabled} onClick={() => void loadOllamaModels()}>
+            <button
+              className={styles.refresh}
+              type="button"
+              disabled={controlsDisabled || !policy?.ai_enabled}
+              onClick={() => void loadOllamaModels()}
+            >
               Load installed Ollama models
             </button>
           ) : null}
 
-          <label className={styles.controlLabel} htmlFor="assignment-model">Model</label>
+          <label className={styles.controlLabel} htmlFor="assignment-model">
+            Model
+          </label>
           <input
             id="assignment-model"
             list={assignmentConnection?.provider_id === "ollama" ? "ollama-models" : undefined}
@@ -616,30 +748,60 @@ export function LocalAIStatus() {
           <datalist id="ollama-models">
             {inventory?.models.map((model) => <option key={model} value={model} />)}
           </datalist>
-          {inventory ? <p className={styles.inventoryNote}>Ollama inventory: {inventory.state} · {inventory.models.length} model(s)</p> : null}
-          <button className={styles.primaryAction} type="button" disabled={controlsDisabled || !assignmentConnectionId || !assignmentModel.trim()} onClick={() => void assignModel()}>
+          {inventory ? (
+            <p className={styles.inventoryNote}>
+              Ollama inventory: {inventory.state} · {inventory.models.length} model(s)
+            </p>
+          ) : null}
+          <button
+            className={styles.primaryAction}
+            type="button"
+            disabled={controlsDisabled || !assignmentConnectionId || !assignmentModel.trim()}
+            onClick={() => void assignModel()}
+          >
             Assign role
           </button>
         </div>
       </div>
 
       <div className={styles.assignmentGrid}>
-        {assignments.length === 0 ? <p className={styles.emptyState}>No active profile role assignments.</p> : null}
+        {assignments.length === 0 ? (
+          <p className={styles.emptyState}>No active profile role assignments.</p>
+        ) : null}
         {assignments.map((assignment) => {
           const connection = connectionById.get(assignment.connection_id);
           return (
             <article className={styles.assignmentCard} key={assignment.assignment_id}>
               <span className={styles.label}>{roleLabel(assignment.role)}</span>
               <strong>{assignment.model_id}</strong>
-              <p>{connection ? `${connection.display_name ?? providerLabel(providerById.get(connection.provider_id), connection.provider_id)} · ${connection.routing_type}` : "Connection unavailable"}</p>
+              <p>
+                {connection
+                  ? `${connection.display_name ??
+                      providerLabel(
+                        providerById.get(connection.provider_id),
+                        connection.provider_id,
+                      )} · ${connection.routing_type}`
+                  : "Connection unavailable"}
+              </p>
               <small>{assignment.capabilities.join(" · ")}</small>
+              <div className={styles.secondaryActions}>
+                <button
+                  type="button"
+                  disabled={controlsDisabled}
+                  onClick={() => void clearModelRole(assignment.role)}
+                >
+                  Clear {roleLabel(assignment.role)} role
+                </button>
+              </div>
             </article>
           );
         })}
       </div>
 
       <p className={styles.footnote}>
-        Local inventory is queried only when you explicitly request Ollama models. Refreshing this control center never probes Ollama on behalf of a cloud-selected route. Credentials are never returned to this page.
+        Local inventory is queried only when you explicitly request Ollama models. Refreshing this control
+        center never probes Ollama on behalf of a cloud-selected route. Credentials are never returned to
+        this page.
       </p>
     </section>
   );

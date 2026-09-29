@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bukmatika.ai.credentials import DatabaseCredentialStore, InstallationCredentialKey
 from bukmatika.ai.factory import build_provider_registry
 from bukmatika.ai.provider_connection_domain import (
+    ModelAssignmentListResponse,
     ModelAssignmentResponse,
     ModelAssignmentUpdate,
     ModelRole,
@@ -74,6 +75,31 @@ class ProviderConnectionService:
             return ProviderConnectionListResponse(
                 connections=[_connection_response(connection) for connection in connections]
             )
+
+    async def list_assignments(self, *, principal_id: UUID) -> ModelAssignmentListResponse:
+        async with self._session_scope() as database_session:
+            repository = ProviderConnectionRepository(database_session)
+            connections = {
+                connection.id: connection
+                for connection in await repository.list_connections(principal_id=principal_id)
+            }
+            assignments = await repository.list_assignments(principal_id=principal_id)
+            responses: list[ModelAssignmentResponse] = []
+            for assignment in assignments:
+                connection = connections.get(assignment.connection_id)
+                if connection is None or connection.status != "enabled":
+                    raise ValueError("Active model assignment has no enabled provider connection")
+                provider = self._registry.descriptor(connection.provider_id)
+                if provider.routing_type.value != connection.routing_type:
+                    raise ValueError("Provider connection routing metadata is inconsistent")
+                model = self._registry.describe_model(
+                    provider_id=connection.provider_id,
+                    model_id=assignment.model_id,
+                )
+                responses.append(
+                    _assignment_response(assignment, capabilities=model.capabilities)
+                )
+            return ModelAssignmentListResponse(assignments=responses)
 
     async def create_connection(
         self,

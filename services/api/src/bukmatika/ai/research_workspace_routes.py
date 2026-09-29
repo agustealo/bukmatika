@@ -14,6 +14,7 @@ from bukmatika.ai.gateway import (
     ModelProviderResponseInvalid,
     ModelProviderUnconfigured,
 )
+from bukmatika.ai.provider_connection_routes import router as provider_connection_router
 from bukmatika.ai.research_domain import (
     GroundedResearchExecutionResponse,
     GroundedResearchSelectionRequest,
@@ -30,6 +31,7 @@ from bukmatika.persistence.research import ResearchReaderPositionInvalid, Resear
 from bukmatika.research import ResearchEvidenceReferenceInvalid
 
 router = APIRouter(prefix="/v1/ai", tags=["ai"])
+router.include_router(provider_connection_router)
 
 
 def grounded_research_selection_service(

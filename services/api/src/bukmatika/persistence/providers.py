@@ -76,6 +76,35 @@ class ProviderConnectionRepository:
             raise ProviderConnectionNotFound("Provider connection is unavailable")
         return connection
 
+    async def update_connection(
+        self,
+        *,
+        principal_id: UUID,
+        connection_id: UUID,
+        display_name: str | None,
+        enabled: bool,
+    ) -> AIProviderConnection:
+        connection = await self.get_connection(
+            principal_id=principal_id,
+            connection_id=connection_id,
+        )
+        connection.display_name = (
+            display_name.strip() if display_name is not None and display_name.strip() else None
+        )
+        connection.status = "enabled" if enabled else "disabled"
+        if not enabled:
+            await self._session.execute(
+                update(AIModelAssignment)
+                .where(
+                    AIModelAssignment.principal_id == principal_id,
+                    AIModelAssignment.connection_id == connection_id,
+                    AIModelAssignment.enabled.is_(True),
+                )
+                .values(enabled=False)
+            )
+        await self._session.flush()
+        return connection
+
     async def assign_model(
         self,
         *,

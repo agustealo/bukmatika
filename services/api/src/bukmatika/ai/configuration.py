@@ -35,7 +35,6 @@ from bukmatika.ai.ollama import inspect_ollama_models
 from bukmatika.ai.provider_registry import (
     ProviderCredentialRequired,
     ProviderRegistry,
-    RoutingType,
 )
 from bukmatika.ai.routing_policy import (
     CloudEgressPolicy,
@@ -241,7 +240,12 @@ class PrincipalModelRuntimeResolver:
                     )
                     selected_provider = connection.provider_id
                     selected_model = assignment.model_id
-                    if self._provider_registry.generation_credential_required(connection.provider_id):
+                    provider_requires_credential = (
+                        self._provider_registry.generation_credential_required(
+                            connection.provider_id
+                        )
+                    )
+                    if provider_requires_credential:
                         selected_credential = await self._reveal_connection_credential(
                             database_session=database_session,
                             principal_id=principal_id,

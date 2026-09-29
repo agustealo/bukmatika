@@ -101,7 +101,7 @@ test("cloud-selected AI route renders without probing local Ollama inventory", a
 
   await expect(page.getByRole("heading", { name: "Providers, models & privacy" })).toBeVisible();
   await expect(page.getByText("synthetic-cloud", { exact: true })).toBeVisible();
-  await expect(page.getByText("reasoner-v1", { exact: true })).toBeVisible();
+  await expect(page.getByText("reasoner-v1", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Research cloud · cloud", { exact: true })).toBeVisible();
   await expect(page.getByText("Credential configured", { exact: true })).toBeVisible();
   await expect(page.getByText("Cloud: public/evidence-only data", { exact: true })).toBeVisible();

@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from bukmatika.ai.provider_connection_domain import (
+    ModelAssignmentListResponse,
     ModelAssignmentResponse,
     ModelAssignmentUpdate,
     ModelRole,
@@ -46,6 +47,14 @@ async def list_provider_connections(
     service: Annotated[ProviderConnectionService, Depends(provider_connection_service)],
 ) -> ProviderConnectionListResponse:
     return await service.list_connections(principal_id=identity.principal_id)
+
+
+@router.get("/model-assignments", response_model=ModelAssignmentListResponse)
+async def list_model_assignments(
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    service: Annotated[ProviderConnectionService, Depends(provider_connection_service)],
+) -> ModelAssignmentListResponse:
+    return await service.list_assignments(principal_id=identity.principal_id)
 
 
 @router.post(

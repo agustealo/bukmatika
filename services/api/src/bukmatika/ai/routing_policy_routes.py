@@ -9,7 +9,7 @@ from bukmatika.ai.routing_policy import (
 )
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 
-router = APIRouter(prefix="/v1/ai", tags=["ai-routing-policy"])
+router = APIRouter(tags=["ai-routing-policy"])
 _service = AIRoutingPolicyService()
 
 

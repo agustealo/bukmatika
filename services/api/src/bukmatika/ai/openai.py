@@ -3,7 +3,7 @@ import re
 from urllib.parse import quote
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from bukmatika.ai.gateway import (
     ModelGateway,
@@ -56,7 +56,7 @@ class _OpenAIContent(BaseModel):
 class _OpenAIOutputItem(BaseModel):
     type: str
     role: str | None = None
-    content: list[_OpenAIContent] = []
+    content: list[_OpenAIContent] = Field(default_factory=list)
 
 
 class _OpenAIResponse(BaseModel):

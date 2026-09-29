@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.ai.credentials import (
     CredentialIntegrityError,
+    CredentialKeyUnavailable,
     CredentialReference,
     CredentialUnavailable,
     DatabaseCredentialStore,
@@ -15,7 +16,10 @@ from bukmatika.ai.credentials import (
 )
 from bukmatika.persistence.models import Principal
 from bukmatika.persistence.provider_models import AIProviderCredential
-from bukmatika.persistence.providers import ProviderConnectionRepository
+from bukmatika.persistence.providers import (
+    ProviderConnectionNotFound,
+    ProviderConnectionRepository,
+)
 
 
 async def _principal(session: AsyncSession, suffix: str) -> Principal:
@@ -142,7 +146,7 @@ async def test_cross_principal_reveal_is_rejected(
         secret="owner-secret",
     )
 
-    with pytest.raises(Exception) as captured:
+    with pytest.raises(ProviderConnectionNotFound) as captured:
         await store.reveal(
             principal_id=other.id,
             connection_id=connection.id,
@@ -212,5 +216,5 @@ def test_key_loader_rejects_group_or_world_readable_key(tmp_path: Path) -> None:
     path.write_bytes(os.urandom(32))
     path.chmod(0o644)
 
-    with pytest.raises(Exception, match="permissions"):
+    with pytest.raises(CredentialKeyUnavailable, match="permissions"):
         InstallationCredentialKey(path).load_or_create()

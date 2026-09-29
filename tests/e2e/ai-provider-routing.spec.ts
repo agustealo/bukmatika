@@ -112,7 +112,9 @@ test("cloud-selected AI route renders and clears roles without probing local Oll
   await expect(page.getByRole("heading", { name: "Providers, models & privacy" })).toBeVisible();
   await expect(page.getByText("synthetic-cloud", { exact: true })).toBeVisible();
   await expect(page.getByText("reasoner-v1", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Research cloud · cloud", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("paragraph").filter({ hasText: /^Research cloud · cloud$/ }),
+  ).toBeVisible();
   await expect(page.getByText("Credential configured", { exact: true })).toBeVisible();
   await expect(page.getByText("Cloud: public/evidence-only data", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Load installed Ollama models" })).toHaveCount(0);

@@ -139,6 +139,9 @@ class ProviderRegistry:
     def descriptor(self, provider_id: str) -> ProviderDescriptor:
         return self._registration(provider_id).descriptor
 
+    def generation_credential_required(self, provider_id: str) -> bool:
+        return self._registration(provider_id).credential_model_gateway_factory is not None
+
     def describe_model(self, *, provider_id: str, model_id: str) -> ModelDescriptor:
         descriptor = self._registration(provider_id).describe_model(model_id)
         if descriptor.provider_id != provider_id:

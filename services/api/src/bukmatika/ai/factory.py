@@ -3,6 +3,7 @@ import httpx
 from bukmatika.ai.embedding_gateway import EmbeddingGateway, UnconfiguredEmbeddingGateway
 from bukmatika.ai.gateway import ModelGateway, UnconfiguredModelGateway
 from bukmatika.ai.ollama_provider import ollama_registration
+from bukmatika.ai.openai_provider import openai_registration
 from bukmatika.ai.provider_registry import ProviderRegistry
 from bukmatika.config import Settings
 
@@ -10,6 +11,7 @@ from bukmatika.config import Settings
 def build_provider_registry() -> ProviderRegistry:
     registry = ProviderRegistry()
     registry.register(ollama_registration())
+    registry.register(openai_registration())
     return registry
 
 
@@ -33,6 +35,7 @@ def build_selected_model_gateway(
     client: httpx.AsyncClient,
     provider: str,
     model: str | None,
+    credential: str | None = None,
     registry: ProviderRegistry | None = None,
 ) -> ModelGateway:
     """Construct a generation gateway through the canonical provider registry."""
@@ -47,6 +50,7 @@ def build_selected_model_gateway(
         model_id=normalized_model,
         settings=settings,
         client=client,
+        credential=credential,
     )
 
 

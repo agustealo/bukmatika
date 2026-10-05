@@ -29,10 +29,6 @@ from bukmatika.ai.research_workspace_routes import router as research_workspace_
 from bukmatika.ai.routes import router as ai_router
 from bukmatika.catalog import CatalogResolver
 from bukmatika.config import get_settings
-from bukmatika.discovery.gutenberg import ProjectGutenbergAdapter
-from bukmatika.discovery.internet_archive import InternetArchiveAdapter
-from bukmatika.discovery.library_of_congress import LibraryOfCongressAdapter
-from bukmatika.discovery.openlibrary import OpenLibraryAdapter
 from bukmatika.discovery.registry import ProviderRegistration, ProviderRegistry
 from bukmatika.discovery.service import DiscoveryService
 from bukmatika.domain import (
@@ -56,6 +52,7 @@ from bukmatika.persistence.catalog import CatalogRepository
 from bukmatika.persistence.events import InteractionEventRepository, SemanticEventType
 from bukmatika.persistence.search import CatalogSearchRepository
 from bukmatika.personalization.routes import router as personalization_router
+from bukmatika.plugins import PluginCapability, build_builtin_plugin_registry
 from bukmatika.processing import (
     AssetNotStored,
     DocumentParseError,
@@ -98,28 +95,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     model_client = httpx.AsyncClient(follow_redirects=False, trust_env=False)
     app.state.http_client = discovery_client
     app.state.model_gateway = build_model_gateway(settings=settings, client=model_client)
+    plugin_registry = build_builtin_plugin_registry()
+    app.state.plugins = plugin_registry
+    discovery_plugins = plugin_registry.with_capability(PluginCapability.DISCOVERY_SEARCH)
     registry = ProviderRegistry(
         [
             ProviderRegistration(
-                adapter=OpenLibraryAdapter(discovery_client, settings),
+                adapter=registration.discovery_factory(discovery_client, settings),
                 max_results=settings.discovery_provider_result_limit,
                 timeout_seconds=settings.http_timeout_seconds,
-            ),
-            ProviderRegistration(
-                adapter=InternetArchiveAdapter(discovery_client, settings),
-                max_results=settings.discovery_provider_result_limit,
-                timeout_seconds=settings.http_timeout_seconds,
-            ),
-            ProviderRegistration(
-                adapter=ProjectGutenbergAdapter(discovery_client, settings),
-                max_results=settings.discovery_provider_result_limit,
-                timeout_seconds=settings.http_timeout_seconds,
-            ),
-            ProviderRegistration(
-                adapter=LibraryOfCongressAdapter(discovery_client, settings),
-                max_results=settings.discovery_provider_result_limit,
-                timeout_seconds=settings.http_timeout_seconds,
-            ),
+            )
+            for registration in discovery_plugins
+            if registration.discovery_factory is not None
         ]
     )
     app.state.discovery = DiscoveryService(

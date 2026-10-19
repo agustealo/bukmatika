@@ -106,6 +106,24 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(
+        """
+        DO $
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM encrypted_secrets
+                WHERE owner_kind <> 'ai_provider_connection'
+                   OR slot <> 'api_key'
+                   OR aad_scheme <> 'ai_provider_v1'
+            ) THEN
+                RAISE EXCEPTION
+                    'cannot downgrade generalized secrets after generic secret writes';
+            END IF;
+        END
+        $;
+        """
+    )
     op.create_table(
         "ai_provider_credentials",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),

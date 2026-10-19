@@ -15,11 +15,11 @@ from bukmatika.ai.credentials import (
     InstallationCredentialKey,
 )
 from bukmatika.persistence.models import Principal
-from bukmatika.persistence.secret_models import EncryptedSecret
 from bukmatika.persistence.providers import (
     ProviderConnectionNotFound,
     ProviderConnectionRepository,
 )
+from bukmatika.persistence.secret_models import EncryptedSecret
 
 
 async def _principal(session: AsyncSession, suffix: str) -> Principal:

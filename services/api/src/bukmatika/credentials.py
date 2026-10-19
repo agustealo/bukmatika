@@ -1,4 +1,5 @@
 import os
+import re
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,7 @@ _MAX_SECRET_BYTES = 16_384
 _KEY_VERSION = 1
 _GENERIC_AAD_SCHEME = "owner_slot_v1"
 _LEGACY_AI_AAD_SCHEME = "ai_provider_v1"
+_SECRET_TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_.-]{0,63}")
 
 
 class CredentialUnavailable(LookupError):
@@ -48,14 +50,8 @@ class SecretOwner:
     slot: str
 
     def __post_init__(self) -> None:
-        if not self.owner_kind.strip():
-            raise ValueError("Secret owner kind must not be empty")
-        if self.owner_kind != self.owner_kind.strip():
-            raise ValueError("Secret owner kind must not contain surrounding whitespace")
-        if not self.slot.strip():
-            raise ValueError("Secret slot must not be empty")
-        if self.slot != self.slot.strip():
-            raise ValueError("Secret slot must not contain surrounding whitespace")
+        _validate_secret_token(self.owner_kind, field="owner kind")
+        _validate_secret_token(self.slot, field="slot")
 
 
 class InstallationCredentialKey:
@@ -235,8 +231,7 @@ class DatabaseSecretStore:
         owner_kind: str,
         owner_id: UUID,
     ) -> None:
-        if not owner_kind.strip():
-            raise ValueError("Secret owner kind must not be empty")
+        _validate_secret_token(owner_kind, field="owner kind")
         await self._session.execute(
             delete(EncryptedSecret).where(
                 EncryptedSecret.principal_id == principal_id,
@@ -303,3 +298,10 @@ def _legacy_ai_associated_data(
         f"bukmatika-provider-credential:v{key_version}:"
         f"{principal_id}:{connection_id}:{credential_id}"
     ).encode("ascii")
+
+
+def _validate_secret_token(value: str, *, field: str) -> None:
+    if _SECRET_TOKEN_PATTERN.fullmatch(value) is None:
+        raise ValueError(
+            f"Secret {field} must be a lowercase identifier using letters, digits, '.', '_', or '-'"
+        )

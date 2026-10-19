@@ -114,6 +114,24 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(
+        """
+        DO $
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM encrypted_secrets
+                WHERE owner_kind = 'ai_provider_connection'
+                  AND slot = 'credential'
+                  AND aad_version <> 1
+            ) THEN
+                RAISE EXCEPTION
+                    'cannot downgrade generalized secrets after provider secret rotation';
+            END IF;
+        END
+        $;
+        """
+    )
     op.create_table(
         "ai_provider_credentials",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -181,6 +199,7 @@ def downgrade() -> None:
         FROM encrypted_secrets
         WHERE owner_kind = 'ai_provider_connection'
           AND slot = 'credential'
+          AND aad_version = 1
         """
     )
     op.drop_index(

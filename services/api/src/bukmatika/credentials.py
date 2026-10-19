@@ -1,3 +1,4 @@
+import contextlib
 import os
 import re
 import stat
@@ -91,10 +92,8 @@ class InstallationCredentialKey:
                 offset += written
             os.fsync(descriptor)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(self._path)
-            except OSError:
-                pass
             raise
         finally:
             os.close(descriptor)

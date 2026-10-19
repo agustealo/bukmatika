@@ -210,8 +210,32 @@ class ModelProviderRequestFailed(RuntimeError):
     code = "MODEL_PROVIDER_REQUEST_FAILED"
 
 
+class ModelProviderAuthenticationFailed(ModelProviderRequestFailed):
+    code = "MODEL_PROVIDER_AUTHENTICATION_FAILED"
+
+
+class ModelProviderRateLimited(ModelProviderRequestFailed):
+    code = "MODEL_PROVIDER_RATE_LIMITED"
+
+
+class ModelProviderQuotaExceeded(ModelProviderRequestFailed):
+    code = "MODEL_PROVIDER_QUOTA_EXCEEDED"
+
+
+class ModelProviderUnavailable(ModelProviderRequestFailed):
+    code = "MODEL_PROVIDER_UNAVAILABLE"
+
+
 class ModelProviderResponseInvalid(RuntimeError):
     code = "MODEL_PROVIDER_RESPONSE_INVALID"
+
+
+class ModelProviderResponseIncomplete(ModelProviderResponseInvalid):
+    code = "MODEL_PROVIDER_RESPONSE_INCOMPLETE"
+
+
+class ModelProviderRefused(ModelProviderResponseInvalid):
+    code = "MODEL_PROVIDER_REFUSED"
 
 
 StructuredResponseT = TypeVar("StructuredResponseT", bound=BaseModel)

@@ -13,9 +13,9 @@ from bukmatika.ai.gateway import (
     ModelProviderResponseInvalid,
     ModelReadinessState,
     ModelRequest,
-    ModelTask,
     StructuredResponseT,
 )
+from bukmatika.ai.model_prompts import system_prompt_for_task
 
 
 class _OllamaMessage(BaseModel):
@@ -96,7 +96,7 @@ class OllamaLocalGateway(ModelGateway):
             "stream": False,
             "think": False,
             "messages": [
-                {"role": "system", "content": _system_prompt(request.task)},
+                {"role": "system", "content": system_prompt_for_task(request.task)},
                 {
                     "role": "user",
                     "content": json.dumps(
@@ -195,26 +195,6 @@ def ollama_model_aliases(model: str) -> set[str]:
     if ":" not in model:
         return {model, f"{model}:latest"}
     return {model}
-
-
-def _system_prompt(task: ModelTask) -> str:
-    if task is ModelTask.RESEARCH_ANSWER:
-        return (
-            "Return only JSON matching the supplied schema. Use only the evidence included in the "
-            "request. Every claim must cite one or more supplied evidence_id values. Do not invent "
-            "evidence IDs, source coordinates, facts, or citations. If the evidence is "
-            "insufficient, return a claim that states the limitation and cite the evidence that "
-            "establishes the available context."
-        )
-    if task is ModelTask.RUNTIME_SMOKE:
-        return (
-            "This is a local runtime verification request. Return only JSON matching the supplied "
-            "schema and copy the requested verification values exactly. Do not add commentary."
-        )
-    return (
-        "Return only JSON matching the supplied schema. Follow the request exactly and do not "
-        "invent product state, capabilities, identifiers, or policy decisions."
-    )
 
 
 def validate_ollama_loopback_base_url(value: str) -> str:

@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -126,8 +126,6 @@ async def test_ciphertext_swap_between_owner_slots_fails_authentication(
     first_reference = await store.replace(owner=first_owner, secret="first-secret")
     second_reference = await store.replace(owner=second_owner, secret="second-secret")
 
-    first_id = uuid4()
-    second_id = uuid4()
     first_id = UUID(first_reference.value.removeprefix("credential:"))
     second_id = UUID(second_reference.value.removeprefix("credential:"))
     first = await session.get(EncryptedSecret, first_id)

@@ -1,21 +1,6 @@
-from uuid import uuid4
-
-import pytest
-from fastapi import HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from bukmatika.identity import AuthenticatedPrincipal
-from bukmatika.persistence.models import Principal
 from bukmatika.plugins.builtin import build_builtin_plugin_registry
 from bukmatika.plugins import routes
 from bukmatika.plugins.routes import PluginStatusUpdate
-
-
-async def _identity(session: AsyncSession) -> AuthenticatedPrincipal:
-    principal = Principal(kind="local", external_subject=f"plugin-routes-{uuid4()}")
-    session.add(principal)
-    await session.flush()
-    return AuthenticatedPrincipal(principal_id=principal.id, session_id=uuid4())
 
 
 def test_plugin_routes_registered() -> None:

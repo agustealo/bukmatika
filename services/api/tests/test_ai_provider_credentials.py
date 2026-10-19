@@ -15,7 +15,7 @@ from bukmatika.ai.credentials import (
     InstallationCredentialKey,
 )
 from bukmatika.persistence.models import Principal
-from bukmatika.persistence.provider_models import AIProviderCredential
+from bukmatika.persistence.secret_models import EncryptedSecret
 from bukmatika.persistence.providers import (
     ProviderConnectionNotFound,
     ProviderConnectionRepository,
@@ -64,7 +64,11 @@ async def test_credential_is_encrypted_and_normal_connection_row_only_has_refere
     )
 
     credential = await session.scalar(
-        select(AIProviderCredential).where(AIProviderCredential.connection_id == connection.id)
+        select(EncryptedSecret).where(
+            EncryptedSecret.owner_kind == "ai_provider_connection",
+            EncryptedSecret.owner_id == connection.id,
+            EncryptedSecret.slot == "credential",
+        )
     )
     assert credential is not None
     assert secret.encode() not in credential.ciphertext
@@ -124,8 +128,10 @@ async def test_rotation_invalidates_old_reference_and_removes_old_ciphertext(
 
     rows = list(
         await session.scalars(
-            select(AIProviderCredential).where(
-                AIProviderCredential.connection_id == connection.id
+            select(EncryptedSecret).where(
+                EncryptedSecret.owner_kind == "ai_provider_connection",
+                EncryptedSecret.owner_id == connection.id,
+                EncryptedSecret.slot == "credential",
             )
         )
     )
@@ -172,7 +178,11 @@ async def test_delete_removes_secret_and_reference(
 
     assert connection.credential_reference is None
     assert await session.scalar(
-        select(AIProviderCredential).where(AIProviderCredential.connection_id == connection.id)
+        select(EncryptedSecret).where(
+            EncryptedSecret.owner_kind == "ai_provider_connection",
+            EncryptedSecret.owner_id == connection.id,
+            EncryptedSecret.slot == "credential",
+        )
     ) is None
     with pytest.raises(CredentialUnavailable):
         await store.reveal(
@@ -196,7 +206,11 @@ async def test_ciphertext_tampering_fails_authentication_without_secret_leakage(
         secret=secret,
     )
     credential = await session.scalar(
-        select(AIProviderCredential).where(AIProviderCredential.connection_id == connection.id)
+        select(EncryptedSecret).where(
+            EncryptedSecret.owner_kind == "ai_provider_connection",
+            EncryptedSecret.owner_id == connection.id,
+            EncryptedSecret.slot == "credential",
+        )
     )
     assert credential is not None
     credential.ciphertext = bytes([credential.ciphertext[0] ^ 1]) + credential.ciphertext[1:]

@@ -17,6 +17,7 @@ from bukmatika.persistence import (
     privacy_models,
     provider_models,
     reader_models,
+    secret_models,
 )
 
 config = context.config
@@ -38,6 +39,7 @@ _registered_models = (
     privacy_models.PrivacyErasureObject,
     provider_models.AIProviderConnection,
     reader_models.ReadingState,
+    secret_models.EncryptedSecret,
 )
 target_metadata = _registered_models[0].metadata
 

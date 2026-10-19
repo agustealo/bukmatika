@@ -73,7 +73,11 @@ async def list_plugins(
         )
 
 
-@router.post("/{plugin_id}/install", response_model=PluginState, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{plugin_id}/install",
+    response_model=PluginState,
+    status_code=status.HTTP_201_CREATED,
+)
 async def install_plugin(
     plugin_id: str,
     identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],

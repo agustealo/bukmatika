@@ -1,9 +1,10 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.persistence.plugin_models import PluginInstallation
+from bukmatika.persistence.secret_models import EncryptedSecret
 from bukmatika.plugins.contracts import PluginRegistry
 
 
@@ -68,3 +69,28 @@ class PluginInstallationRepository:
         row.status = "enabled" if enabled else "disabled"
         await self._session.flush()
         return row
+
+    async def uninstall(self, *, principal_id: UUID, plugin_id: str) -> None:
+        """Atomically remove installation-owned credentials and its grant.
+
+        Library content and discovery provenance are never modified.
+        """
+        row = await self.require(principal_id=principal_id, plugin_id=plugin_id)
+        # Lock this installation in the same transaction as secret deletion.
+        await self._session.scalar(
+            select(PluginInstallation.id)
+            .where(
+                PluginInstallation.id == row.id,
+                PluginInstallation.principal_id == principal_id,
+            )
+            .with_for_update()
+        )
+        await self._session.execute(
+            delete(EncryptedSecret).where(
+                EncryptedSecret.principal_id == principal_id,
+                EncryptedSecret.owner_kind == "plugin_installation",
+                EncryptedSecret.owner_id == row.id,
+            )
+        )
+        await self._session.delete(row)
+        await self._session.flush()

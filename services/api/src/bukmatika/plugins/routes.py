@@ -116,3 +116,18 @@ async def update_plugin(
             principal_id=identity.principal_id, plugin_id=plugin_id, enabled=update.enabled
         )
         return _plugin_state(manifest, row.installed_version, row.status == "enabled")
+
+
+@router.delete("/{plugin_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def uninstall_plugin(
+    plugin_id: str,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+) -> None:
+    async with session_scope() as session:
+        repo = PluginInstallationRepository(session, _registry)
+        try:
+            await repo.uninstall(principal_id=identity.principal_id, plugin_id=plugin_id)
+        except (PluginNotInstalled, LookupError) as exc:
+            raise HTTPException(
+                status_code=404, detail={"code": "PLUGIN_NOT_INSTALLED"}
+            ) from exc

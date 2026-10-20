@@ -1,7 +1,5 @@
 import pytest
 
-import pytest
-
 from bukmatika.plugins import routes
 from bukmatika.plugins.builtin import build_builtin_plugin_registry
 from bukmatika.plugins.routes import PluginStatusUpdate

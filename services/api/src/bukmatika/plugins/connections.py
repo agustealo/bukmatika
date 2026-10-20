@@ -8,6 +8,7 @@ from bukmatika.persistence.plugin_connection_models import PluginConnection
 from bukmatika.plugins.connection_contracts import ConnectionFieldKind
 from bukmatika.plugins.contracts import PluginRegistry
 from bukmatika.plugins.installations import PluginInstallationRepository
+from bukmatika.plugins.url_safety import UnsafePluginDestination, validate_public_https_url
 
 
 class PluginConnectionInvalid(ValueError):
@@ -54,8 +55,11 @@ class PluginConnectionRepository:
                     raise PluginConnectionInvalid("Invalid connection port")
             elif not isinstance(value, str) or not value.strip():
                 raise PluginConnectionInvalid("Invalid connection setting")
-            if field.kind is ConnectionFieldKind.URL and not str(value).startswith("https://"):
-                raise PluginConnectionInvalid("Connection URL must use HTTPS")
+            if field.kind is ConnectionFieldKind.URL:
+                try:
+                    validate_public_https_url(str(value))
+                except UnsafePluginDestination as exc:
+                    raise PluginConnectionInvalid("Connection URL is unsafe") from exc
 
         installation = await self._installations.require(
             principal_id=principal_id, plugin_id=plugin_id

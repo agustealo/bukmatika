@@ -36,7 +36,7 @@ def validate_public_https_url(value: str) -> str:
         labels = host.split(".")
         if len(labels) < 2 or any(not label or len(label) > 63 for label in labels):
             raise UnsafePluginDestination("Destination must use a public DNS name")
-        if not all(label.isascii() and label.replace("-", "").isalnum() for label in labels):
+        if not all(\n            label.isascii()\n            and label.replace("-", "").isalnum()\n            and not label.startswith("-")\n            and not label.endswith("-")\n            for label in labels\n        ):
             raise UnsafePluginDestination("Destination host is invalid")
         if labels[-1].lower() in {"local", "internal", "localhost", "test", "invalid"}:
             raise UnsafePluginDestination("Destination host is reserved")

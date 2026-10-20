@@ -17,7 +17,7 @@ def _approved() -> ApprovedHttpsDestination:
 
 def test_https_get_uses_pinned_ip_and_original_tls_hostname() -> None:
     with (
-        patch("bukmatika.plugins.pinned_https.approve_https_destination", return_value=_approved()),
+        patch(\n            "bukmatika.plugins.pinned_https.approve_https_destination", return_value=_approved()\n        ),
         patch("bukmatika.plugins.pinned_https.PinnedHttpsConnection") as conn_cls,
     ):
         response = MagicMock(status=200)
@@ -41,7 +41,7 @@ def test_redirects_are_rejected_without_following() -> None:
     conn_cls.return_value.close.assert_called_once()
 
 
-@pytest.mark.parametrize("route", ["https://other.test", "/other", "/wp-json/wp/v2/../users"])
+@pytest.mark.parametrize(\n    "route", ["https://other.test", "/other", "/wp-json/wp/v2/../users"]\n)
 def test_only_wordpress_rest_routes_allowed(route: str) -> None:
     with pytest.raises(ValueError):
         get_wordpress_rest("https://example.com", route)

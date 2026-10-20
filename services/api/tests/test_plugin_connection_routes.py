@@ -1,6 +1,6 @@
+import pytest
 from fastapi.routing import APIRoute
 from pydantic import ValidationError
-import pytest
 
 from bukmatika.plugins.connection_routes import (
     ConnectionConfiguration,

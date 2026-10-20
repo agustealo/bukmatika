@@ -23,18 +23,19 @@ class WordPressHttpResponse:
 
 class PinnedHttpsConnection(http.client.HTTPSConnection):
     def __init__(self, hostname: str, pinned_ip: str, *, timeout: float = 5.0) -> None:
+        self._verified_context = ssl.create_default_context()
         super().__init__(
             hostname,
             port=443,
             timeout=timeout,
-            context=ssl.create_default_context(),
+            context=self._verified_context,
         )
         self._pinned_ip = pinned_ip
 
     def connect(self) -> None:
         raw = socket.create_connection((self._pinned_ip, 443), self.timeout)
         try:
-            self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
+            self.sock = self._verified_context.wrap_socket(raw, server_hostname=self.host)
         except BaseException:
             raw.close()
             raise

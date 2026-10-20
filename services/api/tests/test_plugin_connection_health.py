@@ -15,7 +15,10 @@ def test_configured_connection_is_not_claimed_healthy() -> None:
 
 
 def test_missing_configuration_is_not_connected() -> None:
-    assert configured_health("wordpress", configured=False).state is ConnectionHealth.NOT_CONFIGURED
+    assert (
+        configured_health("wordpress", configured=False).state
+        is ConnectionHealth.NOT_CONFIGURED
+    )
 
 
 def test_verified_health_requires_real_evidence() -> None:

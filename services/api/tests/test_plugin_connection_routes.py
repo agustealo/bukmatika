@@ -4,6 +4,7 @@ from pydantic import ValidationError
 
 from bukmatika.plugins.connection_routes import (
     ConnectionConfiguration,
+    ConnectionReadiness,
     ConnectionState,
     router,
 )
@@ -17,6 +18,7 @@ def test_connection_routes_are_authenticated_and_explicit() -> None:
     }
     assert ("/v1/plugins/{plugin_id}/connection", ("PUT",)) in methods
     assert ("/v1/plugins/{plugin_id}/connection", ("GET",)) in methods
+    assert ("/v1/plugins/{plugin_id}/connection/health", ("GET",)) in methods
     for route in router.routes:
         assert route.dependant.dependencies
 
@@ -33,3 +35,8 @@ def test_connection_payload_disallows_unknown_top_level_fields() -> None:
 def test_connection_response_does_not_have_secret_field() -> None:
     assert "application_password" not in ConnectionState.model_fields
     assert "password" not in ConnectionState.model_fields
+
+
+def test_health_response_cannot_contain_secrets() -> None:
+    assert "application_password" not in ConnectionReadiness.model_fields
+    assert "password" not in ConnectionReadiness.model_fields

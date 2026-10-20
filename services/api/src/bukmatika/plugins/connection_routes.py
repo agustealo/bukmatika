@@ -12,6 +12,7 @@ from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.plugin_connection_models import PluginConnection
 from bukmatika.plugins.builtin import build_builtin_plugin_registry
+from bukmatika.plugins.connection_health import ConnectionHealth, configured_health
 from bukmatika.plugins.connections import PluginConnectionInvalid, PluginConnectionRepository
 from bukmatika.plugins.installations import PluginInstallationRepository, PluginNotInstalled
 
@@ -105,4 +106,44 @@ async def read_connection(
             schema_version=row.schema_version,
             settings=row.settings,
             configured=True,
+        )
+
+
+class ConnectionReadiness(BaseModel):
+    plugin_id: str
+    state: ConnectionHealth
+    checked_at: str | None
+    evidence: str | None
+
+
+@router.get("/{plugin_id}/connection/health", response_model=ConnectionReadiness)
+async def read_connection_health(
+    plugin_id: str,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+) -> ConnectionReadiness:
+    """Read-only readiness. Never claim network verification from saved settings."""
+    if plugin_id != "wordpress":
+        raise HTTPException(status_code=404, detail={"code": "PLUGIN_NOT_FOUND"})
+    async with session_scope() as session:
+        try:
+            installation = await PluginInstallationRepository(session, _registry).require(
+                principal_id=identity.principal_id, plugin_id=plugin_id
+            )
+        except PluginNotInstalled as exc:
+            raise HTTPException(
+                status_code=404, detail={"code": "PLUGIN_NOT_INSTALLED"}
+            ) from exc
+        connection_id = await session.scalar(
+            select(PluginConnection.id).where(
+                PluginConnection.principal_id == identity.principal_id,
+                PluginConnection.installation_id == installation.id,
+                PluginConnection.plugin_id == plugin_id,
+            )
+        )
+        receipt = configured_health(plugin_id, configured=connection_id is not None)
+        return ConnectionReadiness(
+            plugin_id=receipt.plugin_id,
+            state=receipt.state,
+            checked_at=receipt.checked_at,
+            evidence=receipt.evidence,
         )

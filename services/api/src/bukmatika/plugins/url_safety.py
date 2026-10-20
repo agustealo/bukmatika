@@ -32,10 +32,10 @@ def validate_public_https_url(value: str) -> str:
         raise UnsafePluginDestination("Destination host is not public")
     try:
         ipaddress.ip_address(host)
-    except ValueError:
+    except ValueError as exc:
         labels = host.split(".")
         if len(labels) < 2 or any(not label or len(label) > 63 for label in labels):
-            raise UnsafePluginDestination("Destination must use a public DNS name")
+            raise UnsafePluginDestination("Destination must use a public DNS name") from exc
         if not all(
             label.isascii()
             and label.replace("-", "").isalnum()
@@ -43,9 +43,9 @@ def validate_public_https_url(value: str) -> str:
             and not label.endswith("-")
             for label in labels
         ):
-            raise UnsafePluginDestination("Destination host is invalid")
+            raise UnsafePluginDestination("Destination host is invalid") from exc
         if labels[-1].lower() in {"local", "internal", "localhost", "test", "invalid"}:
-            raise UnsafePluginDestination("Destination host is reserved")
+            raise UnsafePluginDestination("Destination host is reserved") from exc
     else:
         raise UnsafePluginDestination("Literal IP destinations are not accepted")
     return value.rstrip("/")

@@ -2,7 +2,6 @@ from bukmatika.discovery.gutenberg import ProjectGutenbergAdapter
 from bukmatika.discovery.internet_archive import InternetArchiveAdapter
 from bukmatika.discovery.library_of_congress import LibraryOfCongressAdapter
 from bukmatika.discovery.openlibrary import OpenLibraryAdapter
-from bukmatika.plugins.wordpress import WORDPRESS_CONNECTION
 from bukmatika.plugins.contracts import (
     PluginCapability,
     PluginKind,
@@ -10,6 +9,7 @@ from bukmatika.plugins.contracts import (
     PluginRegistration,
     PluginRegistry,
 )
+from bukmatika.plugins.wordpress import WORDPRESS_CONNECTION
 
 
 def build_builtin_plugin_registry() -> PluginRegistry:
@@ -25,7 +25,9 @@ def build_builtin_plugin_registry() -> PluginRegistry:
                     display_name="WordPress",
                     version="0.1.0",
                     kinds=frozenset({PluginKind.PUBLISHING, PluginKind.CONTENT_REPOSITORY}),
-                    capabilities=frozenset({PluginCapability.CONTENT_READ, PluginCapability.CONTENT_PUBLISH}),
+                    capabilities=frozenset(
+                        {PluginCapability.CONTENT_READ, PluginCapability.CONTENT_PUBLISH}
+                    ),
                     requires_connection=True,
                 ),
                 connection_contract=WORDPRESS_CONNECTION,

@@ -63,7 +63,9 @@ def get_wordpress_rest(
         raise UnsafePluginDestination("No approved destination")
     # One pinned IP is used for the socket; the DNS name is never resolved by
     # http.client because PinnedHttpsConnection.connect overrides socket setup.
-    connection = PinnedHttpsConnection(destination.hostname, destination.addresses[0], timeout=timeout)
+    connection = PinnedHttpsConnection(
+        destination.hostname, destination.addresses[0], timeout=timeout
+    )
     try:
         connection.request(
             "GET",

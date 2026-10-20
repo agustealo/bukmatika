@@ -7,7 +7,6 @@ from bukmatika.plugins.connection_contracts import (
     SourceConnectionContract,
 )
 
-
 WORDPRESS_CONNECTION = SourceConnectionContract(
     schema_version=1,
     modes=(

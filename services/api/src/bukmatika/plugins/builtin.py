@@ -9,6 +9,7 @@ from bukmatika.plugins.contracts import (
     PluginRegistration,
     PluginRegistry,
 )
+from bukmatika.plugins.wordpress import WORDPRESS_CONNECTION
 
 
 def build_builtin_plugin_registry() -> PluginRegistry:
@@ -18,6 +19,19 @@ def build_builtin_plugin_registry() -> PluginRegistry:
     discovery_capabilities = frozenset({PluginCapability.DISCOVERY_SEARCH})
     return PluginRegistry(
         (
+            PluginRegistration(
+                manifest=PluginManifest(
+                    plugin_id="wordpress",
+                    display_name="WordPress",
+                    version="0.1.0",
+                    kinds=frozenset({PluginKind.PUBLISHING, PluginKind.CONTENT_REPOSITORY}),
+                    capabilities=frozenset(
+                        {PluginCapability.CONTENT_READ, PluginCapability.CONTENT_PUBLISH}
+                    ),
+                    requires_connection=True,
+                ),
+                connection_contract=WORDPRESS_CONNECTION,
+            ),
             PluginRegistration(
                 manifest=PluginManifest(
                     plugin_id=OpenLibraryAdapter.name,

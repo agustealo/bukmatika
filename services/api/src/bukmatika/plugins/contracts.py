@@ -6,6 +6,7 @@ import httpx
 
 from bukmatika.config import Settings
 from bukmatika.discovery.base import DiscoveryAdapter
+from bukmatika.plugins.connection_contracts import SourceConnectionContract
 
 
 class PluginKind(StrEnum):
@@ -61,8 +62,16 @@ class PluginManifest:
 class PluginRegistration:
     manifest: PluginManifest
     discovery_factory: DiscoveryPluginFactory | None = None
+    connection_contract: SourceConnectionContract | None = None
 
     def __post_init__(self) -> None:
+        if self.manifest.requires_connection != (self.connection_contract is not None):
+            raise ValueError("Connection requirement and schema must agree")
+        if (
+            self.connection_contract is not None
+            and self.connection_contract.schema_version != self.manifest.connection_schema_version
+        ):
+            raise ValueError("Connection schema version differs from manifest")
         has_discovery = PluginCapability.DISCOVERY_SEARCH in self.manifest.capabilities
         if has_discovery != (self.discovery_factory is not None):
             raise ValueError(

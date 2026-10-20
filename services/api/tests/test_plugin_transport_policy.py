@@ -2,7 +2,10 @@ import socket
 
 import pytest
 
-from bukmatika.plugins.transport_policy import ApprovedHttpsDestination, approve_https_destination
+from bukmatika.plugins.transport_policy import (
+    ApprovedHttpsDestination,
+    approve_https_destination,
+)
 from bukmatika.plugins.url_safety import UnsafePluginDestination
 
 

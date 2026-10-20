@@ -8,6 +8,7 @@ and revalidate on every new connection, rather than re-resolving unsafely.
 import ipaddress
 import socket
 from collections.abc import Callable
+from typing import cast
 from urllib.parse import urlsplit
 
 from bukmatika.plugins.url_safety import UnsafePluginDestination, validate_public_https_url
@@ -18,7 +19,7 @@ Resolver = Callable[[str, int], list[tuple[object, ...]]]
 def resolve_public_destination(
     site_url: str,
     *,
-    resolver: Resolver = socket.getaddrinfo,
+    resolver: Resolver | None = None,
 ) -> tuple[str, ...]:
     """Return validated IP addresses, never an unsafe partial DNS answer."""
     validate_public_https_url(site_url)
@@ -26,7 +27,11 @@ def resolve_public_destination(
     if host is None:
         raise UnsafePluginDestination("Destination host is required")
     try:
-        answers = resolver(host, 443)
+        answers = (
+            resolver(host, 443)
+            if resolver is not None
+            else cast(list[tuple[object, ...]], socket.getaddrinfo(host, 443))
+        )
     except (OSError, ValueError) as exc:
         raise UnsafePluginDestination("Destination DNS resolution failed") from exc
     if not answers:
@@ -34,7 +39,10 @@ def resolve_public_destination(
     addresses: set[str] = set()
     try:
         for answer in answers:
-            ip = ipaddress.ip_address(str(answer[4][0]))
+            sockaddr = answer[4]
+            if not isinstance(sockaddr, tuple) or not sockaddr:
+                raise UnsafePluginDestination("Destination DNS response is invalid")
+            ip = ipaddress.ip_address(str(sockaddr[0]))
             if not ip.is_global:
                 raise UnsafePluginDestination("Destination DNS contains non-public IP")
             addresses.add(str(ip))

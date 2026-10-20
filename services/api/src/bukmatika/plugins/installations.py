@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.persistence.plugin_connection_models import PluginConnection
 from bukmatika.persistence.plugin_models import PluginInstallation
 from bukmatika.persistence.secret_models import EncryptedSecret
 from bukmatika.plugins.contracts import PluginRegistry
@@ -85,6 +86,21 @@ class PluginInstallationRepository:
             )
             .with_for_update()
         )
+        connections = await self._session.scalars(
+            select(PluginConnection.id).where(
+                PluginConnection.installation_id == row.id,
+                PluginConnection.principal_id == principal_id,
+            )
+        )
+        connection_ids = list(connections)
+        if connection_ids:
+            await self._session.execute(
+                delete(EncryptedSecret).where(
+                    EncryptedSecret.principal_id == principal_id,
+                    EncryptedSecret.owner_kind == "plugin_connection",
+                    EncryptedSecret.owner_id.in_(connection_ids),
+                )
+            )
         await self._session.execute(
             delete(EncryptedSecret).where(
                 EncryptedSecret.principal_id == principal_id,

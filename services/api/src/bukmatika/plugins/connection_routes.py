@@ -82,9 +82,14 @@ async def read_connection(
     if plugin_id != "wordpress":
         raise HTTPException(status_code=404, detail={"code": "PLUGIN_NOT_FOUND"})
     async with session_scope() as session:
-        installation = await PluginInstallationRepository(session, _registry).require(
-            principal_id=identity.principal_id, plugin_id=plugin_id
-        )
+        try:
+            installation = await PluginInstallationRepository(session, _registry).require(
+                principal_id=identity.principal_id, plugin_id=plugin_id
+            )
+        except PluginNotInstalled as exc:
+            raise HTTPException(
+                status_code=404, detail={"code": "PLUGIN_NOT_INSTALLED"}
+            ) from exc
         row = await session.scalar(
             select(PluginConnection).where(
                 PluginConnection.principal_id == identity.principal_id,

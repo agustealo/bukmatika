@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from bukmatika.plugins import routes
 from bukmatika.plugins.builtin import build_builtin_plugin_registry
@@ -23,5 +24,5 @@ def test_management_capabilities_are_registry_driven() -> None:
 
 def test_status_payload_requires_boolean() -> None:
     assert PluginStatusUpdate(enabled=True).enabled
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         PluginStatusUpdate(enabled="sometimes")

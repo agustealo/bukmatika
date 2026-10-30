@@ -1,6 +1,6 @@
 """Scoped storage for factual WordPress health-check observations."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -43,7 +43,7 @@ class PluginHealthReceiptRepository:
             connection_id=connection_id,
             state=state.value,
             evidence_code=evidence_code,
-            checked_at=checked_at.astimezone(timezone.utc),
+            checked_at=checked_at.astimezone(UTC),
         )
         self._session.add(receipt)
         await self._session.flush()

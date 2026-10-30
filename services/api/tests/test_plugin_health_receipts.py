@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -33,7 +33,7 @@ async def test_receipts_are_principal_scoped_and_observation_only(
     session.add(connection)
     await session.flush()
     repo = PluginHealthReceiptRepository(session)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with pytest.raises(ValueError):
         await repo.record(
             principal_id=first.id,

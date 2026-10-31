@@ -38,8 +38,12 @@ async def test_public_probe_writes_only_actual_observation() -> None:
     assert result is observation
     assert probe.await_count == 1
     assert probe.await_args.args[1] == "https://example.com"
-    assert repository.return_value.record.await_args.kwargs["principal_id"] == principal_id
-    assert repository.return_value.record.await_args.kwargs["connection_id"] == connection_id
+    assert (
+        repository.return_value.record.await_args.kwargs["principal_id"] == principal_id
+    )
+    assert (
+        repository.return_value.record.await_args.kwargs["connection_id"] == connection_id
+    )
     assert repository.return_value.record.await_args.kwargs["evidence_code"] == (
         "PUBLIC_REST_TYPES_200"
     )

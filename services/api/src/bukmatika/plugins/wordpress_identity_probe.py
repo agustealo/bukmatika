@@ -38,7 +38,7 @@ def probe_wordpress_identity(
             ConnectionHealth.UNAVAILABLE, "AUTH_INPUT_INVALID"
         )
     token = base64.b64encode(
-        f"{username}:{application_password}".encode("utf-8")
+        f"{username}:{application_password}".encode()
     ).decode("ascii")
     try:
         response = get_wordpress_rest(

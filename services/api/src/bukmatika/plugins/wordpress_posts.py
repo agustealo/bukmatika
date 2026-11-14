@@ -39,7 +39,7 @@ def fetch_wordpress_posts(
     ):
         raise WordPressPostReadUnavailable("WordPress post request invalid")
     token = base64.b64encode(
-        f"{username}:{application_password}".encode("utf-8")
+        f"{username}:{application_password}".encode()
     ).decode("ascii")
     route = (
         f"/wp-json/wp/v2/posts?context=edit&per_page={_PAGE_SIZE}"

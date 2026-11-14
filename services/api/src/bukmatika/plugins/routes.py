@@ -1,8 +1,8 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
 
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence import session_scope

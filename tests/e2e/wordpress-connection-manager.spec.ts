@@ -27,6 +27,12 @@ test("WordPress manager installs, stores redacted REST settings, and revokes on 
   await expect(page.getByLabel("Application Password")).toHaveValue("");
   await expect(page.getByText("not_tested")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Inspect capabilities" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Enable read-only access" })).toBeVisible();
+  await page.getByRole("button", { name: "Enable read-only access" }).click();
+  await expect(page.getByRole("button", { name: "Disable read access" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Browse posts" })).toBeVisible();
+  await page.getByRole("button", { name: "Disable read access" }).click();
+  await expect(page.getByRole("button", { name: "Enable read-only access" })).toBeVisible();
 
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "Uninstall WordPress" }).click();

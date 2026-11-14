@@ -104,7 +104,8 @@ and the canonical encrypted credential vault. A WordPress REST Application Passw
 may be configured only for a validated public HTTPS origin.
 
 The consumer **Plugins** page at `/plugins` provides WordPress installation,
-REST connection configuration, connection-health checks, and explicit uninstall.
+REST connection configuration, connection-health checks, read-only activation,
+authenticated post-summary browsing, and explicit uninstall.
 Settings are WordPress-owned. Application Passwords are submitted on save, encrypted
 server-side, and never returned in configuration responses.
 

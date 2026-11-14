@@ -1,10 +1,11 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.credentials import DatabaseSecretStore, InstallationCredentialKey, SecretOwner
 from bukmatika.persistence.plugin_connection_models import PluginConnection
+from bukmatika.persistence.plugin_health_models import PluginHealthReceipt
 from bukmatika.plugins.connection_contracts import ConnectionFieldKind
 from bukmatika.plugins.contracts import PluginRegistry
 from bukmatika.plugins.installations import PluginInstallationRepository
@@ -69,7 +70,7 @@ class PluginConnectionRepository:
                 PluginConnection.installation_id == installation.id,
                 PluginConnection.principal_id == principal_id,
                 PluginConnection.plugin_id == plugin_id,
-            )
+            ).with_for_update()
         )
         if row is None:
             row = PluginConnection(
@@ -83,7 +84,14 @@ class PluginConnectionRepository:
             self._session.add(row)
             await self._session.flush()
         else:
-            # Mode changes invalidate all previous connection-owned credentials.
+            # A new URL, username, or password invalidates all prior probe evidence.
+            # The row lock serializes reconfiguration with on-demand probe execution.
+            await self._session.execute(
+                delete(PluginHealthReceipt).where(
+                    PluginHealthReceipt.principal_id == principal_id,
+                    PluginHealthReceipt.connection_id == row.id,
+                )
+            )
             await self._secrets.delete_owner(
                 principal_id=principal_id,
                 owner_kind="plugin_connection",

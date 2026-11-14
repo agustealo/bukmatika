@@ -345,7 +345,6 @@ async def test_concurrent_first_destination_creation_converges_on_one_identity(
 
 
 async def test_locked_delivery_refresh_prevents_stale_successful_replay(
-    session: AsyncSession,
     tmp_path: Path,
 ) -> None:
     database_url = os.getenv("BUKMATIKA_DATABASE_URL")

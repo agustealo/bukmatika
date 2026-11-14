@@ -117,14 +117,13 @@ async def test_unavailable_probe_cannot_return_granted_capabilities(
             "AUTH_CAPABILITY_REJECTED",
             {"publish_posts": True},
         ),
-    ):
-        with pytest.raises(ValueError, match="cannot grant"):
-            await verify_wordpress_capabilities(
-                session,
-                principal_id=owner.id,
-                connection_id=connection.id,
-                installation_key=key,
-            )
+    ), pytest.raises(ValueError, match="cannot grant"):
+        await verify_wordpress_capabilities(
+            session,
+            principal_id=owner.id,
+            connection_id=connection.id,
+            installation_key=key,
+        )
     assert await PluginHealthReceiptRepository(session).latest(
         principal_id=owner.id, connection_id=connection.id
     ) is None

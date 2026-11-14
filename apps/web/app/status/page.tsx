@@ -15,6 +15,7 @@ export default function StatusPage() {
           <a href="/status" aria-current="page">Status</a>
           <a href="/research">Research</a>
           <a href="/personalization">AI</a>
+          <a href="/plugins">Plugins</a>
         </nav>
       </header>
 

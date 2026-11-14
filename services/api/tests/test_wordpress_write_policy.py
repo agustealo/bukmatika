@@ -85,15 +85,17 @@ async def test_write_policy_denies_disabled_plugin_before_live_probe(
         registry,
         installation_key=key,
     )
-    with patch(
-        "bukmatika.plugins.wordpress_write_policy.verify_wordpress_capabilities",
-        new_callable=AsyncMock,
-    ) as verify:
-        with pytest.raises(WordPressWriteDenied):
-            await policy.authorize(
-                principal_id=principal.id,
-                action=WordPressWriteAction.CREATE_DRAFT,
-            )
+    with (
+        patch(
+            "bukmatika.plugins.wordpress_write_policy.verify_wordpress_capabilities",
+            new_callable=AsyncMock,
+        ) as verify,
+        pytest.raises(WordPressWriteDenied),
+    ):
+        await policy.authorize(
+            principal_id=principal.id,
+            action=WordPressWriteAction.CREATE_DRAFT,
+        )
     verify.assert_not_awaited()
 
 
@@ -208,13 +210,15 @@ async def test_write_policy_requires_live_publish_capability(
         "AUTH_CAPABILITY_TRANSPORT_UNAVAILABLE",
         _capabilities(),
     )
-    with patch(
-        "bukmatika.plugins.wordpress_write_policy.verify_wordpress_capabilities",
-        new_callable=AsyncMock,
-        return_value=unavailable,
+    with (
+        patch(
+            "bukmatika.plugins.wordpress_write_policy.verify_wordpress_capabilities",
+            new_callable=AsyncMock,
+            return_value=unavailable,
+        ),
+        pytest.raises(WordPressWriteDenied),
     ):
-        with pytest.raises(WordPressWriteDenied):
-            await policy.authorize(
-                principal_id=principal.id,
-                action=WordPressWriteAction.CREATE_DRAFT,
-            )
+        await policy.authorize(
+            principal_id=principal.id,
+            action=WordPressWriteAction.CREATE_DRAFT,
+        )

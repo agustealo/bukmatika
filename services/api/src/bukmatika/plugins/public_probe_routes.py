@@ -25,6 +25,13 @@ from bukmatika.plugins.public_probe_receipts import record_public_wordpress_prob
 router = APIRouter(prefix="/v1/plugins", tags=["plugins"])
 _registry = build_builtin_plugin_registry()
 _PROBE_COOLDOWN = timedelta(seconds=60)
+_PUBLIC_EVIDENCE_CODES = (
+    "PUBLIC_REST_TYPES_200",
+    "TRANSPORT_UNAVAILABLE",
+    "HTTP_NOT_SUCCESSFUL",
+    "INVALID_JSON",
+    "INVALID_WORDPRESS_SCHEMA",
+)
 
 
 class PublicRestProbeStatus(BaseModel):
@@ -93,7 +100,9 @@ async def get_public_rest_probe(
         if connection is None:
             return _format_public_rest_status(ConnectionHealth.NOT_CONFIGURED)
         receipt = await PluginHealthReceiptRepository(session).latest(
-            principal_id=identity.principal_id, connection_id=connection.id
+            principal_id=identity.principal_id,
+            connection_id=connection.id,
+            evidence_codes=_PUBLIC_EVIDENCE_CODES,
         )
         if receipt is None:
             return _format_public_rest_status(ConnectionHealth.NOT_TESTED)
@@ -119,15 +128,21 @@ async def run_public_rest_probe(
             raise HTTPException(status_code=409, detail={"code": "CONNECTION_NOT_CONFIGURED"})
         receipts = PluginHealthReceiptRepository(session)
         previous = await receipts.latest(
-            principal_id=identity.principal_id, connection_id=connection.id
+            principal_id=identity.principal_id,
+            connection_id=connection.id,
+            evidence_codes=_PUBLIC_EVIDENCE_CODES,
         )
         if previous is not None and _cooldown_active(previous.checked_at, datetime.now(UTC)):
             raise HTTPException(status_code=429, detail={"code": "PROBE_COOLDOWN"})
         await record_public_wordpress_probe(
-            session, principal_id=identity.principal_id, connection_id=connection.id
+            session, principal_id=identity.principal_id,
+            connection_id=connection.id,
+            evidence_codes=_PUBLIC_EVIDENCE_CODES,
         )
         recorded = await receipts.latest(
-            principal_id=identity.principal_id, connection_id=connection.id
+            principal_id=identity.principal_id,
+            connection_id=connection.id,
+            evidence_codes=_PUBLIC_EVIDENCE_CODES,
         )
         if recorded is None:
             raise RuntimeError("Public WordPress probe did not persist an observation")

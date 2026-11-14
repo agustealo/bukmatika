@@ -8,9 +8,13 @@ import pytest
 from fastapi import HTTPException
 from fastapi.routing import APIRoute
 
+from bukmatika.credentials import CredentialUnavailable
 from bukmatika.plugins.connection_health import ConnectionHealth
 from bukmatika.plugins.public_probe_routes import (
     PublicRestProbeStatus,
+    WordPressIdentityStatus,
+    check_wordpress_identity,
+    get_wordpress_identity_status,
     _cooldown_active,
     get_public_rest_probe,
     router,
@@ -137,3 +141,115 @@ async def test_repeated_public_probe_is_throttled_without_network() -> None:
         await run_public_rest_probe("wordpress", identity)
     assert exc.value.status_code == 429
     network.assert_not_awaited()
+
+
+def test_identity_routes_are_authenticated_and_not_publishing_authorized() -> None:
+    path = "/v1/plugins/{plugin_id}/connection/identity-probe"
+    methods = {
+        (route.path, tuple(sorted(route.methods or set())))
+        for route in router.routes
+        if isinstance(route, APIRoute)
+    }
+    assert (path, ("GET",)) in methods
+    assert (path, ("POST",)) in methods
+    assert WordPressIdentityStatus.model_fields["publishing_authorized"].default is False
+
+
+@pytest.mark.asyncio
+async def test_identity_status_reads_scoped_evidence_without_network() -> None:
+    identity = SimpleNamespace(principal_id=uuid4())
+    connection = SimpleNamespace(id=uuid4())
+    receipt = SimpleNamespace(
+        state="verified",
+        evidence_code="AUTH_IDENTITY_200",
+        checked_at=datetime.now(UTC),
+    )
+    with (
+        patch("bukmatika.plugins.public_probe_routes.session_scope", _fake_session),
+        patch(
+            "bukmatika.plugins.public_probe_routes._connection",
+            new_callable=AsyncMock,
+            return_value=connection,
+        ),
+        patch(
+            "bukmatika.plugins.public_probe_routes.PluginHealthReceiptRepository"
+        ) as repository,
+        patch(
+            "bukmatika.plugins.public_probe_routes.verify_wordpress_identity",
+            new_callable=AsyncMock,
+        ) as network,
+    ):
+        repository.return_value.latest = AsyncMock(return_value=receipt)
+        result = await get_wordpress_identity_status("wordpress", identity)
+    assert result.scope == "application_password_identity"
+    assert result.credentials_verified
+    assert not result.publishing_authorized
+    assert repository.return_value.latest.await_args.kwargs["evidence_codes"]
+    network.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_identity_post_uses_vault_and_returns_separate_credential_scope() -> None:
+    identity = SimpleNamespace(principal_id=uuid4())
+    connection = SimpleNamespace(id=uuid4())
+    receipt = SimpleNamespace(
+        state="verified",
+        evidence_code="AUTH_IDENTITY_200",
+        checked_at=datetime.now(UTC),
+    )
+    with (
+        patch("bukmatika.plugins.public_probe_routes.session_scope", _fake_session),
+        patch(
+            "bukmatika.plugins.public_probe_routes._connection",
+            new_callable=AsyncMock,
+            return_value=connection,
+        ) as lookup,
+        patch(
+            "bukmatika.plugins.public_probe_routes.PluginHealthReceiptRepository"
+        ) as repository,
+        patch(
+            "bukmatika.plugins.public_probe_routes.verify_wordpress_identity",
+            new_callable=AsyncMock,
+        ) as verification,
+        patch(
+            "bukmatika.plugins.public_probe_routes.get_settings"
+        ) as settings,
+    ):
+        repository.return_value.latest = AsyncMock(side_effect=[None, receipt])
+        settings.return_value.credential_key_path = "/tmp/bukmatika-test-key"
+        result = await check_wordpress_identity("wordpress", identity)
+    verification.assert_awaited_once()
+    assert verification.await_args.kwargs["principal_id"] == identity.principal_id
+    assert lookup.await_args.kwargs["lock"] is True
+    assert result.credentials_verified
+    assert not result.publishing_authorized
+    assert result.evidence_code == "AUTH_IDENTITY_200"
+
+
+@pytest.mark.asyncio
+async def test_missing_identity_credential_never_claims_success() -> None:
+    identity = SimpleNamespace(principal_id=uuid4())
+    connection = SimpleNamespace(id=uuid4())
+    with (
+        patch("bukmatika.plugins.public_probe_routes.session_scope", _fake_session),
+        patch(
+            "bukmatika.plugins.public_probe_routes._connection",
+            new_callable=AsyncMock,
+            return_value=connection,
+        ),
+        patch(
+            "bukmatika.plugins.public_probe_routes.PluginHealthReceiptRepository"
+        ) as repository,
+        patch(
+            "bukmatika.plugins.public_probe_routes.verify_wordpress_identity",
+            new_callable=AsyncMock,
+            side_effect=CredentialUnavailable("private credential"),
+        ),
+        patch("bukmatika.plugins.public_probe_routes.get_settings") as settings,
+        pytest.raises(HTTPException) as exc,
+    ):
+        repository.return_value.latest = AsyncMock(return_value=None)
+        settings.return_value.credential_key_path = "/tmp/bukmatika-test-key"
+        await check_wordpress_identity("wordpress", identity)
+    assert exc.value.status_code == 409
+    assert exc.value.detail == {"code": "CREDENTIAL_UNAVAILABLE"}

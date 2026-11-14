@@ -1,6 +1,6 @@
 """Persist authenticated WordPress capability observations.
 
-Revision ID: 0029_wordpress_capability_snapshots
+Revision ID: 0029_wp_capability_snapshots
 Revises: 0028_plugin_health_receipts
 """
 
@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0029_wordpress_capability_snapshots"
+revision = "0029_wp_capability_snapshots"
 down_revision = "0028_plugin_health_receipts"
 branch_labels = None
 depends_on = None

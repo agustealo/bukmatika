@@ -50,14 +50,22 @@ class PluginHealthReceiptRepository:
         return receipt
 
     async def latest(
-        self, *, principal_id: UUID, connection_id: UUID
+        self,
+        *,
+        principal_id: UUID,
+        connection_id: UUID,
+        evidence_codes: tuple[str, ...] | None = None,
     ) -> PluginHealthReceipt | None:
+        query = select(PluginHealthReceipt).where(
+            PluginHealthReceipt.principal_id == principal_id,
+            PluginHealthReceipt.connection_id == connection_id,
+        )
+        if evidence_codes is not None:
+            if not evidence_codes:
+                return None
+            query = query.where(PluginHealthReceipt.evidence_code.in_(evidence_codes))
         return await self._session.scalar(
-            select(PluginHealthReceipt)
-            .where(
-                PluginHealthReceipt.principal_id == principal_id,
-                PluginHealthReceipt.connection_id == connection_id,
-            )
-            .order_by(PluginHealthReceipt.checked_at.desc(), PluginHealthReceipt.id.desc())
-            .limit(1)
+            query.order_by(
+                PluginHealthReceipt.checked_at.desc(), PluginHealthReceipt.id.desc()
+            ).limit(1)
         )

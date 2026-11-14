@@ -59,3 +59,19 @@ async def test_receipts_are_principal_scoped_and_observation_only(
     )
     assert (await repo.latest(principal_id=first.id, connection_id=connection.id)) == record
     assert await repo.latest(principal_id=other.id, connection_id=connection.id) is None
+    assert (
+        await repo.latest(
+            principal_id=first.id,
+            connection_id=connection.id,
+            evidence_codes=("PUBLIC_REST_TYPES_200",),
+        )
+        is None
+    )
+    assert (
+        await repo.latest(
+            principal_id=first.id,
+            connection_id=connection.id,
+            evidence_codes=("CONNECT_TIMEOUT",),
+        )
+        == record
+    )

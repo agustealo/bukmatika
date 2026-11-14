@@ -29,7 +29,12 @@ class PluginInstallationRepository:
         return list(rows)
 
     async def require(
-        self, *, principal_id: UUID, plugin_id: str, enabled_only: bool = False
+        self,
+        *,
+        principal_id: UUID,
+        plugin_id: str,
+        enabled_only: bool = False,
+        lock: bool = False,
     ) -> PluginInstallation:
         query = select(PluginInstallation).where(
             PluginInstallation.principal_id == principal_id,
@@ -37,6 +42,8 @@ class PluginInstallationRepository:
         )
         if enabled_only:
             query = query.where(PluginInstallation.status == "enabled")
+        if lock:
+            query = query.with_for_update()
         row = await self._session.scalar(query)
         if row is None:
             raise PluginNotInstalled("Plugin is not installed or enabled")
@@ -66,7 +73,11 @@ class PluginInstallationRepository:
     async def set_enabled(
         self, *, principal_id: UUID, plugin_id: str, enabled: bool
     ) -> PluginInstallation:
-        row = await self.require(principal_id=principal_id, plugin_id=plugin_id)
+        row = await self.require(
+            principal_id=principal_id,
+            plugin_id=plugin_id,
+            lock=True,
+        )
         row.status = "enabled" if enabled else "disabled"
         await self._session.flush()
         return row
@@ -76,15 +87,10 @@ class PluginInstallationRepository:
 
         Library content and discovery provenance are never modified.
         """
-        row = await self.require(principal_id=principal_id, plugin_id=plugin_id)
-        # Lock this installation in the same transaction as secret deletion.
-        await self._session.scalar(
-            select(PluginInstallation.id)
-            .where(
-                PluginInstallation.id == row.id,
-                PluginInstallation.principal_id == principal_id,
-            )
-            .with_for_update()
+        row = await self.require(
+            principal_id=principal_id,
+            plugin_id=plugin_id,
+            lock=True,
         )
         connections = await self._session.scalars(
             select(PluginConnection.id).where(

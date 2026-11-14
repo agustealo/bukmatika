@@ -104,10 +104,16 @@ and the canonical encrypted credential vault. A WordPress REST Application Passw
 may be configured only for a validated public HTTPS origin.
 
 The consumer **Plugins** page at `/plugins` provides WordPress installation,
-REST connection configuration, connection-health checks, read-only activation,
-authenticated post-summary browsing, and explicit uninstall.
-Settings are WordPress-owned. Application Passwords are submitted on save, encrypted
-server-side, and never returned in configuration responses.
+REST connection configuration, explicit enable/disable, connection-health checks, and
+explicit uninstall. Settings are WordPress-owned. Application Passwords are submitted
+on save, encrypted server-side, and never returned in configuration responses.
+
+Installation remains disabled by default and saving a connection never activates a
+plugin implicitly. Enabling a connection-backed plugin requires the current declared
+connection schema/mode, complete non-secret settings, and every declared encrypted
+secret slot. Activation is principal-scoped and row-locked with configuration/uninstall
+state transitions. It only makes the plugin eligible to enter the canonical
+`PluginExecutionPolicy`; it does not authorize any content mutation.
 
 Three separate checks are available:
 
@@ -118,20 +124,31 @@ Three separate checks are available:
 
 A successful check does not grant publishing authority. Checks are read-only, run
 through restricted pinned-IP HTTPS, are principal-scoped, and have a 60-second
-per-check cooldown. Saving or rotating a connection invalidates old observations.
-Capability booleans are intentionally not reconstructed from stored health codes.
+per-check cooldown. WordPress capability checks persist their exact observed booleans
+in a source-owned snapshot so the consumer can restore the last observation after
+reload without performing another network request. The snapshot and its health receipt
+share one timestamp and evidence code. Saving or rotating a connection invalidates both
+the generic probe receipts and all prior capability snapshots while holding the same
+connection row lock used by authenticated probes.
 
-WordPress REST connections with a stored Application Password can now be explicitly
-enabled for authenticated **read-only** `GET /v1/plugins/wordpress/posts?page=1`
-browsing. Each bounded request checks remote `edit_posts` afresh and retrieves at
-most 20 post summaries over pinned HTTPS. This does not authorize publishing.
-Disabling the plugin revokes reads; saving or rotating credentials disables the
-plugin, requiring reactivation.
+Persisted capability snapshots are evidence only. They are never a write grant and
+must not substitute for live capability/policy revalidation when a future mutation is
+attempted.
 
-**Still disabled:** WordPress create/update/delete/publish mutations,
-direct MySQL/MariaDB access, SSH tunnels, and consumer release packaging.
-These require explicit write policy, end-to-end acceptance, connection lifecycle and
-network/security proofs. The plugin architecture remains tracked by issue #184.
+With an enabled WordPress REST plugin, the consumer can browse **read-only**
+post summaries through authenticated `GET /v1/plugins/wordpress/posts?page=1`.
+Each request revalidates remote `edit_posts`, uses a fixed, bounded HTTPS GET
+route for at most 20 posts per page, and never returns a post body or credential.
+Connection rotation disables the plugin, clears old receipts and snapshots, and
+requires the owner to explicitly reactivate it. This does not grant publish access.
+
+**Still disabled:** WordPress publishing mutations, direct MySQL/MariaDB access, SSH
+tunnels, and consumer release packaging. Connection-backed plugin activation is now
+available, but every executable capability still passes the canonical plugin execution
+policy and any source/action-specific live policy required for that operation. Publishing
+still requires fresh write-capability enforcement, durable publication/delivery receipts,
+retry safety, and end-to-end WordPress acceptance. The plugin architecture remains
+tracked by issue #184.
 
 The application must not claim WordPress consumer publishing readiness until
 these remaining gates are satisfied.

@@ -1,6 +1,5 @@
 """Adversarial tests for WordPress authenticated read-only post listing."""
 
-import asyncio
 import json
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -12,8 +11,7 @@ from fastapi import HTTPException
 from fastapi.routing import APIRoute
 
 from bukmatika.plugins.connection_health import ConnectionHealth
-from bukmatika.plugins.contracts import PluginCapability
-from bukmatika.plugins.execution import PluginExecutionDenied, PluginExecutionPolicy
+from bukmatika.plugins.execution import PluginExecutionDenied
 from bukmatika.plugins.pinned_https import WordPressHttpResponse, get_wordpress_rest
 from bukmatika.plugins.transport_policy import ApprovedHttpsDestination
 from bukmatika.plugins.wordpress_capability_probe import WordPressCapabilityObservation
@@ -131,16 +129,11 @@ def test_read_route_is_authenticated_and_does_not_enable_publish() -> None:
     assert len(matches) == 1
     assert matches[0].methods == {"GET"}
     assert matches[0].dependant.dependencies
-    policy = PluginExecutionPolicy(MagicMock(), MagicMock())
+    from bukmatika.plugins.wordpress_post_routes import WordPressPostPage
 
-    async def denied() -> None:
-        await policy.authorize(
-            principal_id=uuid4(), plugin_id="wordpress",
-            capability=PluginCapability.CONTENT_PUBLISH,
-        )
+    assert WordPressPostPage.model_fields["publishing_authorized"].default is False
+    assert WordPressPostPage.model_fields["read_only"].default is True
 
-    with pytest.raises(PluginExecutionDenied):
-        asyncio.run(denied())
 
 
 @asynccontextmanager

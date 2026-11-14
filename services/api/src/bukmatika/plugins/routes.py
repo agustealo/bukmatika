@@ -2,13 +2,17 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
 
+from bukmatika.config import get_settings
+from bukmatika.credentials import InstallationCredentialKey
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence import session_scope
-from bukmatika.persistence.plugin_connection_models import PluginConnection
-from bukmatika.persistence.plugin_models import PluginInstallation
-from bukmatika.persistence.secret_models import EncryptedSecret
+from bukmatika.plugins.activation import (
+    PluginActivationConnectionRequired,
+    PluginActivationDenied,
+    PluginActivationService,
+    PluginActivationVersionMismatch,
+)
 from bukmatika.plugins.builtin import build_builtin_plugin_registry
 from bukmatika.plugins.installations import PluginInstallationRepository, PluginNotInstalled
 
@@ -107,56 +111,29 @@ async def update_plugin(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail={"code": "PLUGIN_NOT_FOUND"}) from exc
     async with session_scope() as session:
-        repo = PluginInstallationRepository(session, _registry)
+        activation = PluginActivationService(
+            session,
+            _registry,
+            installation_key=InstallationCredentialKey(get_settings().credential_key_path),
+        )
         try:
-            row = await repo.require(principal_id=identity.principal_id, plugin_id=plugin_id)
-        except PluginNotInstalled as exc:
-            raise HTTPException(status_code=404, detail={"code": "PLUGIN_NOT_INSTALLED"}) from exc
-        # Linearize enable/disable with connection rotation and uninstall.
-        await session.scalar(
-            select(PluginInstallation.id)
-            .where(
-                PluginInstallation.id == row.id,
-                PluginInstallation.principal_id == identity.principal_id,
+            row = await activation.set_enabled(
+                principal_id=identity.principal_id,
+                plugin_id=plugin_id,
+                enabled=update.enabled,
             )
-            .with_for_update()
-        )
-        if update.enabled and row.installed_version != manifest.version:
-            raise HTTPException(status_code=409, detail={"code": "PLUGIN_VERSION_MISMATCH"})
-        if update.enabled and manifest.requires_connection:
-            # Activation permits guarded reads, never a publish operation.
-            if plugin_id != "wordpress":
-                raise HTTPException(
-                    status_code=409, detail={"code": "PLUGIN_CONNECTION_REQUIRED"}
-                )
-            connection = await session.scalar(
-                select(PluginConnection).where(
-                    PluginConnection.installation_id == row.id,
-                    PluginConnection.principal_id == identity.principal_id,
-                    PluginConnection.plugin_id == plugin_id,
-                    PluginConnection.mode_id == "rest",
-                    PluginConnection.schema_version == manifest.connection_schema_version,
-                )
-            )
-            if connection is None:
-                raise HTTPException(
-                    status_code=409, detail={"code": "PLUGIN_CONNECTION_REQUIRED"}
-                )
-            secret_id = await session.scalar(
-                select(EncryptedSecret.id).where(
-                    EncryptedSecret.principal_id == identity.principal_id,
-                    EncryptedSecret.owner_kind == "plugin_connection",
-                    EncryptedSecret.owner_id == connection.id,
-                    EncryptedSecret.slot == "application_password",
-                )
-            )
-            if secret_id is None:
-                raise HTTPException(
-                    status_code=409, detail={"code": "PLUGIN_CREDENTIAL_REQUIRED"}
-                )
-        row = await repo.set_enabled(
-            principal_id=identity.principal_id, plugin_id=plugin_id, enabled=update.enabled
-        )
+        except PluginActivationConnectionRequired as exc:
+            raise HTTPException(
+                status_code=409, detail={"code": "PLUGIN_CONNECTION_REQUIRED"}
+            ) from exc
+        except PluginActivationVersionMismatch as exc:
+            raise HTTPException(
+                status_code=409, detail={"code": "PLUGIN_VERSION_MISMATCH"}
+            ) from exc
+        except PluginActivationDenied as exc:
+            raise HTTPException(
+                status_code=404, detail={"code": "PLUGIN_NOT_INSTALLED"}
+            ) from exc
         return _plugin_state(manifest, row.installed_version, row.status == "enabled")
 
 

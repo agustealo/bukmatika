@@ -38,8 +38,8 @@ type ProbeStatus = {
 type CapabilityStatus = {
   plugin_id: string;
   state: ReceiptState;
-  checked_at: string;
-  evidence_code: string;
+  checked_at: string | null;
+  evidence_code: string | null;
   capabilities_observed: boolean;
   capabilities: Record<string, boolean>;
   publishing_authorized: boolean;
@@ -99,17 +99,20 @@ export function WordPressConnectionManager() {
         setCapabilities(null);
         return;
       }
-      const [configured, publicProbe, identityProbe] = await Promise.all([
+      const [configured, publicProbe, identityProbe, capabilityProbe] = await Promise.all([
         apiFetch(`${ROOT}/connection`),
         apiFetch(`${ROOT}/connection/public-probe`),
         apiFetch(`${ROOT}/connection/identity-probe`),
+        apiFetch(`${ROOT}/connection/capability-probe`),
       ]);
       if (!configured.ok && configured.status !== 404) {
         throw new Error(await apiError(configured));
       }
       if (!publicProbe.ok) throw new Error(await apiError(publicProbe));
       if (!identityProbe.ok) throw new Error(await apiError(identityProbe));
+      if (!capabilityProbe.ok) throw new Error(await apiError(capabilityProbe));
       const saved = configured.ok ? ((await configured.json()) as ConnectionState) : null;
+      const savedCapabilities = (await capabilityProbe.json()) as CapabilityStatus;
       setConnection(saved);
       setPublicStatus((await publicProbe.json()) as ProbeStatus);
       setIdentityStatus((await identityProbe.json()) as ProbeStatus);
@@ -120,9 +123,11 @@ export function WordPressConnectionManager() {
         setSiteUrl("");
         setUsername("");
       }
-      // Capability booleans are live, request-local evidence and are never reconstructed
-      // from a generic health receipt after navigation or a configuration refresh.
-      setCapabilities(null);
+      setCapabilities(
+        savedCapabilities.state === "not_tested" || savedCapabilities.state === "not_configured"
+          ? null
+          : savedCapabilities,
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Connection state unavailable.");
     } finally {
@@ -190,6 +195,20 @@ export function WordPressConnectionManager() {
     if (response) setCapabilities(null);
   };
 
+  const setEnabled = async (enabled: boolean) => {
+    await act(
+      () =>
+        apiFetch(ROOT, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled }),
+        }),
+      enabled
+        ? "WordPress enabled for guarded plugin actions. Publishing is still disabled."
+        : "WordPress disabled. Saved connection settings remain available.",
+    );
+  };
+
   const probe = async (kind: "public" | "identity" | "capability") => {
     const route =
       kind === "public"
@@ -211,21 +230,6 @@ export function WordPressConnectionManager() {
     } else {
       setCapabilities(result as CapabilityStatus);
     }
-  };
-
-  const toggleRead = async () => {
-    if (!wordpress?.installed || !connection) return;
-    const enabled = !wordpress.enabled;
-    await act(
-      () => apiFetch(ROOT, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled }),
-      }),
-      enabled
-        ? "Read-only access enabled. Publishing remains disabled."
-        : "Read access disabled.",
-    );
   };
 
   const uninstall = async () => {
@@ -257,19 +261,28 @@ export function WordPressConnectionManager() {
             <div className={styles.heading}>
               <div>
                 <h2>{wordpress?.display_name ?? "WordPress"}</h2>
-                <p>Version {wordpress?.version ?? "unavailable"} · {wordpress?.installed ? "Installed" : "Not installed"}</p>
+                <p>
+                  Version {wordpress?.version ?? "unavailable"} · {wordpress?.installed ? "Installed" : "Not installed"}
+                  {wordpress?.installed ? ` · ${wordpress.enabled ? "Enabled" : "Disabled"}` : ""}
+                </p>
               </div>
               {!wordpress?.installed && <button type="button" disabled={busy || !wordpress} onClick={() => void install()}>Install</button>}
+              {wordpress?.installed && connection && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void setEnabled(!wordpress.enabled)}
+                >
+                  {wordpress.enabled ? "Disable WordPress" : "Enable WordPress"}
+                </button>
+              )}
             </div>
             {wordpress?.installed && (
-              <>
-                <p className={styles.help}>Publishing execution remains disabled until write-policy acceptance is complete.</p>
-                {connection && (
-                  <button type="button" disabled={busy} onClick={() => void toggleRead()}>
-                    {wordpress.enabled ? "Disable read access" : "Enable read-only access"}
-                  </button>
-                )}
-              </>
+              <p className={styles.help}>
+                {connection
+                  ? "Activation is explicit. Enabled plugins may enter guarded product actions, but capability observations still do not authorize publishing."
+                  : "Save a complete connection before enabling this plugin. Configuration never activates it automatically."}
+              </p>
             )}
           </section>
 
@@ -310,7 +323,7 @@ export function WordPressConnectionManager() {
                     </article>
                     <article>
                       <h3>WordPress capabilities</h3>
-                      <p>Live observations only. A successful identity check does not establish publishing permission.</p>
+                      <p>Last observed capability evidence is restored after reload. It remains evidence only and does not establish publishing permission.</p>
                       <button type="button" disabled={busy} onClick={() => void probe("capability")}>Inspect capabilities</button>
                       {capabilities && (
                         <div className={styles.result}>
@@ -329,7 +342,10 @@ export function WordPressConnectionManager() {
                 <p className={styles.help}>All checks are read-only. No test creates, modifies, or publishes a post. Requests may be rate-limited for 60 seconds per check.</p>
               </section>
 
-              <WordPressPostBrowser key={wordpress.enabled ? "read-enabled" : "read-disabled"} enabled={wordpress.enabled} />
+              <WordPressPostBrowser
+                key={wordpress.enabled ? "read-enabled" : "read-disabled"}
+                enabled={wordpress.enabled}
+              />
 
               <section className={styles.panel} aria-label="Uninstall WordPress">
                 <h2>Uninstall</h2>

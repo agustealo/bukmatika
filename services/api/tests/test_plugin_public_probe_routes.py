@@ -18,11 +18,15 @@ from bukmatika.plugins.public_probe_routes import (
     check_wordpress_capabilities,
     check_wordpress_identity,
     get_public_rest_probe,
+    get_wordpress_capability_status,
     get_wordpress_identity_status,
     router,
     run_public_rest_probe,
 )
-from bukmatika.plugins.wordpress_capability_probe import WordPressCapabilityObservation
+from bukmatika.plugins.wordpress_capability_probe import (
+    WORDPRESS_CAPABILITY_KEYS,
+    WordPressCapabilityObservation,
+)
 
 
 @asynccontextmanager
@@ -258,31 +262,119 @@ async def test_missing_identity_credential_never_claims_success() -> None:
     assert exc.value.detail == {"code": "CREDENTIAL_UNAVAILABLE"}
 
 
-def test_capability_route_is_authenticated_and_not_publishing_authority() -> None:
-    route = next(
-        route
+def _capability_values(*, edit_posts: bool = False, publish_posts: bool = False) -> dict[str, bool]:
+    values = {key: False for key in WORDPRESS_CAPABILITY_KEYS}
+    values["edit_posts"] = edit_posts
+    values["publish_posts"] = publish_posts
+    return values
+
+
+def _capability_snapshot(
+    *,
+    state: str = "verified",
+    evidence_code: str = "AUTH_CAPABILITIES_200",
+    edit_posts: bool = False,
+    publish_posts: bool = False,
+    checked_at: datetime | None = None,
+) -> SimpleNamespace:
+    values = _capability_values(edit_posts=edit_posts, publish_posts=publish_posts)
+    return SimpleNamespace(
+        state=state,
+        evidence_code=evidence_code,
+        checked_at=checked_at or datetime.now(UTC),
+        **values,
+    )
+
+
+def test_capability_routes_are_authenticated_and_not_publishing_authority() -> None:
+    path = "/v1/plugins/{plugin_id}/connection/capability-probe"
+    methods = {
+        (route.path, tuple(sorted(route.methods or set())))
         for route in router.routes
         if isinstance(route, APIRoute)
-        and route.path == "/v1/plugins/{plugin_id}/connection/capability-probe"
-    )
-    assert route.methods == {"POST"}
-    assert route.dependant.dependencies
+    }
+    assert (path, ("GET",)) in methods
+    assert (path, ("POST",)) in methods
     assert WordPressCapabilityStatus.model_fields["publishing_authorized"].default is False
 
 
 @pytest.mark.asyncio
-async def test_capability_probe_returns_real_observed_flags_without_authorizing_writes() -> None:
+async def test_capability_status_restores_scoped_snapshot_without_network() -> None:
     identity = SimpleNamespace(principal_id=uuid4())
     connection = SimpleNamespace(id=uuid4())
+    snapshot = _capability_snapshot(edit_posts=True, publish_posts=False)
+    with (
+        patch("bukmatika.plugins.public_probe_routes.session_scope", _fake_session),
+        patch(
+            "bukmatika.plugins.public_probe_routes._connection",
+            new_callable=AsyncMock,
+            return_value=connection,
+        ) as lookup,
+        patch(
+            "bukmatika.plugins.public_probe_routes.WordPressCapabilitySnapshotRepository"
+        ) as repository,
+        patch(
+            "bukmatika.plugins.public_probe_routes.verify_wordpress_capabilities",
+            new_callable=AsyncMock,
+        ) as network,
+    ):
+        repository.return_value.latest = AsyncMock(return_value=snapshot)
+        result = await get_wordpress_capability_status("wordpress", identity)
+    assert lookup.await_args.kwargs["lock"] is False
+    assert result.state is ConnectionHealth.VERIFIED
+    assert result.capabilities_observed
+    assert result.capabilities["edit_posts"]
+    assert not result.capabilities["publish_posts"]
+    assert result.scope == "observed_wordpress_capabilities"
+    assert not result.publishing_authorized
+    network.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_capability_status_without_snapshot_is_not_tested_and_denies_all_flags() -> None:
+    identity = SimpleNamespace(principal_id=uuid4())
+    connection = SimpleNamespace(id=uuid4())
+    with (
+        patch("bukmatika.plugins.public_probe_routes.session_scope", _fake_session),
+        patch(
+            "bukmatika.plugins.public_probe_routes._connection",
+            new_callable=AsyncMock,
+            return_value=connection,
+        ),
+        patch(
+            "bukmatika.plugins.public_probe_routes.WordPressCapabilitySnapshotRepository"
+        ) as repository,
+    ):
+        repository.return_value.latest = AsyncMock(return_value=None)
+        result = await get_wordpress_capability_status("wordpress", identity)
+    assert result.state is ConnectionHealth.NOT_TESTED
+    assert result.checked_at is None
+    assert result.evidence_code is None
+    assert not result.capabilities_observed
+    assert set(result.capabilities) == set(WORDPRESS_CAPABILITY_KEYS)
+    assert not any(result.capabilities.values())
+    assert not result.publishing_authorized
+
+
+@pytest.mark.asyncio
+async def test_capability_probe_returns_persisted_flags_without_authorizing_writes() -> None:
+    identity = SimpleNamespace(principal_id=uuid4())
+    connection = SimpleNamespace(id=uuid4())
+    checked_at = datetime.now(UTC)
     receipt = SimpleNamespace(
         state="verified",
         evidence_code="AUTH_CAPABILITIES_200",
-        checked_at=datetime.now(UTC),
+        checked_at=checked_at,
+    )
+    snapshot = _capability_snapshot(
+        edit_posts=True,
+        publish_posts=False,
+        checked_at=checked_at,
     )
     observation = WordPressCapabilityObservation(
         ConnectionHealth.VERIFIED,
         "AUTH_CAPABILITIES_200",
-        {"edit_posts": True, "publish_posts": False, "upload_files": False},
+        _capability_values(edit_posts=True, publish_posts=False),
     )
     with (
         patch("bukmatika.plugins.public_probe_routes.session_scope", _fake_session),
@@ -293,7 +385,10 @@ async def test_capability_probe_returns_real_observed_flags_without_authorizing_
         ) as lookup,
         patch(
             "bukmatika.plugins.public_probe_routes.PluginHealthReceiptRepository"
-        ) as repository,
+        ) as receipts,
+        patch(
+            "bukmatika.plugins.public_probe_routes.WordPressCapabilitySnapshotRepository"
+        ) as snapshots,
         patch(
             "bukmatika.plugins.public_probe_routes.verify_wordpress_capabilities",
             new_callable=AsyncMock,
@@ -301,7 +396,8 @@ async def test_capability_probe_returns_real_observed_flags_without_authorizing_
         ) as verify,
         patch("bukmatika.plugins.public_probe_routes.get_settings") as settings,
     ):
-        repository.return_value.latest = AsyncMock(side_effect=[None, receipt])
+        receipts.return_value.latest = AsyncMock(side_effect=[None, receipt])
+        snapshots.return_value.latest = AsyncMock(return_value=snapshot)
         settings.return_value.credential_key_path = "/tmp/bukmatika-test-key"
         result = await check_wordpress_capabilities("wordpress", identity)
     verify.assert_awaited_once()
@@ -309,6 +405,7 @@ async def test_capability_probe_returns_real_observed_flags_without_authorizing_
     assert result.capabilities_observed
     assert result.capabilities["edit_posts"]
     assert not result.capabilities["publish_posts"]
+    assert result.checked_at == checked_at
     assert result.scope == "observed_wordpress_capabilities"
     assert not result.publishing_authorized
 

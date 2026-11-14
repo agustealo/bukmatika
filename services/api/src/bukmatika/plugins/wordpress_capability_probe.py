@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from bukmatika.plugins.connection_health import ConnectionHealth
 from bukmatika.plugins.pinned_https import get_wordpress_rest
 
-_CAPABILITIES = (
+WORDPRESS_CAPABILITY_KEYS = (
     "edit_posts",
     "publish_posts",
     "upload_files",
@@ -40,7 +40,7 @@ def probe_wordpress_capabilities(
     site_url: str, username: str, application_password: str
 ) -> WordPressCapabilityObservation:
     """Inspect only reported capabilities at /users/me?context=edit."""
-    denied = {key: False for key in _CAPABILITIES}
+    denied = {key: False for key in WORDPRESS_CAPABILITY_KEYS}
 
     def unavailable(code: str) -> WordPressCapabilityObservation:
         return WordPressCapabilityObservation(ConnectionHealth.UNAVAILABLE, code, denied)
@@ -84,5 +84,5 @@ def probe_wordpress_capabilities(
     return WordPressCapabilityObservation(
         ConnectionHealth.VERIFIED,
         "AUTH_CAPABILITIES_200",
-        {key: values.get(key, False) for key in _CAPABILITIES},
+        {key: values.get(key, False) for key in WORDPRESS_CAPABILITY_KEYS},
     )

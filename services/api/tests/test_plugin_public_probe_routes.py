@@ -10,6 +10,7 @@ from fastapi.routing import APIRoute
 
 from bukmatika.credentials import CredentialUnavailable
 from bukmatika.plugins.connection_health import ConnectionHealth
+from bukmatika.plugins.wordpress_capability_probe import WordPressCapabilityObservation
 from bukmatika.plugins.public_probe_routes import (
     PublicRestProbeStatus,
     WordPressCapabilityStatus,
@@ -278,8 +279,6 @@ async def test_capability_probe_returns_real_observed_flags_without_authorizing_
         evidence_code="AUTH_CAPABILITIES_200",
         checked_at=datetime.now(UTC),
     )
-    from bukmatika.plugins.wordpress_capability_probe import WordPressCapabilityObservation
-
     observation = WordPressCapabilityObservation(
         ConnectionHealth.VERIFIED,
         "AUTH_CAPABILITIES_200",

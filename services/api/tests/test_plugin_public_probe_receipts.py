@@ -32,6 +32,7 @@ async def test_public_probe_writes_only_actual_observation() -> None:
             "bukmatika.plugins.public_probe_receipts.PluginHealthReceiptRepository"
         ) as repository,
     ):
+        repository.return_value.record = AsyncMock()
         result = await record_public_wordpress_probe(
             session, principal_id=principal_id, connection_id=connection_id
         )

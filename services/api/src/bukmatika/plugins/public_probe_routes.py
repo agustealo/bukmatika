@@ -135,9 +135,9 @@ async def run_public_rest_probe(
         if previous is not None and _cooldown_active(previous.checked_at, datetime.now(UTC)):
             raise HTTPException(status_code=429, detail={"code": "PROBE_COOLDOWN"})
         await record_public_wordpress_probe(
-            session, principal_id=identity.principal_id,
+            session,
+            principal_id=identity.principal_id,
             connection_id=connection.id,
-            evidence_codes=_PUBLIC_EVIDENCE_CODES,
         )
         recorded = await receipts.latest(
             principal_id=identity.principal_id,

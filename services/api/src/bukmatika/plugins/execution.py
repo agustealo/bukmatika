@@ -31,6 +31,7 @@ class PluginExecutionPolicy:
         principal_id: UUID,
         plugin_id: str,
         capability: PluginCapability,
+        lock: bool = False,
     ) -> PluginRegistration:
         # Reject untrusted plugin identity and capability before touching execution.
         try:
@@ -44,6 +45,7 @@ class PluginExecutionPolicy:
                 principal_id=principal_id,
                 plugin_id=plugin_id,
                 enabled_only=True,
+                lock=lock,
             )
         except PluginNotInstalled as exc:
             raise PluginExecutionDenied("Plugin execution is unavailable") from exc

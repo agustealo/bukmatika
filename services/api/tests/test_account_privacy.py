@@ -317,6 +317,7 @@ async def test_account_delete_erases_private_local_import_events_and_bytes(
     )
     result = await service.delete_account(principal_id=principal.id)
     await session.flush()
+    session.expire_all()
 
     assert result.principal_deleted is True
     assert result.interaction_events_deleted == 1

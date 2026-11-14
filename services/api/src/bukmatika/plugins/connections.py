@@ -131,7 +131,7 @@ class PluginConnectionRepository:
                     raise PluginConnectionInvalid("Connection URL is unsafe") from exc
 
         installation = await self._installations.require(
-            principal_id=principal_id, plugin_id=plugin_id
+            principal_id=principal_id, plugin_id=plugin_id, lock=True
         )
         row = await self._session.scalar(
             select(PluginConnection).where(
@@ -191,5 +191,7 @@ class PluginConnectionRepository:
                     ),
                     secret=secret_value,
                 )
+        # Invalidate executable approval when credentials or URL change.
+        installation.status = "disabled"
         await self._session.flush()
         return row

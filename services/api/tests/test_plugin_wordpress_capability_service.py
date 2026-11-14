@@ -17,6 +17,10 @@ from bukmatika.plugins.wordpress_capability_probe import (
     WordPressCapabilityObservation,
 )
 from bukmatika.plugins.wordpress_capability_service import verify_wordpress_capabilities
+from bukmatika.plugins.wordpress_capability_snapshots import (
+    WordPressCapabilitySnapshotRepository,
+    snapshot_capabilities,
+)
 
 
 async def test_capability_service_is_owner_scoped_and_records_only_evidence(
@@ -86,6 +90,14 @@ async def test_capability_service_is_owner_scoped_and_records_only_evidence(
     )
     assert receipt is not None
     assert receipt.evidence_code == "AUTH_CAPABILITIES_200"
+    snapshot = await WordPressCapabilitySnapshotRepository(session).latest(
+        principal_id=owner.id,
+        connection_id=connection.id,
+    )
+    assert snapshot is not None
+    assert snapshot.checked_at == receipt.checked_at
+    assert snapshot.evidence_code == "AUTH_CAPABILITIES_200"
+    assert snapshot_capabilities(snapshot) == observation.capabilities
     assert "secret-app-password" not in repr(result)
 
 
@@ -129,4 +141,8 @@ async def test_unavailable_probe_cannot_return_granted_capabilities(
         )
     assert await PluginHealthReceiptRepository(session).latest(
         principal_id=owner.id, connection_id=connection.id
+    ) is None
+    assert await WordPressCapabilitySnapshotRepository(session).latest(
+        principal_id=owner.id,
+        connection_id=connection.id,
     ) is None

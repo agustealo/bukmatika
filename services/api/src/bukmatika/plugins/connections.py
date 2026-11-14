@@ -4,6 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.credentials import DatabaseSecretStore, InstallationCredentialKey, SecretOwner
+from bukmatika.persistence.plugin_capability_models import WordPressCapabilitySnapshot
 from bukmatika.persistence.plugin_connection_models import PluginConnection
 from bukmatika.persistence.plugin_health_models import PluginHealthReceipt
 from bukmatika.plugins.connection_contracts import ConnectionFieldKind
@@ -90,6 +91,12 @@ class PluginConnectionRepository:
                 delete(PluginHealthReceipt).where(
                     PluginHealthReceipt.principal_id == principal_id,
                     PluginHealthReceipt.connection_id == row.id,
+                )
+            )
+            await self._session.execute(
+                delete(WordPressCapabilitySnapshot).where(
+                    WordPressCapabilitySnapshot.principal_id == principal_id,
+                    WordPressCapabilitySnapshot.connection_id == row.id,
                 )
             )
             await self._secrets.delete_owner(

@@ -37,8 +37,8 @@ type ProbeStatus = {
 type CapabilityStatus = {
   plugin_id: string;
   state: ReceiptState;
-  checked_at: string;
-  evidence_code: string;
+  checked_at: string | null;
+  evidence_code: string | null;
   capabilities_observed: boolean;
   capabilities: Record<string, boolean>;
   publishing_authorized: boolean;
@@ -98,17 +98,20 @@ export function WordPressConnectionManager() {
         setCapabilities(null);
         return;
       }
-      const [configured, publicProbe, identityProbe] = await Promise.all([
+      const [configured, publicProbe, identityProbe, capabilityProbe] = await Promise.all([
         apiFetch(`${ROOT}/connection`),
         apiFetch(`${ROOT}/connection/public-probe`),
         apiFetch(`${ROOT}/connection/identity-probe`),
+        apiFetch(`${ROOT}/connection/capability-probe`),
       ]);
       if (!configured.ok && configured.status !== 404) {
         throw new Error(await apiError(configured));
       }
       if (!publicProbe.ok) throw new Error(await apiError(publicProbe));
       if (!identityProbe.ok) throw new Error(await apiError(identityProbe));
+      if (!capabilityProbe.ok) throw new Error(await apiError(capabilityProbe));
       const saved = configured.ok ? ((await configured.json()) as ConnectionState) : null;
+      const savedCapabilities = (await capabilityProbe.json()) as CapabilityStatus;
       setConnection(saved);
       setPublicStatus((await publicProbe.json()) as ProbeStatus);
       setIdentityStatus((await identityProbe.json()) as ProbeStatus);
@@ -119,9 +122,11 @@ export function WordPressConnectionManager() {
         setSiteUrl("");
         setUsername("");
       }
-      // Capability booleans are live, request-local evidence and are never reconstructed
-      // from a generic health receipt after navigation or a configuration refresh.
-      setCapabilities(null);
+      setCapabilities(
+        savedCapabilities.state === "not_tested" || savedCapabilities.state === "not_configured"
+          ? null
+          : savedCapabilities,
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Connection state unavailable.");
     } finally {
@@ -287,7 +292,7 @@ export function WordPressConnectionManager() {
                     </article>
                     <article>
                       <h3>WordPress capabilities</h3>
-                      <p>Live observations only. A successful identity check does not establish publishing permission.</p>
+                      <p>Last observed capability evidence is restored after reload. It remains evidence only and does not establish publishing permission.</p>
                       <button type="button" disabled={busy} onClick={() => void probe("capability")}>Inspect capabilities</button>
                       {capabilities && (
                         <div className={styles.result}>

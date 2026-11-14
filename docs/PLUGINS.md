@@ -117,8 +117,16 @@ Three separate checks are available:
 
 A successful check does not grant publishing authority. Checks are read-only, run
 through restricted pinned-IP HTTPS, are principal-scoped, and have a 60-second
-per-check cooldown. Saving or rotating a connection invalidates old observations.
-Capability booleans are intentionally not reconstructed from stored health codes.
+per-check cooldown. WordPress capability checks persist their exact observed booleans
+in a source-owned snapshot so the consumer can restore the last observation after
+reload without performing another network request. The snapshot and its health receipt
+share one timestamp and evidence code. Saving or rotating a connection invalidates both
+the generic probe receipts and all prior capability snapshots while holding the same
+connection row lock used by authenticated probes.
+
+Persisted capability snapshots are evidence only. They are never a write grant and
+must not substitute for live capability/policy revalidation when a future mutation is
+attempted.
 
 **Still disabled:** WordPress publishing mutations, plugin execution where a connection
 is required, direct MySQL/MariaDB access, SSH tunnels, and consumer release packaging.

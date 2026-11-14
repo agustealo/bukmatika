@@ -194,6 +194,20 @@ export function WordPressConnectionManager() {
     if (response) setCapabilities(null);
   };
 
+  const setEnabled = async (enabled: boolean) => {
+    await act(
+      () =>
+        apiFetch(ROOT, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled }),
+        }),
+      enabled
+        ? "WordPress enabled for guarded plugin actions. Publishing is still disabled."
+        : "WordPress disabled. Saved connection settings remain available.",
+    );
+  };
+
   const probe = async (kind: "public" | "identity" | "capability") => {
     const route =
       kind === "public"
@@ -246,12 +260,28 @@ export function WordPressConnectionManager() {
             <div className={styles.heading}>
               <div>
                 <h2>{wordpress?.display_name ?? "WordPress"}</h2>
-                <p>Version {wordpress?.version ?? "unavailable"} · {wordpress?.installed ? "Installed" : "Not installed"}</p>
+                <p>
+                  Version {wordpress?.version ?? "unavailable"} · {wordpress?.installed ? "Installed" : "Not installed"}
+                  {wordpress?.installed ? ` · ${wordpress.enabled ? "Enabled" : "Disabled"}` : ""}
+                </p>
               </div>
               {!wordpress?.installed && <button type="button" disabled={busy || !wordpress} onClick={() => void install()}>Install</button>}
+              {wordpress?.installed && connection && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void setEnabled(!wordpress.enabled)}
+                >
+                  {wordpress.enabled ? "Disable WordPress" : "Enable WordPress"}
+                </button>
+              )}
             </div>
             {wordpress?.installed && (
-              <p className={styles.help}>The plugin is installed but publishing execution is disabled until capability and write-policy acceptance are complete.</p>
+              <p className={styles.help}>
+                {connection
+                  ? "Activation is explicit. Enabled plugins may enter guarded product actions, but capability observations still do not authorize publishing."
+                  : "Save a complete connection before enabling this plugin. Configuration never activates it automatically."}
+              </p>
             )}
           </section>
 

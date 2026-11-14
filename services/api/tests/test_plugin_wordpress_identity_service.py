@@ -46,15 +46,21 @@ async def test_identity_service_reveals_only_to_internal_probe_and_records_evide
         return_value=WordPressIdentityObservation(
             ConnectionHealth.VERIFIED, "AUTH_IDENTITY_200"
         ),
+    ) as probe, pytest.raises(LookupError):
+        await verify_wordpress_identity(
+            session,
+            principal_id=other.id,
+            connection_id=connection.id,
+            installation_key=key,
+        )
+    probe.assert_not_awaited()
+    with patch(
+        "bukmatika.plugins.wordpress_identity_service.asyncio.to_thread",
+        new_callable=AsyncMock,
+        return_value=WordPressIdentityObservation(
+            ConnectionHealth.VERIFIED, "AUTH_IDENTITY_200"
+        ),
     ) as probe:
-        with pytest.raises(LookupError):
-            await verify_wordpress_identity(
-                session,
-                principal_id=other.id,
-                connection_id=connection.id,
-                installation_key=key,
-            )
-        probe.assert_not_awaited()
         result = await verify_wordpress_identity(
             session,
             principal_id=owner.id,

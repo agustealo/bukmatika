@@ -104,9 +104,16 @@ and the canonical encrypted credential vault. A WordPress REST Application Passw
 may be configured only for a validated public HTTPS origin.
 
 The consumer **Plugins** page at `/plugins` provides WordPress installation,
-REST connection configuration, connection-health checks, and explicit uninstall.
-Settings are WordPress-owned. Application Passwords are submitted on save, encrypted
-server-side, and never returned in configuration responses.
+REST connection configuration, explicit enable/disable, connection-health checks, and
+explicit uninstall. Settings are WordPress-owned. Application Passwords are submitted
+on save, encrypted server-side, and never returned in configuration responses.
+
+Installation remains disabled by default and saving a connection never activates a
+plugin implicitly. Enabling a connection-backed plugin requires the current declared
+connection schema/mode, complete non-secret settings, and every declared encrypted
+secret slot. Activation is principal-scoped and row-locked with configuration/uninstall
+state transitions. It only makes the plugin eligible to enter the canonical
+`PluginExecutionPolicy`; it does not authorize any content mutation.
 
 Three separate checks are available:
 
@@ -128,10 +135,13 @@ Persisted capability snapshots are evidence only. They are never a write grant a
 must not substitute for live capability/policy revalidation when a future mutation is
 attempted.
 
-**Still disabled:** WordPress publishing mutations, plugin execution where a connection
-is required, direct MySQL/MariaDB access, SSH tunnels, and consumer release packaging.
-These require explicit write policy, end-to-end acceptance, connection lifecycle and
-network/security proofs. The plugin architecture remains tracked by issue #184.
+**Still disabled:** WordPress publishing mutations, direct MySQL/MariaDB access, SSH
+tunnels, and consumer release packaging. Connection-backed plugin activation is now
+available, but every executable capability still passes the canonical plugin execution
+policy and any source/action-specific live policy required for that operation. Publishing
+still requires fresh write-capability enforcement, durable publication/delivery receipts,
+retry safety, and end-to-end WordPress acceptance. The plugin architecture remains
+tracked by issue #184.
 
 The application must not claim WordPress consumer publishing readiness until
 these remaining gates are satisfied.

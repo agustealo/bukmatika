@@ -7,6 +7,7 @@ from sqlalchemy import select
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.plugin_connection_models import PluginConnection
+from bukmatika.persistence.plugin_models import PluginInstallation
 from bukmatika.persistence.secret_models import EncryptedSecret
 from bukmatika.plugins.builtin import build_builtin_plugin_registry
 from bukmatika.plugins.installations import PluginInstallationRepository, PluginNotInstalled
@@ -111,6 +112,15 @@ async def update_plugin(
             row = await repo.require(principal_id=identity.principal_id, plugin_id=plugin_id)
         except PluginNotInstalled as exc:
             raise HTTPException(status_code=404, detail={"code": "PLUGIN_NOT_INSTALLED"}) from exc
+        # Linearize enable/disable with connection rotation and uninstall.
+        await session.scalar(
+            select(PluginInstallation.id)
+            .where(
+                PluginInstallation.id == row.id,
+                PluginInstallation.principal_id == identity.principal_id,
+            )
+            .with_for_update()
+        )
         if update.enabled and row.installed_version != manifest.version:
             raise HTTPException(status_code=409, detail={"code": "PLUGIN_VERSION_MISMATCH"})
         if update.enabled and manifest.requires_connection:

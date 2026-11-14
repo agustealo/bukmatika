@@ -317,7 +317,6 @@ async def test_account_delete_erases_private_local_import_events_and_bytes(
     )
     result = await service.delete_account(principal_id=principal.id)
     await session.flush()
-    session.expire_all()
 
     assert result.principal_deleted is True
     assert result.interaction_events_deleted == 1
@@ -516,17 +515,24 @@ async def test_account_export_and_delete_include_publication_delivery_history(
         "publication_delivery_attempts",
     }
 
-    result = await service.delete_account(principal_id=principal.id)
+    principal_id = principal.id
+    publication_id = publication.id
+    revision_id = revision.id
+    destination_id = destination.id
+    delivery_id = delivery.id
+    attempt_id = attempt.id
+
+    result = await service.delete_account(principal_id=principal_id)
     await session.flush()
     session.expire_all()
 
     assert result.principal_deleted is True
-    assert await session.get(Principal, principal.id) is None
-    assert await session.get(Publication, publication.id) is None
-    assert await session.get(PublicationRevision, revision.id) is None
-    assert await session.get(PublicationDestination, destination.id) is None
-    assert await session.get(PublicationDelivery, delivery.id) is None
-    assert await session.get(PublicationDeliveryAttempt, attempt.id) is None
+    assert await session.get(Principal, principal_id) is None
+    assert await session.get(Publication, publication_id) is None
+    assert await session.get(PublicationRevision, revision_id) is None
+    assert await session.get(PublicationDestination, destination_id) is None
+    assert await session.get(PublicationDelivery, delivery_id) is None
+    assert await session.get(PublicationDeliveryAttempt, attempt_id) is None
 
 
 def test_all_direct_principal_foreign_keys_are_cascade_owned_except_interaction_history() -> None:

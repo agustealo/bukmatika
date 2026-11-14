@@ -14,6 +14,7 @@ from bukmatika.credentials import InstallationCredentialKey
 from bukmatika.plugins.connection_health import ConnectionHealth
 from bukmatika.plugins.health_receipts import PluginHealthReceiptRepository
 from bukmatika.plugins.wordpress_capability_probe import (
+    WORDPRESS_CAPABILITY_KEYS,
     WordPressCapabilityObservation,
     probe_wordpress_capabilities,
 )
@@ -52,14 +53,17 @@ async def verify_wordpress_capabilities(
         credentials.username,
         credentials.application_password,
     )
-    if (
-        observation.evidence_code not in _EVIDENCE
-        or observation.state not in {ConnectionHealth.VERIFIED, ConnectionHealth.UNAVAILABLE}
-        or observation.capabilities_observed != (
-            observation.evidence_code == "AUTH_CAPABILITIES_200"
-        )
-    ):
+    expected_state = (
+        ConnectionHealth.VERIFIED
+        if observation.evidence_code == "AUTH_CAPABILITIES_200"
+        else ConnectionHealth.UNAVAILABLE
+    )
+    if observation.evidence_code not in _EVIDENCE or observation.state is not expected_state:
         raise ValueError("Unrecognized WordPress capability observation")
+    if set(observation.capabilities) != set(WORDPRESS_CAPABILITY_KEYS) or any(
+        type(value) is not bool for value in observation.capabilities.values()
+    ):
+        raise ValueError("WordPress capability observation has invalid fields")
     if observation.state is ConnectionHealth.UNAVAILABLE and any(
         observation.capabilities.values()
     ):

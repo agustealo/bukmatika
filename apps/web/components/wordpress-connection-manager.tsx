@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { apiFetch } from "../lib/api";
 import styles from "./wordpress-connection-manager.module.css";
@@ -162,7 +162,7 @@ export function WordPressConnectionManager() {
     );
   };
 
-  const configure = async (event: React.FormEvent<HTMLFormElement>) => {
+  const configure = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const secret = applicationPassword;
     setApplicationPassword("");

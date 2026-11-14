@@ -28,11 +28,21 @@ from bukmatika.plugins.connection_health import ConnectionHealth
 from bukmatika.plugins.health_receipts import PluginHealthReceiptRepository
 from bukmatika.plugins.installations import PluginInstallationRepository, PluginNotInstalled
 from bukmatika.plugins.public_probe_receipts import record_public_wordpress_probe
+from bukmatika.plugins.wordpress_capability_service import verify_wordpress_capabilities
 from bukmatika.plugins.wordpress_identity_service import verify_wordpress_identity
 
 router = APIRouter(prefix="/v1/plugins", tags=["plugins"])
 _registry = build_builtin_plugin_registry()
 _PROBE_COOLDOWN = timedelta(seconds=60)
+_CAPABILITY_EVIDENCE_CODES = (
+    "AUTH_CAPABILITIES_200",
+    "AUTH_CAPABILITY_INPUT_INVALID",
+    "AUTH_CAPABILITY_TRANSPORT_UNAVAILABLE",
+    "AUTH_CAPABILITY_REJECTED",
+    "AUTH_CAPABILITY_HTTP_UNEXPECTED",
+    "AUTH_CAPABILITY_RESPONSE_INVALID",
+    "AUTH_CAPABILITY_SCHEMA_INVALID",
+)
 _IDENTITY_EVIDENCE_CODES = (
     "AUTH_IDENTITY_200",
     "AUTH_INPUT_INVALID",
@@ -276,4 +286,73 @@ async def check_wordpress_identity(
             ConnectionHealth(recorded.state),
             checked_at=recorded.checked_at,
             evidence_code=recorded.evidence_code,
+        )
+
+
+class WordPressCapabilityStatus(BaseModel):
+    plugin_id: str = "wordpress"
+    scope: str = "observed_wordpress_capabilities"
+    state: ConnectionHealth
+    checked_at: datetime
+    evidence_code: str
+    capabilities_observed: bool
+    capabilities: dict[str, bool]
+    publishing_authorized: bool = False
+
+
+@router.post(
+    "/{plugin_id}/connection/capability-probe",
+    response_model=WordPressCapabilityStatus,
+)
+async def check_wordpress_capabilities(
+    plugin_id: str,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+) -> WordPressCapabilityStatus:
+    """Run one authenticated capability inspection, never a publishing operation."""
+    if plugin_id != "wordpress":
+        raise HTTPException(status_code=404, detail={"code": "PLUGIN_NOT_FOUND"})
+    async with session_scope() as session:
+        connection = await _connection(
+            session, principal_id=identity.principal_id, plugin_id=plugin_id, lock=True
+        )
+        if connection is None:
+            raise HTTPException(status_code=409, detail={"code": "CONNECTION_NOT_CONFIGURED"})
+        receipts = PluginHealthReceiptRepository(session)
+        previous = await receipts.latest(
+            principal_id=identity.principal_id,
+            connection_id=connection.id,
+            evidence_codes=_CAPABILITY_EVIDENCE_CODES,
+        )
+        if previous is not None and _cooldown_active(previous.checked_at, datetime.now(UTC)):
+            raise HTTPException(status_code=429, detail={"code": "PROBE_COOLDOWN"})
+        try:
+            observation = await verify_wordpress_capabilities(
+                session,
+                principal_id=identity.principal_id,
+                connection_id=connection.id,
+                installation_key=InstallationCredentialKey(
+                    get_settings().credential_key_path
+                ),
+            )
+        except CredentialUnavailable as exc:
+            raise HTTPException(
+                status_code=409, detail={"code": "CREDENTIAL_UNAVAILABLE"}
+            ) from exc
+        except (CredentialIntegrityError, CredentialKeyUnavailable) as exc:
+            raise HTTPException(
+                status_code=503, detail={"code": "CREDENTIAL_VERIFICATION_UNAVAILABLE"}
+            ) from exc
+        recorded = await receipts.latest(
+            principal_id=identity.principal_id,
+            connection_id=connection.id,
+            evidence_codes=_CAPABILITY_EVIDENCE_CODES,
+        )
+        if recorded is None or recorded.evidence_code != observation.evidence_code:
+            raise RuntimeError("WordPress capability observation was not persisted")
+        return WordPressCapabilityStatus(
+            state=observation.state,
+            checked_at=recorded.checked_at,
+            evidence_code=observation.evidence_code,
+            capabilities_observed=observation.capabilities_observed,
+            capabilities=observation.capabilities,
         )

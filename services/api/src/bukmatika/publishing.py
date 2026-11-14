@@ -161,18 +161,10 @@ class PublicationRepository:
         if connection is None:
             raise PublicationNotFound("Plugin connection is unavailable")
 
-        destination = await self._session.scalar(
-            select(PublicationDestination)
-            .where(
-                PublicationDestination.principal_id == principal_id,
-                PublicationDestination.plugin_id == plugin_id,
-                PublicationDestination.destination_kind == destination_kind,
-                PublicationDestination.external_locator == external_locator,
-            )
-            .with_for_update()
-        )
-        if destination is None:
-            destination = PublicationDestination(
+        destination_id = await self._session.scalar(
+            insert(PublicationDestination)
+            .values(
+                id=uuid4(),
                 principal_id=principal_id,
                 plugin_id=plugin_id,
                 connection_id=connection_id,
@@ -180,11 +172,33 @@ class PublicationRepository:
                 external_locator=external_locator,
                 state="active",
             )
-            self._session.add(destination)
-        else:
-            destination.connection_id = connection_id
-            destination.state = "active"
-        await self._session.flush()
+            .on_conflict_do_update(
+                index_elements=[
+                    "principal_id",
+                    "plugin_id",
+                    "destination_kind",
+                    "external_locator",
+                ],
+                set_={
+                    "connection_id": connection_id,
+                    "state": "active",
+                    "updated_at": func.now(),
+                },
+            )
+            .returning(PublicationDestination.id)
+        )
+        if destination_id is None:
+            raise RuntimeError("Publication destination upsert did not return an identity")
+        destination = await self._session.scalar(
+            select(PublicationDestination)
+            .where(
+                PublicationDestination.id == destination_id,
+                PublicationDestination.principal_id == principal_id,
+            )
+            .execution_options(populate_existing=True)
+        )
+        if destination is None:
+            raise RuntimeError("Publication destination upsert could not be resolved")
         return destination
 
     async def create_delivery(
@@ -419,7 +433,7 @@ class PublicationRepository:
             PublicationDelivery.principal_id == principal_id,
         )
         if lock:
-            query = query.with_for_update()
+            query = query.with_for_update().execution_options(populate_existing=True)
         delivery = await self._session.scalar(query)
         if delivery is None:
             raise PublicationNotFound("Publication delivery is unavailable")

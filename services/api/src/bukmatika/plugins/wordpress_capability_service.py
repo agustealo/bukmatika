@@ -24,6 +24,7 @@ from bukmatika.plugins.wordpress_capability_snapshots import (
 )
 from bukmatika.plugins.wordpress_credentials import load_wordpress_credentials
 
+
 async def verify_wordpress_capabilities(
     session: AsyncSession,
     *,

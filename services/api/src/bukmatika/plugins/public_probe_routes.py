@@ -13,6 +13,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bukmatika.config import get_settings
+from bukmatika.credentials import (
+    CredentialIntegrityError,
+    CredentialKeyUnavailable,
+    CredentialUnavailable,
+    InstallationCredentialKey,
+)
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.plugin_connection_models import PluginConnection
@@ -21,10 +28,20 @@ from bukmatika.plugins.connection_health import ConnectionHealth
 from bukmatika.plugins.health_receipts import PluginHealthReceiptRepository
 from bukmatika.plugins.installations import PluginInstallationRepository, PluginNotInstalled
 from bukmatika.plugins.public_probe_receipts import record_public_wordpress_probe
+from bukmatika.plugins.wordpress_identity_service import verify_wordpress_identity
 
 router = APIRouter(prefix="/v1/plugins", tags=["plugins"])
 _registry = build_builtin_plugin_registry()
 _PROBE_COOLDOWN = timedelta(seconds=60)
+_IDENTITY_EVIDENCE_CODES = (
+    "AUTH_IDENTITY_200",
+    "AUTH_INPUT_INVALID",
+    "AUTH_TRANSPORT_UNAVAILABLE",
+    "AUTH_REJECTED",
+    "AUTH_HTTP_UNEXPECTED",
+    "AUTH_RESPONSE_INVALID",
+    "AUTH_IDENTITY_INVALID",
+)
 _PUBLIC_EVIDENCE_CODES = (
     "PUBLIC_REST_TYPES_200",
     "TRANSPORT_UNAVAILABLE",
@@ -147,6 +164,115 @@ async def run_public_rest_probe(
         if recorded is None:
             raise RuntimeError("Public WordPress probe did not persist an observation")
         return _format_public_rest_status(
+            ConnectionHealth(recorded.state),
+            checked_at=recorded.checked_at,
+            evidence_code=recorded.evidence_code,
+        )
+
+
+class WordPressIdentityStatus(BaseModel):
+    plugin_id: str
+    scope: str = "application_password_identity"
+    state: ConnectionHealth
+    checked_at: datetime | None
+    evidence_code: str | None
+    credentials_verified: bool
+    publishing_authorized: bool = False
+
+
+def _identity_status(
+    state: ConnectionHealth,
+    *,
+    checked_at: datetime | None = None,
+    evidence_code: str | None = None,
+) -> WordPressIdentityStatus:
+    return WordPressIdentityStatus(
+        plugin_id="wordpress",
+        state=state,
+        checked_at=checked_at,
+        evidence_code=evidence_code,
+        credentials_verified=(
+            state is ConnectionHealth.VERIFIED
+            and evidence_code == "AUTH_IDENTITY_200"
+        ),
+    )
+
+
+@router.get("/{plugin_id}/connection/identity-probe", response_model=WordPressIdentityStatus)
+async def get_wordpress_identity_status(
+    plugin_id: str,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+) -> WordPressIdentityStatus:
+    """Read credential evidence, without performing a network request."""
+    if plugin_id != "wordpress":
+        raise HTTPException(status_code=404, detail={"code": "PLUGIN_NOT_FOUND"})
+    async with session_scope() as session:
+        connection = await _connection(
+            session, principal_id=identity.principal_id, plugin_id=plugin_id, lock=False
+        )
+        if connection is None:
+            return _identity_status(ConnectionHealth.NOT_CONFIGURED)
+        receipt = await PluginHealthReceiptRepository(session).latest(
+            principal_id=identity.principal_id,
+            connection_id=connection.id,
+            evidence_codes=_IDENTITY_EVIDENCE_CODES,
+        )
+        if receipt is None:
+            return _identity_status(ConnectionHealth.NOT_TESTED)
+        return _identity_status(
+            ConnectionHealth(receipt.state),
+            checked_at=receipt.checked_at,
+            evidence_code=receipt.evidence_code,
+        )
+
+
+@router.post("/{plugin_id}/connection/identity-probe", response_model=WordPressIdentityStatus)
+async def check_wordpress_identity(
+    plugin_id: str,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+) -> WordPressIdentityStatus:
+    """Verify saved credentials only. Never assert publishing authorization."""
+    if plugin_id != "wordpress":
+        raise HTTPException(status_code=404, detail={"code": "PLUGIN_NOT_FOUND"})
+    async with session_scope() as session:
+        connection = await _connection(
+            session, principal_id=identity.principal_id, plugin_id=plugin_id, lock=True
+        )
+        if connection is None:
+            raise HTTPException(status_code=409, detail={"code": "CONNECTION_NOT_CONFIGURED"})
+        receipts = PluginHealthReceiptRepository(session)
+        previous = await receipts.latest(
+            principal_id=identity.principal_id,
+            connection_id=connection.id,
+            evidence_codes=_IDENTITY_EVIDENCE_CODES,
+        )
+        if previous is not None and _cooldown_active(previous.checked_at, datetime.now(UTC)):
+            raise HTTPException(status_code=429, detail={"code": "PROBE_COOLDOWN"})
+        try:
+            await verify_wordpress_identity(
+                session,
+                principal_id=identity.principal_id,
+                connection_id=connection.id,
+                installation_key=InstallationCredentialKey(
+                    get_settings().credential_key_path
+                ),
+            )
+        except CredentialUnavailable as exc:
+            raise HTTPException(
+                status_code=409, detail={"code": "CREDENTIAL_UNAVAILABLE"}
+            ) from exc
+        except (CredentialIntegrityError, CredentialKeyUnavailable) as exc:
+            raise HTTPException(
+                status_code=503, detail={"code": "CREDENTIAL_VERIFICATION_UNAVAILABLE"}
+            ) from exc
+        recorded = await receipts.latest(
+            principal_id=identity.principal_id,
+            connection_id=connection.id,
+            evidence_codes=_IDENTITY_EVIDENCE_CODES,
+        )
+        if recorded is None:
+            raise RuntimeError("WordPress identity probe did not record an observation")
+        return _identity_status(
             ConnectionHealth(recorded.state),
             checked_at=recorded.checked_at,
             evidence_code=recorded.evidence_code,

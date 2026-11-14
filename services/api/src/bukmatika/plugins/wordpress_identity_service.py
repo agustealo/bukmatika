@@ -10,12 +10,10 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bukmatika.credentials import (
-    InstallationCredentialKey,
-)
+from bukmatika.credentials import InstallationCredentialKey
 from bukmatika.plugins.connection_health import ConnectionHealth
-from bukmatika.plugins.wordpress_credentials import load_wordpress_credentials
 from bukmatika.plugins.health_receipts import PluginHealthReceiptRepository
+from bukmatika.plugins.wordpress_credentials import load_wordpress_credentials
 from bukmatika.plugins.wordpress_identity_probe import (
     WordPressIdentityObservation,
     probe_wordpress_identity,
@@ -62,7 +60,7 @@ async def verify_wordpress_identity(
 
     await PluginHealthReceiptRepository(session).record(
         principal_id=principal_id,
-        connection_id=connection.id,
+        connection_id=connection_id,
         state=observation.state,
         evidence_code=observation.evidence_code,
         checked_at=datetime.now(UTC),

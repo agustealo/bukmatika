@@ -55,6 +55,7 @@ from bukmatika.personalization.routes import router as personalization_router
 from bukmatika.plugins import build_builtin_plugin_registry
 from bukmatika.plugins.connection_routes import router as plugin_connections_router
 from bukmatika.plugins.public_probe_routes import router as public_probe_router
+from bukmatika.plugins.wordpress_post_routes import router as wordpress_post_router
 from bukmatika.plugins.routes import router as plugins_router
 from bukmatika.processing import (
     AssetNotStored,
@@ -198,6 +199,7 @@ app.include_router(personalization_router)
 app.include_router(plugins_router)
 app.include_router(plugin_connections_router)
 app.include_router(public_probe_router)
+app.include_router(wordpress_post_router)
 app.include_router(ai_router)
 app.include_router(research_workspace_answer_router)
 app.add_middleware(

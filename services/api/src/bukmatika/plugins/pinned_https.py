@@ -54,7 +54,8 @@ def get_wordpress_rest(
     capability_route = "/wp-json/wp/v2/users/me?context=edit"
     allowed_identity_routes = {"/wp-json/wp/v2/users/me", capability_route}
     posts_route = re.fullmatch(
-        r"/wp-json/wp/v2/posts\?context=edit&per_page=20&page=(?:[1-9]|[1-4][0-9]|50)&_fields=id,status,slug,title",
+        r"/wp-json/wp/v2/posts\?context=edit&per_page=20"
+        r"&page=(?:[1-9]|[1-4][0-9]|50)&_fields=id,status,slug,title",
         route,
     ) is not None
     if (
@@ -84,7 +85,10 @@ def get_wordpress_rest(
             headers["Authorization"] = authorization
         connection.request(
             "GET",
-            quote(route, safe="/%-._~?=&" if (route == capability_route or posts_route) else "/%-._~"),
+            quote(
+                route,
+                safe="/%-._~?=&" if (route == capability_route or posts_route) else "/%-._~",
+            ),
             headers=headers,
         )
         response = connection.getresponse()

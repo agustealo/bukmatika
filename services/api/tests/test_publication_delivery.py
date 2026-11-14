@@ -1,11 +1,19 @@
+import asyncio
+import os
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from bukmatika.credentials import InstallationCredentialKey
 from bukmatika.persistence.models import Principal
+from bukmatika.persistence.publishing_models import PublicationDelivery
 from bukmatika.plugins.builtin import build_builtin_plugin_registry
 from bukmatika.plugins.connections import PluginConnectionRepository
 from bukmatika.plugins.installations import PluginInstallationRepository
@@ -273,3 +281,172 @@ async def test_unknown_attempt_blocks_blind_replay_until_explicit_retry(
         delivery_id=delivery.id,
     )
     assert retry.attempt_number == 2
+
+
+async def test_concurrent_first_destination_creation_converges_on_one_identity(
+    tmp_path: Path,
+) -> None:
+    database_url = os.getenv("BUKMATIKA_DATABASE_URL")
+    if database_url is None:
+        pytest.skip("PostgreSQL integration URL not configured")
+    engine = create_async_engine(database_url, pool_pre_ping=True)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    principal_id = None
+    try:
+        async with sessions.begin() as setup:
+            principal = Principal(
+                kind="local",
+                external_subject=f"publishing-destination-race-{uuid4()}",
+            )
+            setup.add(principal)
+            await setup.flush()
+            principal_id = principal.id
+            registry = build_builtin_plugin_registry()
+            await PluginInstallationRepository(setup, registry).install(
+                principal_id=principal.id,
+                plugin_id="wordpress",
+            )
+            key = InstallationCredentialKey(tmp_path / "destination-race.key")
+            connection = await PluginConnectionRepository(
+                setup,
+                registry,
+                installation_key=key,
+            ).configure(
+                principal_id=principal.id,
+                plugin_id="wordpress",
+                mode_id="rest",
+                values={
+                    "site_url": "https://example.com",
+                    "username": "editor",
+                    "application_password": "private-password",
+                },
+            )
+            connection_id = connection.id
+
+        async def ensure() -> object:
+            async with sessions.begin() as database_session:
+                return await PublicationRepository(database_session).ensure_destination(
+                    principal_id=principal.id,
+                    plugin_id="wordpress",
+                    connection_id=connection_id,
+                    destination_kind="post",
+                    external_locator="https://example.com",
+                )
+
+        first, second = await asyncio.gather(ensure(), ensure())
+        assert first.id == second.id
+    finally:
+        if principal_id is not None:
+            async with sessions.begin() as cleanup:
+                await cleanup.execute(
+                    delete(Principal).where(Principal.id == principal_id)
+                )
+        await engine.dispose()
+
+
+async def test_locked_delivery_refresh_prevents_stale_successful_replay(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    database_url = os.getenv("BUKMATIKA_DATABASE_URL")
+    if database_url is None:
+        pytest.skip("PostgreSQL integration URL not configured")
+
+    # Use independent committed sessions to reproduce an identity-map stale read.
+    engine = create_async_engine(database_url, pool_pre_ping=True)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    principal_id = None
+    try:
+        async with sessions.begin() as setup:
+            principal = Principal(
+                kind="local",
+                external_subject=f"publishing-stale-delivery-{uuid4()}",
+            )
+            setup.add(principal)
+            await setup.flush()
+            principal_id = principal.id
+            registry = build_builtin_plugin_registry()
+            await PluginInstallationRepository(setup, registry).install(
+                principal_id=principal.id,
+                plugin_id="wordpress",
+            )
+            key = InstallationCredentialKey(tmp_path / "stale-delivery.key")
+            connection = await PluginConnectionRepository(
+                setup,
+                registry,
+                installation_key=key,
+            ).configure(
+                principal_id=principal.id,
+                plugin_id="wordpress",
+                mode_id="rest",
+                values={
+                    "site_url": "https://example.com",
+                    "username": "editor",
+                    "application_password": "private-password",
+                },
+            )
+            repository = PublicationRepository(setup)
+            publication, revision = await repository.create(
+                principal_id=principal.id,
+                title="Stale replay guard",
+                body="One successful remote write must stay final.",
+            )
+            destination = await repository.ensure_destination(
+                principal_id=principal.id,
+                plugin_id="wordpress",
+                connection_id=connection.id,
+                destination_kind="post",
+                external_locator="https://example.com",
+            )
+            delivery = await repository.create_delivery(
+                principal_id=principal.id,
+                publication_id=publication.id,
+                revision_id=revision.id,
+                destination_id=destination.id,
+                idempotency_key="stale-replay",
+                request_fingerprint=revision.content_sha256,
+            )
+            attempt = await repository.begin_attempt(
+                principal_id=principal.id,
+                delivery_id=delivery.id,
+            )
+            delivery_id = delivery.id
+            attempt_number = attempt.attempt_number
+
+        async with sessions() as stale_session:
+            stale_delivery = await stale_session.get(PublicationDelivery, delivery_id)
+            assert stale_delivery is not None
+            assert stale_delivery.state == "in_flight"
+
+            async with sessions.begin() as settling_session:
+                await PublicationRepository(settling_session).finish_attempt(
+                    principal_id=principal.id,
+                    delivery_id=delivery_id,
+                    attempt_number=attempt_number,
+                    outcome="succeeded",
+                    evidence_code="WORDPRESS_POST_CREATED",
+                    response_fingerprint="2" * 64,
+                    remote_resource_id="51",
+                    remote_revision_id="8",
+                    remote_url="https://example.com/?p=51",
+                    remote_status="draft",
+                )
+
+            with pytest.raises(PublicationDeliveryAlreadySucceeded):
+                await PublicationRepository(stale_session).begin_attempt(
+                    principal_id=principal.id,
+                    delivery_id=delivery_id,
+                )
+            assert stale_delivery.state == "succeeded"
+    finally:
+        if principal_id is not None:
+            async with sessions.begin() as cleanup:
+                await cleanup.execute(
+                    delete(PublicationDelivery).where(
+                        PublicationDelivery.principal_id == principal_id
+                    )
+                )
+                await cleanup.execute(
+                    delete(Principal).where(Principal.id == principal_id)
+                )
+        await engine.dispose()

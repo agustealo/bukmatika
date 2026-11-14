@@ -87,7 +87,7 @@ def get_wordpress_rest(
             "GET",
             quote(
                 route,
-                safe="/%-._~?=&" if (route == capability_route or posts_route) else "/%-._~",
+                safe="/%-._~?=&," if (route == capability_route or posts_route) else "/%-._~",
             ),
             headers=headers,
         )

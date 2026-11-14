@@ -29,7 +29,7 @@ from bukmatika.plugins.health_receipts import PluginHealthReceiptRepository
 from bukmatika.plugins.installations import PluginInstallationRepository, PluginNotInstalled
 from bukmatika.plugins.public_probe_receipts import record_public_wordpress_probe
 from bukmatika.plugins.wordpress_capability_probe import (
-    WORDPRESSWORDPRESS_CAPABILITY_EVIDENCE_CODES,
+    WORDPRESS_CAPABILITY_EVIDENCE_CODES,
     WORDPRESS_CAPABILITY_KEYS,
 )
 from bukmatika.plugins.wordpress_capability_service import verify_wordpress_capabilities

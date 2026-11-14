@@ -28,16 +28,19 @@ test("WordPress manager installs, stores redacted REST settings, and revokes on 
   await expect(page.getByText("not_tested")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Inspect capabilities" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Enable WordPress" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Browse posts" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Enable WordPress" }).click();
   await expect(page.getByText(/Enabled$/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Disable WordPress" })).toBeVisible();
   await expect(page.getByText(/Publishing is still disabled/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Browse posts" })).toBeVisible();
 
   await page.reload();
   await expect(page.getByRole("button", { name: "Disable WordPress" })).toBeVisible();
   await page.getByRole("button", { name: "Disable WordPress" }).click();
   await expect(page.getByRole("button", { name: "Enable WordPress" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Browse posts" })).toHaveCount(0);
 
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "Uninstall WordPress" }).click();

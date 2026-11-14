@@ -135,6 +135,13 @@ Persisted capability snapshots are evidence only. They are never a write grant a
 must not substitute for live capability/policy revalidation when a future mutation is
 attempted.
 
+With an enabled WordPress REST plugin, the consumer can browse **read-only**
+post summaries through authenticated `GET /v1/plugins/wordpress/posts?page=1`.
+Each request revalidates remote `edit_posts`, uses a fixed, bounded HTTPS GET
+route for at most 20 posts per page, and never returns a post body or credential.
+Connection rotation disables the plugin, clears old receipts and snapshots, and
+requires the owner to explicitly reactivate it. This does not grant publish access.
+
 **Still disabled:** WordPress publishing mutations, direct MySQL/MariaDB access, SSH
 tunnels, and consumer release packaging. Connection-backed plugin activation is now
 available, but every executable capability still passes the canonical plugin execution

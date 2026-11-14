@@ -9,7 +9,7 @@ from bukmatika.plugins.connections import (
     PluginConnectionUnavailable,
 )
 from bukmatika.plugins.contracts import PluginRegistry
-from bukmatika.plugins.installations import PluginInstallationRepository, PluginNotInstalled
+from bukmatika.plugins.installations import PluginInstallationRepository
 
 
 class PluginActivationDenied(PermissionError):
@@ -62,7 +62,7 @@ class PluginActivationService:
                 plugin_id=plugin_id,
                 lock=True,
             )
-        except (LookupError, PluginNotInstalled) as exc:
+        except LookupError as exc:
             raise PluginActivationDenied("Plugin activation is unavailable") from exc
 
         if not enabled:

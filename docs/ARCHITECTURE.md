@@ -69,6 +69,12 @@ Owns context assembly, structured planning, model access, and typed capability i
 
 Owns lexical/semantic retrieval and grounded answers. It references canonical document chunks and never becomes a second source of bibliographic truth.
 
+### Publishing
+
+Owns canonical publications, immutable content revisions, stable external destinations, idempotent delivery intents, and durable attempt outcomes. Publishing destinations may reference a live plugin connection, but historical destination identity and delivery evidence survive credential rotation or plugin uninstall. Provider adapters do not own publication history.
+
+A plugin being enabled is only an execution prerequisite. Every outbound mutation must still pass the canonical plugin execution policy plus source/action-specific live write policy. Persisted capability observations are diagnostics and evidence, never standing write permission. A delivery attempt is durably marked in flight before network mutation so process failure cannot be mistaken for a clean retry.
+
 ## Runtime philosophy
 
 Start with the fewest durable authorities:
@@ -128,6 +134,18 @@ Append-only semantic events used to learn from meaningful product behavior and m
 ### Goal / Plan / ActionDecision
 
 Durable user objective, structured proposed execution, and deterministic policy result for an AI-planned action.
+
+### Publication / PublicationRevision
+
+A principal-owned publishable work and its immutable content history. A new edit creates a new numbered revision; deliveries always bind one exact revision rather than mutable editor state.
+
+### PublicationDestination
+
+A stable, non-secret external target identity. It can point at the current plugin connection while configured, but the connection reference may become null after uninstall without deleting historical destination provenance.
+
+### PublicationDelivery / PublicationDeliveryAttempt
+
+An idempotent intent to send one immutable revision to one destination, plus durable attempt state. The idempotency key is scoped to the principal and destination; reusing it with a different revision or request fingerprint is a conflict. Attempts move through an explicit in-flight state before transport and end as succeeded, failed, or unknown so ambiguous remote outcomes cannot be silently replayed.
 
 ## Trust boundaries
 

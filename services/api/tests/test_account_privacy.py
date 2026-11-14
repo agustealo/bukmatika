@@ -29,6 +29,13 @@ from bukmatika.persistence.personalization_models import (
     UserModel,
 )
 from bukmatika.persistence.privacy_models import PrivacyErasureObject
+from bukmatika.persistence.publishing_models import (
+    Publication,
+    PublicationDelivery,
+    PublicationDeliveryAttempt,
+    PublicationDestination,
+    PublicationRevision,
+)
 from bukmatika.privacy.service import AccountPrivacyService
 
 
@@ -437,6 +444,95 @@ async def test_account_delete_preserves_content_addressed_bytes_still_referenced
     assert await session.get(Work, private_work.id) is None
     assert await session.get(Work, surviving_work.id) is not None
     assert await session.get(Principal, other.id) is not None
+
+
+
+
+@pytest.mark.asyncio
+async def test_account_export_and_delete_include_publication_delivery_history(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    principal = await _principal(session)
+    publication = Publication(principal_id=principal.id, state="active")
+    session.add(publication)
+    await session.flush()
+    revision = PublicationRevision(
+        principal_id=principal.id,
+        publication_id=publication.id,
+        revision_number=1,
+        title="Private draft",
+        body="Private publishing body",
+        excerpt=None,
+        content_sha256="a" * 64,
+    )
+    destination = PublicationDestination(
+        principal_id=principal.id,
+        plugin_id="wordpress",
+        connection_id=None,
+        destination_kind="post",
+        external_locator="https://example.com",
+        state="active",
+    )
+    session.add_all([revision, destination])
+    await session.flush()
+    delivery = PublicationDelivery(
+        principal_id=principal.id,
+        publication_id=publication.id,
+        revision_id=revision.id,
+        destination_id=destination.id,
+        idempotency_key="privacy-erasure",
+        request_fingerprint="b" * 64,
+        state="in_flight",
+        latest_attempt=1,
+    )
+    session.add(delivery)
+    await session.flush()
+    attempt = PublicationDeliveryAttempt(
+        principal_id=principal.id,
+        delivery_id=delivery.id,
+        attempt_number=1,
+        state="started",
+    )
+    session.add(attempt)
+    await session.flush()
+
+    service = AccountPrivacyService(
+        storage=LocalObjectStore(tmp_path),
+        session_scope_factory=_scope(session),
+    )
+    exported = await service.export(principal_id=principal.id)
+    publishing_types = {
+        record.record_type
+        for record in exported.operational_records
+        if record.record_type.startswith("publication")
+    }
+    assert publishing_types == {
+        "publications",
+        "publication_revisions",
+        "publication_destinations",
+        "publication_deliveries",
+        "publication_delivery_attempts",
+    }
+
+    principal_id = principal.id
+    publication_id = publication.id
+    revision_id = revision.id
+    destination_id = destination.id
+    delivery_id = delivery.id
+    attempt_id = attempt.id
+
+    result = await service.delete_account(principal_id=principal_id)
+    await session.flush()
+    session.expire_all()
+
+    assert result.principal_deleted is True
+    assert await session.get(Principal, principal_id) is None
+    assert await session.get(Publication, publication_id) is None
+    assert await session.get(PublicationRevision, revision_id) is None
+    assert await session.get(PublicationDestination, destination_id) is None
+    assert await session.get(PublicationDelivery, delivery_id) is None
+    assert await session.get(PublicationDeliveryAttempt, attempt_id) is None
 
 
 def test_all_direct_principal_foreign_keys_are_cascade_owned_except_interaction_history() -> None:

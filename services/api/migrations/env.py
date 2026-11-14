@@ -20,6 +20,7 @@ from bukmatika.persistence import (
     plugin_models,
     privacy_models,
     provider_models,
+    publishing_models,
     reader_models,
     secret_models,
 )
@@ -46,6 +47,11 @@ _registered_models = (
     plugin_models.PluginInstallation,
     privacy_models.PrivacyErasureObject,
     provider_models.AIProviderConnection,
+    publishing_models.Publication,
+    publishing_models.PublicationRevision,
+    publishing_models.PublicationDestination,
+    publishing_models.PublicationDelivery,
+    publishing_models.PublicationDeliveryAttempt,
     reader_models.ReadingState,
     secret_models.EncryptedSecret,
 )

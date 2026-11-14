@@ -135,6 +135,15 @@ Persisted capability snapshots are evidence only. They are never a write grant a
 must not substitute for live capability/policy revalidation when a future mutation is
 attempted.
 
+The publishing domain now owns provider-neutral publication identity, immutable
+revisions, stable destinations, idempotent delivery intents, and durable attempt state.
+A destination may reference the live WordPress connection, but uninstalling the plugin
+or deleting credentials must not erase historical delivery provenance. WordPress write
+policy composes the canonical `PluginExecutionPolicy` with a fresh authenticated
+capability observation while installation/connection locks are held. Draft creation
+requires live `edit_posts`; immediate publication additionally requires live
+`publish_posts`. No persisted capability snapshot is accepted as write authority.
+
 With an enabled WordPress REST plugin, the consumer can browse **read-only**
 post summaries through authenticated `GET /v1/plugins/wordpress/posts?page=1`.
 Each request revalidates remote `edit_posts`, uses a fixed, bounded HTTPS GET

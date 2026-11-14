@@ -56,9 +56,8 @@ async def test_probe_rejects_unowned_connection_before_network_access() -> None:
     with patch(
         "bukmatika.plugins.public_probe_receipts.asyncio.to_thread",
         new_callable=AsyncMock,
-    ) as probe:
-        with pytest.raises(LookupError):
-            await record_public_wordpress_probe(
-                session, principal_id=uuid4(), connection_id=uuid4()
-            )
+    ) as probe, pytest.raises(LookupError):
+        await record_public_wordpress_probe(
+            session, principal_id=uuid4(), connection_id=uuid4()
+        )
     probe.assert_not_awaited()

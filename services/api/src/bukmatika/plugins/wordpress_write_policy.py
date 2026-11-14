@@ -7,10 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.credentials import InstallationCredentialKey
 from bukmatika.plugins.connection_health import ConnectionHealth
-from bukmatika.plugins.connections import (
-    PluginConnectionRepository,
-    PluginConnectionUnavailable,
-)
+from bukmatika.plugins.connections import PluginConnectionRepository
 from bukmatika.plugins.contracts import PluginCapability, PluginRegistry
 from bukmatika.plugins.execution import PluginExecutionDenied, PluginExecutionPolicy
 from bukmatika.plugins.wordpress_capability_service import verify_wordpress_capabilities
@@ -83,7 +80,7 @@ class WordPressWritePolicy:
                 principal_id=principal_id,
                 plugin_id="wordpress",
             )
-        except (PluginExecutionDenied, PluginConnectionUnavailable, LookupError) as exc:
+        except (PluginExecutionDenied, LookupError) as exc:
             raise WordPressWriteDenied("WordPress publishing is unavailable") from exc
 
         observation = await verify_wordpress_capabilities(

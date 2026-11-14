@@ -518,6 +518,7 @@ async def test_account_export_and_delete_include_publication_delivery_history(
 
     result = await service.delete_account(principal_id=principal.id)
     await session.flush()
+    session.expire_all()
 
     assert result.principal_deleted is True
     assert await session.get(Principal, principal.id) is None

@@ -47,6 +47,7 @@ def get_wordpress_rest(
     *,
     timeout: float = 5.0,
     max_bytes: int = 1_048_576,
+    authorization: str | None = None,
 ) -> WordPressHttpResponse:
     """Read one bounded response. Fresh DNS check on each invocation; no redirects."""
     if (
@@ -57,6 +58,9 @@ def get_wordpress_rest(
         or ".." in route
         or timeout <= 0
         or max_bytes < 1
+        or (authorization is not None and route != "/wp-json/wp/v2/users/me")
+        or (authorization is not None and not authorization.startswith("Basic "))
+        or (authorization is not None and ("\r" in authorization or "\n" in authorization))
     ):
         raise ValueError("Invalid WordPress REST request parameters")
     destination = approve_https_destination(origin)
@@ -68,10 +72,13 @@ def get_wordpress_rest(
         destination.hostname, destination.addresses[0], timeout=timeout
     )
     try:
+        headers = {"Accept": "application/json", "Connection": "close"}
+        if authorization is not None:
+            headers["Authorization"] = authorization
         connection.request(
             "GET",
             quote(route, safe="/%-._~"),
-            headers={"Accept": "application/json", "Connection": "close"},
+            headers=headers,
         )
         response = connection.getresponse()
         if 300 <= response.status < 400:

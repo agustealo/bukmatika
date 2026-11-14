@@ -6,18 +6,20 @@ not validate a WordPress account or grant any publishing capability.
 
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence import session_scope
 from bukmatika.persistence.plugin_connection_models import PluginConnection
+from bukmatika.plugins.builtin import build_builtin_plugin_registry
 from bukmatika.plugins.connection_health import ConnectionHealth
 from bukmatika.plugins.health_receipts import PluginHealthReceiptRepository
 from bukmatika.plugins.installations import PluginInstallationRepository, PluginNotInstalled
-from bukmatika.plugins.builtin import build_builtin_plugin_registry
 from bukmatika.plugins.public_probe_receipts import record_public_wordpress_probe
 
 router = APIRouter(prefix="/v1/plugins", tags=["plugins"])
@@ -54,18 +56,12 @@ def _cooldown_active(checked_at: datetime, now: datetime) -> bool:
 
 
 async def _connection(
-    session: object,
+    session: AsyncSession,
     *,
-    principal_id: object,
+    principal_id: UUID,
     plugin_id: str,
     lock: bool,
 ) -> PluginConnection | None:
-    from uuid import UUID
-
-    from sqlalchemy.ext.asyncio import AsyncSession
-
-    if not isinstance(session, AsyncSession) or not isinstance(principal_id, UUID):
-        raise TypeError("Invalid database context")
     try:
         installation = await PluginInstallationRepository(session, _registry).require(
             principal_id=principal_id, plugin_id=plugin_id

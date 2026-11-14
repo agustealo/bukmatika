@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bukmatika.credentials import DatabaseSecretStore, InstallationCredentialKey, SecretOwner
 from bukmatika.persistence.plugin_connection_models import PluginConnection
+from bukmatika.persistence.plugin_models import PluginInstallation
 from bukmatika.persistence.plugin_health_models import PluginHealthReceipt
 from bukmatika.plugins.connection_contracts import ConnectionFieldKind
 from bukmatika.plugins.contracts import PluginRegistry
@@ -64,6 +65,16 @@ class PluginConnectionRepository:
 
         installation = await self._installations.require(
             principal_id=principal_id, plugin_id=plugin_id
+        )
+        # Consistent lock order with reads and uninstall: installation first,
+        # then connection. Never invert this when rotating credentials.
+        await self._session.scalar(
+            select(PluginInstallation.id)
+            .where(
+                PluginInstallation.id == installation.id,
+                PluginInstallation.principal_id == principal_id,
+            )
+            .with_for_update()
         )
         row = await self._session.scalar(
             select(PluginConnection).where(

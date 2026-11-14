@@ -42,6 +42,13 @@ from bukmatika.persistence.models import (
 )
 from bukmatika.persistence.personalization_models import ActionApproval, PreferenceClaimEvidence
 from bukmatika.persistence.privacy_models import PrivacyErasureObject
+from bukmatika.persistence.publishing_models import (
+    Publication,
+    PublicationDelivery,
+    PublicationDeliveryAttempt,
+    PublicationDestination,
+    PublicationRevision,
+)
 from bukmatika.persistence.storage_locks import content_publication_lock
 from bukmatika.personalization.portability import PersonalizationPortabilityService
 from bukmatika.privacy.domain import (
@@ -216,6 +223,15 @@ class AccountPrivacyService:
             await database_session.execute(
                 delete(InteractionEvent).where(InteractionEvent.principal_id == principal_id)
             )
+
+            # Delivery history intentionally uses RESTRICT foreign keys so ordinary
+            # publication lifecycle cannot erase external-write evidence. Whole-account
+            # erasure is the explicit authority that removes that history first.
+            await database_session.execute(
+                delete(PublicationDelivery).where(
+                    PublicationDelivery.principal_id == principal_id
+                )
+            )
             await database_session.delete(principal)
 
         cleanup = await self.cleanup_pending_storage()
@@ -345,6 +361,11 @@ class AccountPrivacyService:
             (AIDelegationApproval, frozenset()),
             (AIDelegationAttempt, frozenset({"claim_token"})),
             (AIDelegationAttemptResult, frozenset()),
+            (Publication, frozenset()),
+            (PublicationRevision, frozenset()),
+            (PublicationDestination, frozenset()),
+            (PublicationDelivery, frozenset()),
+            (PublicationDeliveryAttempt, frozenset()),
         )
         for model, omitted in models:
             rows = list(

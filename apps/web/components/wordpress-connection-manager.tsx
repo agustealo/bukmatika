@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { apiFetch } from "../lib/api";
 import styles from "./wordpress-connection-manager.module.css";
+import { WordPressPostBrowser } from "./wordpress-post-browser";
 
 type PluginState = {
   plugin_id: string;
@@ -212,6 +213,21 @@ export function WordPressConnectionManager() {
     }
   };
 
+  const toggleRead = async () => {
+    if (!wordpress?.installed || !connection) return;
+    const enabled = !wordpress.enabled;
+    await act(
+      () => apiFetch(ROOT, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      }),
+      enabled
+        ? "Read-only access enabled. Publishing remains disabled."
+        : "Read access disabled.",
+    );
+  };
+
   const uninstall = async () => {
     if (!window.confirm(
       "Uninstall WordPress? This destroys its saved connection and credentials. Your library remains intact.",
@@ -246,7 +262,14 @@ export function WordPressConnectionManager() {
               {!wordpress?.installed && <button type="button" disabled={busy || !wordpress} onClick={() => void install()}>Install</button>}
             </div>
             {wordpress?.installed && (
-              <p className={styles.help}>The plugin is installed but publishing execution is disabled until capability and write-policy acceptance are complete.</p>
+              <>
+                <p className={styles.help}>Publishing execution remains disabled until write-policy acceptance is complete.</p>
+                {connection && (
+                  <button type="button" disabled={busy} onClick={() => void toggleRead()}>
+                    {wordpress.enabled ? "Disable read access" : "Enable read-only access"}
+                  </button>
+                )}
+              </>
             )}
           </section>
 
@@ -305,6 +328,8 @@ export function WordPressConnectionManager() {
                 )}
                 <p className={styles.help}>All checks are read-only. No test creates, modifies, or publishes a post. Requests may be rate-limited for 60 seconds per check.</p>
               </section>
+
+              <WordPressPostBrowser key={wordpress.enabled ? "read-enabled" : "read-disabled"} enabled={wordpress.enabled} />
 
               <section className={styles.panel} aria-label="Uninstall WordPress">
                 <h2>Uninstall</h2>

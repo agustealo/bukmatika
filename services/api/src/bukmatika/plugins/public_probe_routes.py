@@ -28,21 +28,20 @@ from bukmatika.plugins.connection_health import ConnectionHealth
 from bukmatika.plugins.health_receipts import PluginHealthReceiptRepository
 from bukmatika.plugins.installations import PluginInstallationRepository, PluginNotInstalled
 from bukmatika.plugins.public_probe_receipts import record_public_wordpress_probe
+from bukmatika.plugins.wordpress_capability_probe import (
+    WORDPRESSWORDPRESS_CAPABILITY_EVIDENCE_CODES,
+    WORDPRESS_CAPABILITY_KEYS,
+)
 from bukmatika.plugins.wordpress_capability_service import verify_wordpress_capabilities
+from bukmatika.plugins.wordpress_capability_snapshots import (
+    WordPressCapabilitySnapshotRepository,
+    snapshot_capabilities,
+)
 from bukmatika.plugins.wordpress_identity_service import verify_wordpress_identity
 
 router = APIRouter(prefix="/v1/plugins", tags=["plugins"])
 _registry = build_builtin_plugin_registry()
 _PROBE_COOLDOWN = timedelta(seconds=60)
-_CAPABILITY_EVIDENCE_CODES = (
-    "AUTH_CAPABILITIES_200",
-    "AUTH_CAPABILITY_INPUT_INVALID",
-    "AUTH_CAPABILITY_TRANSPORT_UNAVAILABLE",
-    "AUTH_CAPABILITY_REJECTED",
-    "AUTH_CAPABILITY_HTTP_UNEXPECTED",
-    "AUTH_CAPABILITY_RESPONSE_INVALID",
-    "AUTH_CAPABILITY_SCHEMA_INVALID",
-)
 _IDENTITY_EVIDENCE_CODES = (
     "AUTH_IDENTITY_200",
     "AUTH_INPUT_INVALID",
@@ -293,11 +292,66 @@ class WordPressCapabilityStatus(BaseModel):
     plugin_id: str = "wordpress"
     scope: str = "observed_wordpress_capabilities"
     state: ConnectionHealth
-    checked_at: datetime
-    evidence_code: str
+    checked_at: datetime | None
+    evidence_code: str | None
     capabilities_observed: bool
     capabilities: dict[str, bool]
     publishing_authorized: bool = False
+
+
+def _capability_status(
+    state: ConnectionHealth,
+    *,
+    checked_at: datetime | None = None,
+    evidence_code: str | None = None,
+    capabilities: dict[str, bool] | None = None,
+) -> WordPressCapabilityStatus:
+    values = (
+        capabilities
+        if capabilities is not None
+        else {key: False for key in WORDPRESS_CAPABILITY_KEYS}
+    )
+    return WordPressCapabilityStatus(
+        state=state,
+        checked_at=checked_at,
+        evidence_code=evidence_code,
+        capabilities_observed=(
+            state is ConnectionHealth.VERIFIED
+            and evidence_code == "AUTH_CAPABILITIES_200"
+        ),
+        capabilities=values,
+    )
+
+
+@router.get(
+    "/{plugin_id}/connection/capability-probe",
+    response_model=WordPressCapabilityStatus,
+)
+async def get_wordpress_capability_status(
+    plugin_id: str,
+    identity: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+) -> WordPressCapabilityStatus:
+    """Read the latest durable capability observation without network access."""
+    if plugin_id != "wordpress":
+        raise HTTPException(status_code=404, detail={"code": "PLUGIN_NOT_FOUND"})
+    async with session_scope() as session:
+        connection = await _connection(
+            session, principal_id=identity.principal_id, plugin_id=plugin_id, lock=False
+        )
+        if connection is None:
+            return _capability_status(ConnectionHealth.NOT_CONFIGURED)
+        snapshot = await WordPressCapabilitySnapshotRepository(session).latest(
+            principal_id=identity.principal_id,
+            connection_id=connection.id,
+        )
+        if snapshot is None:
+            return _capability_status(ConnectionHealth.NOT_TESTED)
+        return _capability_status(
+            ConnectionHealth(snapshot.state),
+            checked_at=snapshot.checked_at,
+            evidence_code=snapshot.evidence_code,
+            capabilities=snapshot_capabilities(snapshot),
+        )
 
 
 @router.post(
@@ -321,7 +375,7 @@ async def check_wordpress_capabilities(
         previous = await receipts.latest(
             principal_id=identity.principal_id,
             connection_id=connection.id,
-            evidence_codes=_CAPABILITY_EVIDENCE_CODES,
+            evidence_codes=WORDPRESS_CAPABILITY_EVIDENCE_CODES,
         )
         if previous is not None and _cooldown_active(previous.checked_at, datetime.now(UTC)):
             raise HTTPException(status_code=429, detail={"code": "PROBE_COOLDOWN"})
@@ -345,14 +399,23 @@ async def check_wordpress_capabilities(
         recorded = await receipts.latest(
             principal_id=identity.principal_id,
             connection_id=connection.id,
-            evidence_codes=_CAPABILITY_EVIDENCE_CODES,
+            evidence_codes=WORDPRESS_CAPABILITY_EVIDENCE_CODES,
         )
-        if recorded is None or recorded.evidence_code != observation.evidence_code:
-            raise RuntimeError("WordPress capability observation was not persisted")
-        return WordPressCapabilityStatus(
-            state=observation.state,
-            checked_at=recorded.checked_at,
-            evidence_code=observation.evidence_code,
-            capabilities_observed=observation.capabilities_observed,
-            capabilities=observation.capabilities,
+        snapshot = await WordPressCapabilitySnapshotRepository(session).latest(
+            principal_id=identity.principal_id,
+            connection_id=connection.id,
+        )
+        if (
+            recorded is None
+            or snapshot is None
+            or recorded.evidence_code != observation.evidence_code
+            or snapshot.evidence_code != observation.evidence_code
+            or snapshot.checked_at != recorded.checked_at
+        ):
+            raise RuntimeError("WordPress capability observation was not persisted consistently")
+        return _capability_status(
+            ConnectionHealth(snapshot.state),
+            checked_at=snapshot.checked_at,
+            evidence_code=snapshot.evidence_code,
+            capabilities=snapshot_capabilities(snapshot),
         )

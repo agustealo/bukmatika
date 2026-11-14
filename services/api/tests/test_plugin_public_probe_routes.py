@@ -12,8 +12,10 @@ from bukmatika.credentials import CredentialUnavailable
 from bukmatika.plugins.connection_health import ConnectionHealth
 from bukmatika.plugins.public_probe_routes import (
     PublicRestProbeStatus,
+    WordPressCapabilityStatus,
     WordPressIdentityStatus,
     _cooldown_active,
+    check_wordpress_capabilities,
     check_wordpress_identity,
     get_public_rest_probe,
     get_wordpress_identity_status,
@@ -253,3 +255,88 @@ async def test_missing_identity_credential_never_claims_success() -> None:
         await check_wordpress_identity("wordpress", identity)
     assert exc.value.status_code == 409
     assert exc.value.detail == {"code": "CREDENTIAL_UNAVAILABLE"}
+
+
+def test_capability_route_is_authenticated_and_not_publishing_authority() -> None:
+    route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/v1/plugins/{plugin_id}/connection/capability-probe"
+    )
+    assert route.methods == {"POST"}
+    assert route.dependant.dependencies
+    assert WordPressCapabilityStatus.model_fields["publishing_authorized"].default is False
+
+
+@pytest.mark.asyncio
+async def test_capability_probe_returns_real_observed_flags_without_authorizing_writes() -> None:
+    identity = SimpleNamespace(principal_id=uuid4())
+    connection = SimpleNamespace(id=uuid4())
+    receipt = SimpleNamespace(
+        state="verified",
+        evidence_code="AUTH_CAPABILITIES_200",
+        checked_at=datetime.now(UTC),
+    )
+    from bukmatika.plugins.wordpress_capability_probe import WordPressCapabilityObservation
+
+    observation = WordPressCapabilityObservation(
+        ConnectionHealth.VERIFIED,
+        "AUTH_CAPABILITIES_200",
+        {"edit_posts": True, "publish_posts": False, "upload_files": False},
+    )
+    with (
+        patch("bukmatika.plugins.public_probe_routes.session_scope", _fake_session),
+        patch(
+            "bukmatika.plugins.public_probe_routes._connection",
+            new_callable=AsyncMock,
+            return_value=connection,
+        ) as lookup,
+        patch(
+            "bukmatika.plugins.public_probe_routes.PluginHealthReceiptRepository"
+        ) as repository,
+        patch(
+            "bukmatika.plugins.public_probe_routes.verify_wordpress_capabilities",
+            new_callable=AsyncMock,
+            return_value=observation,
+        ) as verify,
+        patch("bukmatika.plugins.public_probe_routes.get_settings") as settings,
+    ):
+        repository.return_value.latest = AsyncMock(side_effect=[None, receipt])
+        settings.return_value.credential_key_path = "/tmp/bukmatika-test-key"
+        result = await check_wordpress_capabilities("wordpress", identity)
+    verify.assert_awaited_once()
+    assert lookup.await_args.kwargs["lock"] is True
+    assert result.capabilities_observed
+    assert result.capabilities["edit_posts"]
+    assert not result.capabilities["publish_posts"]
+    assert result.scope == "observed_wordpress_capabilities"
+    assert not result.publishing_authorized
+
+
+@pytest.mark.asyncio
+async def test_capability_probe_cooldown_never_sends_credentials_or_network() -> None:
+    identity = SimpleNamespace(principal_id=uuid4())
+    connection = SimpleNamespace(id=uuid4())
+    with (
+        patch("bukmatika.plugins.public_probe_routes.session_scope", _fake_session),
+        patch(
+            "bukmatika.plugins.public_probe_routes._connection",
+            new_callable=AsyncMock,
+            return_value=connection,
+        ),
+        patch(
+            "bukmatika.plugins.public_probe_routes.PluginHealthReceiptRepository"
+        ) as repository,
+        patch(
+            "bukmatika.plugins.public_probe_routes.verify_wordpress_capabilities",
+            new_callable=AsyncMock,
+        ) as verify,
+        pytest.raises(HTTPException) as exc,
+    ):
+        repository.return_value.latest = AsyncMock(
+            return_value=SimpleNamespace(checked_at=datetime.now(UTC))
+        )
+        await check_wordpress_capabilities("wordpress", identity)
+    assert exc.value.status_code == 429
+    verify.assert_not_awaited()

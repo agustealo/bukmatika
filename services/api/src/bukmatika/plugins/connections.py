@@ -7,6 +7,7 @@ from bukmatika.credentials import DatabaseSecretStore, InstallationCredentialKey
 from bukmatika.persistence.plugin_capability_models import WordPressCapabilitySnapshot
 from bukmatika.persistence.plugin_connection_models import PluginConnection
 from bukmatika.persistence.plugin_health_models import PluginHealthReceipt
+from bukmatika.persistence.secret_models import EncryptedSecret
 from bukmatika.plugins.connection_contracts import ConnectionFieldKind
 from bukmatika.plugins.contracts import PluginRegistry
 from bukmatika.plugins.installations import PluginInstallationRepository
@@ -14,6 +15,10 @@ from bukmatika.plugins.url_safety import UnsafePluginDestination, validate_publi
 
 
 class PluginConnectionInvalid(ValueError):
+    pass
+
+
+class PluginConnectionUnavailable(LookupError):
     pass
 
 
@@ -31,6 +36,68 @@ class PluginConnectionRepository:
         self._registry = registry
         self._installations = PluginInstallationRepository(session, registry)
         self._secrets = DatabaseSecretStore(session, installation_key=installation_key)
+
+    async def require_configured(
+        self,
+        *,
+        principal_id: UUID,
+        plugin_id: str,
+    ) -> PluginConnection:
+        """Require a current, complete declared connection without revealing secrets."""
+        registration = self._registry.registration(plugin_id)
+        contract = registration.connection_contract
+        if contract is None:
+            raise PluginConnectionUnavailable("Plugin does not declare a connection")
+        installation = await self._installations.require(
+            principal_id=principal_id,
+            plugin_id=plugin_id,
+            lock=True,
+        )
+        row = await self._session.scalar(
+            select(PluginConnection)
+            .where(
+                PluginConnection.installation_id == installation.id,
+                PluginConnection.principal_id == principal_id,
+                PluginConnection.plugin_id == plugin_id,
+            )
+            .with_for_update()
+        )
+        if row is None or row.schema_version != contract.schema_version:
+            raise PluginConnectionUnavailable("Plugin connection requires configuration")
+        mode = next((item for item in contract.modes if item.mode_id == row.mode_id), None)
+        if mode is None:
+            raise PluginConnectionUnavailable("Plugin connection mode is unavailable")
+
+        expected_settings = {
+            field.key for field in mode.fields if field.kind is not ConnectionFieldKind.SECRET
+        }
+        if set(row.settings) != expected_settings:
+            raise PluginConnectionUnavailable("Plugin connection settings are incomplete")
+        for field in mode.fields:
+            if field.kind is ConnectionFieldKind.SECRET:
+                continue
+            value = row.settings[field.key]
+            if field.kind is ConnectionFieldKind.INTEGER:
+                if type(value) is not int or value < 1 or value > 65535:
+                    raise PluginConnectionUnavailable("Plugin connection settings are invalid")
+            elif not isinstance(value, str) or not value.strip():
+                raise PluginConnectionUnavailable("Plugin connection settings are invalid")
+
+        required_secret_slots = {
+            field.key for field in mode.fields if field.kind is ConnectionFieldKind.SECRET
+        }
+        stored_secret_slots = set(
+            await self._session.scalars(
+                select(EncryptedSecret.slot).where(
+                    EncryptedSecret.principal_id == principal_id,
+                    EncryptedSecret.owner_kind == "plugin_connection",
+                    EncryptedSecret.owner_id == row.id,
+                )
+            )
+        )
+        if stored_secret_slots != required_secret_slots:
+            raise PluginConnectionUnavailable("Plugin connection credentials are incomplete")
+        return row
 
     async def configure(
         self,

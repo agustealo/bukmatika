@@ -12,7 +12,10 @@ from bukmatika.plugins.connection_health import ConnectionHealth
 from bukmatika.plugins.connections import PluginConnectionRepository
 from bukmatika.plugins.health_receipts import PluginHealthReceiptRepository
 from bukmatika.plugins.installations import PluginInstallationRepository
-from bukmatika.plugins.wordpress_capability_probe import WordPressCapabilityObservation
+from bukmatika.plugins.wordpress_capability_probe import (
+    WORDPRESS_CAPABILITY_KEYS,
+    WordPressCapabilityObservation,
+)
 from bukmatika.plugins.wordpress_capability_service import verify_wordpress_capabilities
 
 
@@ -58,7 +61,7 @@ async def test_capability_service_is_owner_scoped_and_records_only_evidence(
     observation = WordPressCapabilityObservation(
         ConnectionHealth.VERIFIED,
         "AUTH_CAPABILITIES_200",
-        {"edit_posts": True, "publish_posts": False, "upload_files": False},
+        {key: key == "edit_posts" for key in WORDPRESS_CAPABILITY_KEYS},
     )
     with patch(
         "bukmatika.plugins.wordpress_capability_service.asyncio.to_thread",
@@ -115,7 +118,7 @@ async def test_unavailable_probe_cannot_return_granted_capabilities(
         return_value=WordPressCapabilityObservation(
             ConnectionHealth.UNAVAILABLE,
             "AUTH_CAPABILITY_REJECTED",
-            {"publish_posts": True},
+            {key: key == "publish_posts" for key in WORDPRESS_CAPABILITY_KEYS},
         ),
     ), pytest.raises(ValueError, match="cannot grant"):
         await verify_wordpress_capabilities(

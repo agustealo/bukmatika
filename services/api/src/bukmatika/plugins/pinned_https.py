@@ -50,15 +50,17 @@ def get_wordpress_rest(
     authorization: str | None = None,
 ) -> WordPressHttpResponse:
     """Read one bounded response. Fresh DNS check on each invocation; no redirects."""
+    capability_route = "/wp-json/wp/v2/users/me?context=edit"
+    allowed_identity_routes = {"/wp-json/wp/v2/users/me", capability_route}
     if (
         not route.startswith("/wp-json/wp/v2/")
         or "//" in route
-        or "?" in route
+        or ("?" in route and route != capability_route)
         or "#" in route
         or ".." in route
         or timeout <= 0
         or max_bytes < 1
-        or (authorization is not None and route != "/wp-json/wp/v2/users/me")
+        or (authorization is not None and route not in allowed_identity_routes)
         or (authorization is not None and not authorization.startswith("Basic "))
         or (authorization is not None and ("\r" in authorization or "\n" in authorization))
     ):
@@ -77,7 +79,7 @@ def get_wordpress_rest(
             headers["Authorization"] = authorization
         connection.request(
             "GET",
-            quote(route, safe="/%-._~"),
+            quote(route, safe="/%-._~?=" if route == capability_route else "/%-._~"),
             headers=headers,
         )
         response = connection.getresponse()

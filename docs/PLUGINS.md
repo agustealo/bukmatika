@@ -96,13 +96,34 @@ provenance/audit records.
 - SQL-capable plugins never receive Bukmatika's database credentials
 - remote database integrations require explicit SSRF/private-network review
 
-## Current migration state
+## Current implementation and consumer boundary
 
-The first plugin-runtime slice moves the four bundled discovery sources behind the
-plugin registry while preserving existing discovery ranking and source behavior.
+The bundled discovery sources use the canonical registry. The API implements
+principal-scoped installation and uninstall, provider-specific connection storage,
+and the canonical encrypted credential vault. A WordPress REST Application Password
+may be configured only for a validated public HTTPS origin.
 
-Durable installation/configuration/uninstall state is a follow-on slice. Until that
-lands, the bundled registry is executable plugin identity, not a claim that the full
-consumer plugin lifecycle is complete.
+The consumer **Plugins** page at `/plugins` provides WordPress installation,
+REST connection configuration, connection-health checks, and explicit uninstall.
+Settings are WordPress-owned. Application Passwords are submitted on save, encrypted
+server-side, and never returned in configuration responses.
 
-Tracking issue: #184.
+Three separate checks are available:
+
+1. Public REST reachability: no credential is transmitted.
+2. Application Password identity: an authenticated WordPress identity response.
+3. User capabilities: an authenticated, request-local read of explicit capability
+   booleans, which can differ among WordPress accounts.
+
+A successful check does not grant publishing authority. Checks are read-only, run
+through restricted pinned-IP HTTPS, are principal-scoped, and have a 60-second
+per-check cooldown. Saving or rotating a connection invalidates old observations.
+Capability booleans are intentionally not reconstructed from stored health codes.
+
+**Still disabled:** WordPress publishing mutations, plugin execution where a connection
+is required, direct MySQL/MariaDB access, SSH tunnels, and consumer release packaging.
+These require explicit write policy, end-to-end acceptance, connection lifecycle and
+network/security proofs. The plugin architecture remains tracked by issue #184.
+
+The application must not claim WordPress consumer publishing readiness until
+these remaining gates are satisfied.

@@ -19,6 +19,7 @@ export default function PersonalizationPage() {
           <a href="/status">Status</a>
           <a href="/research">Research</a>
           <a href="/personalization" aria-current="page">AI</a>
+          <a href="/plugins">Plugins</a>
         </nav>
       </header>
 

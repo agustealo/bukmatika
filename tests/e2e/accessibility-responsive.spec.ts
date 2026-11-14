@@ -94,6 +94,14 @@ test("Discovery is keyboard-operable with visible focus and labeled controls", a
   );
 
   await page.keyboard.press("Tab");
+  await assertVisibleFocus(
+    page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", {
+      name: "Plugins",
+      exact: true,
+    }),
+  );
+
+  await page.keyboard.press("Tab");
   await assertVisibleFocus(page.getByRole("link", { name: "Import your local library instead." }));
 
   await page.keyboard.press("Tab");
@@ -147,6 +155,7 @@ test("consumer shells stay within mobile width and honor reduced motion", async 
     "/status",
     "/research",
     "/personalization",
+    "/plugins",
   ]) {
     await page.goto(route);
     await expect(page.locator("main")).toHaveCount(1);

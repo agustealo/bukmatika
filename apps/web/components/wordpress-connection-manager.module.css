@@ -1,0 +1,129 @@
+.manager {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 2.5rem 0 4rem;
+}
+
+.intro h1 {
+  margin: 0 0 0.6rem;
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+}
+
+.intro p {
+  max-width: 72ch;
+  color: var(--muted, #595d66);
+  line-height: 1.55;
+}
+
+.panel {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid var(--border, #d9dce2);
+  border-radius: 1rem;
+  background: var(--surface, #fff);
+}
+
+.panel h2, .panel h3 {
+  margin: 0;
+}
+
+.panel p {
+  margin: 0;
+}
+
+.heading {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.help {
+  color: var(--muted, #595d66);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.form {
+  display: grid;
+  gap: 1rem;
+  max-width: 42rem;
+}
+
+.form label {
+  display: grid;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.form input {
+  border: 1px solid #aab0ba;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  background: #fff;
+  color: #20242a;
+  width: 100%;
+  min-width: 0;
+}
+
+.manager button {
+  border: 0;
+  border-radius: 0.6rem;
+  padding: 0.75rem 1rem;
+  color: #fff;
+  background: #244a65;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.manager button:hover:not(:disabled) { background: #163c55; }
+.manager button:focus-visible, .form input:focus-visible {
+  outline: 3px solid #7daede;
+  outline-offset: 2px;
+}
+.manager button:disabled { opacity: 0.55; cursor: not-allowed; }
+.manager button.danger { background: #9b2931; }
+.manager button.danger:hover:not(:disabled) { background: #752028; }
+
+.checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 1rem;
+}
+
+.checks article {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.85rem;
+  border: 1px solid var(--border, #d9dce2);
+  padding: 1rem;
+  border-radius: 0.75rem;
+}
+
+.result { width: 100%; }
+.result dl { display: grid; gap: 0.65rem; }
+.result dl div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  justify-content: space-between;
+  border-bottom: 1px solid #e5e7ec;
+  padding-bottom: 0.45rem;
+}
+.result dt { text-transform: capitalize; }
+.result dd { margin: 0; font-weight: 600; }
+.error, .notice { padding: 1rem; border-radius: 0.65rem; }
+.error { border: 1px solid #c75555; }
+.notice { border: 1px solid #6d9278; }
+
+@media (max-width: 650px) {
+  .manager { padding-top: 1.5rem; }
+  .heading { align-items: flex-start; flex-direction: column; }
+  .manager button { max-width: 100%; }
+}

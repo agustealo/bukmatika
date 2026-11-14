@@ -16,6 +16,7 @@ export default function LibraryTransferPage() {
           <a href="/status">Status</a>
           <a href="/research">Research</a>
           <a href="/personalization">AI</a>
+          <a href="/plugins">Plugins</a>
         </nav>
       </header>
 

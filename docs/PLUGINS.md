@@ -120,8 +120,15 @@ through restricted pinned-IP HTTPS, are principal-scoped, and have a 60-second
 per-check cooldown. Saving or rotating a connection invalidates old observations.
 Capability booleans are intentionally not reconstructed from stored health codes.
 
-**Still disabled:** WordPress publishing mutations, plugin execution where a connection
-is required, direct MySQL/MariaDB access, SSH tunnels, and consumer release packaging.
+WordPress REST connections with a stored Application Password can now be explicitly
+enabled for authenticated **read-only** `GET /v1/plugins/wordpress/posts?page=1`
+browsing. Each bounded request checks remote `edit_posts` afresh and retrieves at
+most 20 post summaries over pinned HTTPS. This does not authorize publishing.
+Disabling the plugin revokes reads; saving or rotating credentials disables the
+plugin, requiring reactivation.
+
+**Still disabled:** WordPress create/update/delete/publish mutations,
+direct MySQL/MariaDB access, SSH tunnels, and consumer release packaging.
 These require explicit write policy, end-to-end acceptance, connection lifecycle and
 network/security proofs. The plugin architecture remains tracked by issue #184.
 

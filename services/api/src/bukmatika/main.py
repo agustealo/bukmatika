@@ -55,8 +55,8 @@ from bukmatika.personalization.routes import router as personalization_router
 from bukmatika.plugins import build_builtin_plugin_registry
 from bukmatika.plugins.connection_routes import router as plugin_connections_router
 from bukmatika.plugins.public_probe_routes import router as public_probe_router
-from bukmatika.plugins.wordpress_post_routes import router as wordpress_post_router
 from bukmatika.plugins.routes import router as plugins_router
+from bukmatika.plugins.wordpress_post_routes import router as wordpress_post_router
 from bukmatika.processing import (
     AssetNotStored,
     DocumentParseError,

@@ -117,5 +117,7 @@ class PluginConnectionRepository:
                     ),
                     secret=secret_value,
                 )
+        # Credential rotation revokes runtime enablement as well as old receipts.
+        installation.status = "disabled"
         await self._session.flush()
         return row

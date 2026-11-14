@@ -1,10 +1,13 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from pydantic import BaseModel, ConfigDict
 
 from bukmatika.identity import AuthenticatedPrincipal, require_principal
 from bukmatika.persistence import session_scope
+from bukmatika.persistence.plugin_connection_models import PluginConnection
+from bukmatika.persistence.secret_models import EncryptedSecret
 from bukmatika.plugins.builtin import build_builtin_plugin_registry
 from bukmatika.plugins.installations import PluginInstallationRepository, PluginNotInstalled
 
@@ -111,7 +114,36 @@ async def update_plugin(
         if update.enabled and row.installed_version != manifest.version:
             raise HTTPException(status_code=409, detail={"code": "PLUGIN_VERSION_MISMATCH"})
         if update.enabled and manifest.requires_connection:
-            raise HTTPException(status_code=409, detail={"code": "PLUGIN_CONNECTION_REQUIRED"})
+            # Activation permits guarded reads, never a publish operation.
+            if plugin_id != "wordpress":
+                raise HTTPException(
+                    status_code=409, detail={"code": "PLUGIN_CONNECTION_REQUIRED"}
+                )
+            connection = await session.scalar(
+                select(PluginConnection).where(
+                    PluginConnection.installation_id == row.id,
+                    PluginConnection.principal_id == identity.principal_id,
+                    PluginConnection.plugin_id == plugin_id,
+                    PluginConnection.mode_id == "rest",
+                    PluginConnection.schema_version == manifest.connection_schema_version,
+                )
+            )
+            if connection is None:
+                raise HTTPException(
+                    status_code=409, detail={"code": "PLUGIN_CONNECTION_REQUIRED"}
+                )
+            secret_id = await session.scalar(
+                select(EncryptedSecret.id).where(
+                    EncryptedSecret.principal_id == identity.principal_id,
+                    EncryptedSecret.owner_kind == "plugin_connection",
+                    EncryptedSecret.owner_id == connection.id,
+                    EncryptedSecret.slot == "application_password",
+                )
+            )
+            if secret_id is None:
+                raise HTTPException(
+                    status_code=409, detail={"code": "PLUGIN_CREDENTIAL_REQUIRED"}
+                )
         row = await repo.set_enabled(
             principal_id=identity.principal_id, plugin_id=plugin_id, enabled=update.enabled
         )

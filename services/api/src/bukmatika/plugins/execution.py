@@ -33,6 +33,8 @@ class PluginExecutionPolicy:
         capability: PluginCapability,
     ) -> PluginRegistration:
         # Reject untrusted plugin identity and capability before touching execution.
+        if capability is PluginCapability.CONTENT_PUBLISH:
+            raise PluginExecutionDenied("Publishing execution is not enabled")
         try:
             registration = self._registry.registration(plugin_id)
         except LookupError as exc:

@@ -27,6 +27,7 @@ export default async function DossierPage({ searchParams }: DossierPageProps) {
           <a href="/status">Status</a>
           <a href="/research">Research</a>
           <a href="/personalization">AI</a>
+          <a href="/plugins">Plugins</a>
         </nav>
       </header>
 
